@@ -34,6 +34,18 @@ namespace Monitor._Internal
         private static ProfitTrailerData _ptData = null;
         private static DateTime _ptDataGeneralSettingsLastWriteUtc = DateTime.MinValue;
 
+        private static readonly object _monitorInfrastructureLock = new object();
+        private static string _cachedMonitorBasePath = null;
+        private static string _cachedPTMagicBasePath = null;
+        private static DateTime _cachedAppSettingsLastWriteUtc = DateTime.MinValue;
+        private static DateTime _cachedGeneralSettingsLastWriteUtc = DateTime.MinValue;
+        private static DateTime _cachedAnalyzerSettingsLastWriteUtc = DateTime.MinValue;
+        private static DateTime _cachedSecureSettingsLastWriteUtc = DateTime.MinValue;
+        private static DateTime _cachedNLogConfigLastWriteUtc = DateTime.MinValue;
+        private static PTMagicConfiguration _cachedPTMagicConfiguration = null;
+        private static IServiceProvider _cachedLogProvider = null;
+        private static LogHelper _cachedLog = null;
+
         // Profit Trailer data accessor object
         public ProfitTrailerData PtDataObject
         {
@@ -60,35 +72,89 @@ namespace Monitor._Internal
             }
         }
 
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            if (!path.EndsWith(Path.DirectorySeparatorChar))
+            {
+                path += Path.DirectorySeparatorChar;
+            }
+
+            return path;
+        }
+
+        private void LoadSharedMonitorInfrastructure()
+        {
+            lock (_monitorInfrastructureLock)
+            {
+                if (String.IsNullOrEmpty(_cachedMonitorBasePath))
+                {
+                    string monitorBasePath = Directory.GetCurrentDirectory();
+                    if (!System.IO.File.Exists(monitorBasePath + Path.DirectorySeparatorChar + "appsettings.json"))
+                    {
+                        monitorBasePath += Path.DirectorySeparatorChar + "Monitor";
+                    }
+
+                    _cachedMonitorBasePath = EnsureTrailingDirectorySeparator(monitorBasePath);
+                }
+
+                string appSettingsPath = _cachedMonitorBasePath + "appsettings.json";
+                DateTime appSettingsLastWriteUtc = System.IO.File.GetLastWriteTimeUtc(appSettingsPath);
+                bool basePathChanged = false;
+
+                if (String.IsNullOrEmpty(_cachedPTMagicBasePath) || appSettingsLastWriteUtc != _cachedAppSettingsLastWriteUtc)
+                {
+                    IConfiguration config = new ConfigurationBuilder()
+                        .SetBasePath(_cachedMonitorBasePath)
+                        .AddJsonFile("appsettings.json", false)
+                        .Build();
+
+                    string configuredPTMagicBasePath = EnsureTrailingDirectorySeparator(config.GetValue<string>("PTMagicBasePath"));
+                    basePathChanged = !String.Equals(_cachedPTMagicBasePath, configuredPTMagicBasePath, StringComparison.Ordinal);
+                    _cachedPTMagicBasePath = configuredPTMagicBasePath;
+                    _cachedAppSettingsLastWriteUtc = appSettingsLastWriteUtc;
+                }
+
+                string generalSettingsPath = _cachedPTMagicBasePath + "settings.general.json";
+                string analyzerSettingsPath = _cachedPTMagicBasePath + "settings.analyzer.json";
+                string secureSettingsPath = _cachedPTMagicBasePath + "settings.secure.json";
+                string nlogConfigPath = _cachedPTMagicBasePath + "nlog.config";
+
+                DateTime generalSettingsLastWriteUtc = System.IO.File.GetLastWriteTimeUtc(generalSettingsPath);
+                DateTime analyzerSettingsLastWriteUtc = System.IO.File.GetLastWriteTimeUtc(analyzerSettingsPath);
+                DateTime secureSettingsLastWriteUtc = System.IO.File.Exists(secureSettingsPath)
+                    ? System.IO.File.GetLastWriteTimeUtc(secureSettingsPath)
+                    : DateTime.MinValue;
+
+                if (basePathChanged
+                    || _cachedPTMagicConfiguration == null
+                    || generalSettingsLastWriteUtc != _cachedGeneralSettingsLastWriteUtc
+                    || analyzerSettingsLastWriteUtc != _cachedAnalyzerSettingsLastWriteUtc
+                    || secureSettingsLastWriteUtc != _cachedSecureSettingsLastWriteUtc)
+                {
+                    _cachedPTMagicConfiguration = new PTMagicConfiguration(_cachedPTMagicBasePath);
+                    _cachedGeneralSettingsLastWriteUtc = generalSettingsLastWriteUtc;
+                    _cachedAnalyzerSettingsLastWriteUtc = analyzerSettingsLastWriteUtc;
+                    _cachedSecureSettingsLastWriteUtc = secureSettingsLastWriteUtc;
+                }
+
+                DateTime nlogConfigLastWriteUtc = System.IO.File.GetLastWriteTimeUtc(nlogConfigPath);
+                if (basePathChanged || _cachedLog == null || nlogConfigLastWriteUtc != _cachedNLogConfigLastWriteUtc)
+                {
+                    _cachedLogProvider = ServiceHelper.BuildLoggerService(_cachedPTMagicBasePath);
+                    _cachedLog = _cachedLogProvider.GetRequiredService<LogHelper>();
+                    _cachedNLogConfigLastWriteUtc = nlogConfigLastWriteUtc;
+                }
+
+                PTMagicMonitorBasePath = _cachedMonitorBasePath;
+                PTMagicBasePath = _cachedPTMagicBasePath;
+                PTMagicConfiguration = _cachedPTMagicConfiguration;
+                Log = _cachedLog;
+            }
+        }
+
         public void PreInit()
         {
-            PTMagicMonitorBasePath = Directory.GetCurrentDirectory();
-            if (!System.IO.File.Exists(PTMagicMonitorBasePath + Path.DirectorySeparatorChar + "appsettings.json"))
-            {
-                PTMagicMonitorBasePath += Path.DirectorySeparatorChar + "Monitor";
-            }
-
-            if (!PTMagicMonitorBasePath.EndsWith(Path.DirectorySeparatorChar))
-            {
-                PTMagicMonitorBasePath += Path.DirectorySeparatorChar;
-            }
-
-            IConfiguration config = new ConfigurationBuilder()
-                      .SetBasePath(PTMagicMonitorBasePath)
-                      .AddJsonFile("appsettings.json", false)
-                      .Build();
-
-            PTMagicBasePath = config.GetValue<string>("PTMagicBasePath");
-
-            if (!PTMagicBasePath.EndsWith(Path.DirectorySeparatorChar))
-            {
-                PTMagicBasePath += Path.DirectorySeparatorChar;
-            }
-
-            PTMagicConfiguration = new PTMagicConfiguration(PTMagicBasePath);
-
-            IServiceProvider logProvider = ServiceHelper.BuildLoggerService(PTMagicBasePath);
-            Log = logProvider.GetRequiredService<LogHelper>();
+            LoadSharedMonitorInfrastructure();
 
             bool exitLoop = false;
 
