@@ -19,6 +19,14 @@ namespace Core.MarketAnalyzer
   {
     private const int MaxHttpRetries = 3;
     private static readonly HttpClient HttpClient = CreateHttpClient();
+    private static readonly object MarketDataFileIndexLock = new object();
+    private static readonly Dictionary<string, MarketDataFileIndexEntry> MarketDataFileIndexes = new Dictionary<string, MarketDataFileIndexEntry>(StringComparer.OrdinalIgnoreCase);
+
+    private sealed class MarketDataFileIndexEntry
+    {
+      public DateTime DirectoryLastWriteTimeUtc { get; set; }
+      public List<FileInfo> Files { get; set; }
+    }
 
     private static HttpClient CreateHttpClient()
     {
@@ -425,36 +433,73 @@ namespace Core.MarketAnalyzer
       FileHelper.WriteTextToFile(Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + Constants.PTMagicPathData + Path.DirectorySeparatorChar + Constants.PTMagicPathExchange + Path.DirectorySeparatorChar, "MarketInfo.json", JsonConvert.SerializeObject(marketInfos));
     }
 
+    private static List<FileInfo> GetMarketDataFileIndex(string platform)
+    {
+      string dataDirectoryPath = Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + Constants.PTMagicPathData + Path.DirectorySeparatorChar + platform + Path.DirectorySeparatorChar;
+      DateTime directoryLastWriteTimeUtc = Directory.GetLastWriteTimeUtc(dataDirectoryPath);
+
+      lock (MarketDataFileIndexLock)
+      {
+        if (MarketDataFileIndexes.TryGetValue(platform, out MarketDataFileIndexEntry cachedIndex)
+          && cachedIndex.DirectoryLastWriteTimeUtc == directoryLastWriteTimeUtc)
+        {
+          return cachedIndex.Files;
+        }
+      }
+
+      DirectoryInfo dataDirectory = new DirectoryInfo(dataDirectoryPath);
+      List<FileInfo> marketFiles = dataDirectory.EnumerateFiles("MarketData*")
+        .Select(x => { x.Refresh(); return x; })
+        .ToList();
+
+      lock (MarketDataFileIndexLock)
+      {
+        MarketDataFileIndexes[platform] = new MarketDataFileIndexEntry
+        {
+          DirectoryLastWriteTimeUtc = directoryLastWriteTimeUtc,
+          Files = marketFiles
+        };
+      }
+
+      return marketFiles;
+    }
+
     public static Dictionary<string, Market> GetMarketDataFromFile(PTMagicConfiguration systemConfiguration, LogHelper log, string platform, DateTime maxDateTime, string marketCaption)
     {
       Dictionary<string, Market> result = new Dictionary<string, Market>();
-      DirectoryInfo dataDirectory = new DirectoryInfo(Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + Constants.PTMagicPathData + Path.DirectorySeparatorChar + platform + Path.DirectorySeparatorChar);
+      List<FileInfo> marketFiles = GetMarketDataFileIndex(platform);
 
-      // Get market files older than max datetime in descending order (newest file up top)
-      List<FileInfo> marketFiles = dataDirectory.EnumerateFiles("MarketData*")
-                         .Select(x => { x.Refresh(); return x; })
-                         .Where(x => x.LastWriteTimeUtc <= maxDateTime)
-                         .ToArray().OrderByDescending(f => f.LastWriteTimeUtc).ToList();
-
+      // Find the newest market file at or before max datetime.
       FileInfo marketFile = null;
-      if (marketFiles.Count > 0)
+      foreach (FileInfo candidate in marketFiles)
       {
-        marketFile = marketFiles.First();
+        if (candidate.LastWriteTimeUtc <= maxDateTime
+          && (marketFile == null || candidate.LastWriteTimeUtc > marketFile.LastWriteTimeUtc))
+        {
+          marketFile = candidate;
+        }
+      }
 
+      if (marketFile != null)
+      {
         log.DoLogDebug(platform + " - " + marketCaption + " market data loaded (" + marketFile.LastWriteTimeUtc.ToString() + ")");
       }
       else
       {
         log.DoLogDebug(platform + " - Not able to load " + marketCaption + " market data. Loading next youngest market file instead.");
 
-        // Get market files younger than max datetime in ascending order (oldest file up top)
-        marketFiles = dataDirectory.EnumerateFiles("MarketData*")
-                       .Select(x => { x.Refresh(); return x; })
-                       .Where(x => x.LastWriteTimeUtc >= maxDateTime)
-                       .ToArray().OrderBy(f => f.LastWriteTimeUtc).ToList();
-        if (marketFiles.Count > 0)
+        // If no older file exists, find the oldest market file after max datetime.
+        foreach (FileInfo candidate in marketFiles)
         {
-          marketFile = marketFiles.First();
+          if (candidate.LastWriteTimeUtc >= maxDateTime
+            && (marketFile == null || candidate.LastWriteTimeUtc < marketFile.LastWriteTimeUtc))
+          {
+            marketFile = candidate;
+          }
+        }
+
+        if (marketFile != null)
+        {
           log.DoLogDebug(platform + " - " + marketCaption + " market data loaded (" + marketFile.LastWriteTimeUtc.ToString() + ")");
         }
       }
