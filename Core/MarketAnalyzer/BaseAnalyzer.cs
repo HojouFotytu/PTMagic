@@ -525,6 +525,39 @@ namespace Core.MarketAnalyzer
       List<MarketTrendChange> result = new List<MarketTrendChange>();
       bool useBinanceFuturesAnalyzerUniverse = platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase)
         && systemConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase);
+      string exchange = systemConfiguration.GeneralSettings.Application.Exchange.ToLower();
+
+      bool excludeMainCurrency = systemConfiguration.AnalyzerSettings.MarketAnalyzer.ExcludeMainCurrency;
+      if (!marketTrend.ExcludeMainCurrency)
+      {
+        excludeMainCurrency = marketTrend.ExcludeMainCurrency;
+      }
+
+      string ignored = marketTrend.IgnoredMarkets.ToUpper();
+      ignored = ignored.Replace(mainMarket, "");
+      switch (exchange)
+      {
+        case "bittrex":
+          ignored = ignored.Replace("-", "");
+          break;
+        case "poloniex":
+          ignored = ignored.Replace("_", "");
+          break;
+      }
+      List<string> ignoredMarkets = SystemHelper.ConvertTokenStringToList(ignored, ",");
+
+      string allowed = marketTrend.AllowedMarkets.ToUpper();
+      allowed = allowed.Replace(mainMarket, "");
+      switch (exchange)
+      {
+        case "bittrex":
+          allowed = allowed.Replace("-", "");
+          break;
+        case "poloniex":
+          allowed = allowed.Replace("_", "");
+          break;
+      }
+      List<string> allowedMarkets = SystemHelper.ConvertTokenStringToList(allowed, ",");
 
       SortedDictionary<string, Market> markets = new SortedDictionary<string, Market>(recentMarkets);
       IEnumerable<KeyValuePair<string, Market>> sortedMarkets;
@@ -552,12 +585,6 @@ namespace Core.MarketAnalyzer
           && BinanceFuturesMarketUniverse.IsMarketIncluded(recentMarketPair.Key, systemConfiguration);
         if (isTradingMarket || isAnalyzerMarket)
         {
-          bool excludeMainCurrency = systemConfiguration.AnalyzerSettings.MarketAnalyzer.ExcludeMainCurrency;
-          if (!marketTrend.ExcludeMainCurrency)
-          {
-            excludeMainCurrency = marketTrend.ExcludeMainCurrency;
-          }
-
           if (platform.Equals("CoinMarketCap", StringComparison.InvariantCulture) && excludeMainCurrency)
           {
             // Check if this is the main currency (only for CoinMarketCap)
@@ -571,49 +598,22 @@ namespace Core.MarketAnalyzer
 
           Market recentMarket;
           string market = recentMarketPair.Value.Symbol.Replace(mainMarket, "");
-          string exchange = systemConfiguration.GeneralSettings.Application.Exchange.ToLower();
           switch (exchange)
-            {
-              case "bittrex":
+          {
+            case "bittrex":
               market = market.Replace("-", "");
               break;
-              case "poloniex":
+            case "poloniex":
               market = market.Replace("_", "");
               break;
-            }
+          }
           if (recentMarkets.TryGetValue(recentMarketPair.Key, out recentMarket))
           {
-            // Strip main markets from lists, if exists
-            string ignored = marketTrend.IgnoredMarkets.ToUpper();
-            ignored = ignored.Replace(mainMarket, "");
-            switch (exchange)
-            {
-              case "bittrex":
-              ignored = ignored.Replace("-", "");
-              break;
-              case "poloniex":
-              ignored = ignored.Replace("_", "");
-              break;
-            }
-            List<string> ignoredMarkets = SystemHelper.ConvertTokenStringToList(ignored, ",");
             if (ignoredMarkets.Contains(market))
             {
               log.DoLogDebug(platform + " - Market trend '" + marketTrend.Name + "' for '" + recentMarketPair.Key + "' is ignored in this trend.");
               continue;
             }
-            // Strip main markets from lists, if exists
-            string allowed = marketTrend.AllowedMarkets.ToUpper();
-            allowed = allowed.Replace(mainMarket, "");
-            switch (exchange)
-            {
-              case "bittrex":
-              allowed = allowed.Replace("-", "");
-              break;
-              case "poloniex":
-              allowed = allowed.Replace("_", "");
-              break;
-            }
-            List<string> allowedMarkets = SystemHelper.ConvertTokenStringToList(allowed, ",");
             if (allowedMarkets.Count > 0 && !allowedMarkets.Contains(market))
             {
               log.DoLogDebug(platform + " - Market trend '" + marketTrend.Name + "' for '" + recentMarketPair.Key + "' is not allowed in this trend.");
