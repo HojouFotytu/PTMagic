@@ -741,7 +741,7 @@ namespace Core.Main
           }
           else
           {
-            this.Log.DoLogInfo("No CoinMarketCap API KEY specified! That's ok, but no CMC Data can be pulled.");
+            this.Log.DoLogInfo("No CoinMarketCap API KEY specified! That's ok, but you can't use CoinMarketCap in your settings.analyzer.json");
           }
 
         }
