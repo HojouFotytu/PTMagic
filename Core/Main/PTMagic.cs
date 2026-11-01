@@ -1572,8 +1572,8 @@ namespace Core.Main
         string mainMarket = this.LastRuntimeSummary.MainMarket;
         string exchange = this.PTMagicConfiguration.GeneralSettings.Application.Exchange.ToLower();
 
-        List<(SingleMarketSetting Setting, List<string> IgnoredMarkets, List<string> AllowedMarkets, List<string> IgnoredGlobalSettings, List<string> AllowedGlobalSettings)> marketSettingFilters =
-          new List<(SingleMarketSetting Setting, List<string> IgnoredMarkets, List<string> AllowedMarkets, List<string> IgnoredGlobalSettings, List<string> AllowedGlobalSettings)>();
+        List<(SingleMarketSetting Setting, HashSet<string> IgnoredMarkets, HashSet<string> AllowedMarkets, HashSet<string> IgnoredGlobalSettings, HashSet<string> AllowedGlobalSettings)> marketSettingFilters =
+          new List<(SingleMarketSetting Setting, HashSet<string> IgnoredMarkets, HashSet<string> AllowedMarkets, HashSet<string> IgnoredGlobalSettings, HashSet<string> AllowedGlobalSettings)>();
 
         foreach (SingleMarketSetting marketSetting in this.PTMagicConfiguration.AnalyzerSettings.SingleMarketSettings)
         {
@@ -1603,10 +1603,10 @@ namespace Core.Main
 
           marketSettingFilters.Add((
             marketSetting,
-            SystemHelper.ConvertTokenStringToList(ignored, ","),
-            SystemHelper.ConvertTokenStringToList(allowed, ","),
-            SystemHelper.ConvertTokenStringToList(marketSetting.IgnoredGlobalSettings, ","),
-            SystemHelper.ConvertTokenStringToList(marketSetting.AllowedGlobalSettings, ",")));
+            new HashSet<string>(SystemHelper.ConvertTokenStringToList(ignored, ","), StringComparer.Ordinal),
+            new HashSet<string>(SystemHelper.ConvertTokenStringToList(allowed, ","), StringComparer.Ordinal),
+            new HashSet<string>(SystemHelper.ConvertTokenStringToList(marketSetting.IgnoredGlobalSettings, ","), StringComparer.Ordinal),
+            new HashSet<string>(SystemHelper.ConvertTokenStringToList(marketSetting.AllowedGlobalSettings, ","), StringComparer.Ordinal)));
         }
 
         // Loop through markets
