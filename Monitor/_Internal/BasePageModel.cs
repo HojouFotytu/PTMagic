@@ -30,19 +30,29 @@ namespace Monitor._Internal
         public string NotifyType = "";
 
         public string MainFiatCurrencySymbol = "$";
-        private volatile object _ptDataLock = new object();
+        private static readonly object _ptDataLock = new object();
         private static ProfitTrailerData _ptData = null;
+        private static DateTime _ptDataGeneralSettingsLastWriteUtc = DateTime.MinValue;
 
         // Profit Trailer data accessor object
         public ProfitTrailerData PtDataObject
         {
             get
             {
-                if (_ptData == null)
+                string generalSettingsPath = PTMagicBasePath + "settings.general.json";
+                DateTime generalSettingsLastWriteUtc = System.IO.File.GetLastWriteTimeUtc(generalSettingsPath);
+
+                if (_ptData == null || generalSettingsLastWriteUtc != _ptDataGeneralSettingsLastWriteUtc)
                 {
                     lock (_ptDataLock)
                     {
-                        _ptData = new ProfitTrailerData(PTMagicConfiguration);
+                        generalSettingsLastWriteUtc = System.IO.File.GetLastWriteTimeUtc(generalSettingsPath);
+
+                        if (_ptData == null || generalSettingsLastWriteUtc != _ptDataGeneralSettingsLastWriteUtc)
+                        {
+                            _ptData = new ProfitTrailerData(PTMagicConfiguration);
+                            _ptDataGeneralSettingsLastWriteUtc = generalSettingsLastWriteUtc;
+                        }
                     }
                 }
 
