@@ -21,6 +21,8 @@ namespace Core.MarketAnalyzer
     private static readonly SemaphoreSlim RefreshLock = new SemaphoreSlim(1, 1);
     private static readonly object MetadataLock = new object();
     private static readonly object UnderlyingTypesLock = new object();
+    private static readonly object EligibilityCacheLock = new object();
+    private static readonly Dictionary<string, bool> RaidEligibilityCache = new Dictionary<string, bool>(StringComparer.InvariantCultureIgnoreCase);
     private static Dictionary<string, BinanceFuturesMarketMetadata> _metadata = new Dictionary<string, BinanceFuturesMarketMetadata>(StringComparer.InvariantCultureIgnoreCase);
     private static DateTime _lastRefreshUtc = Constants.confMinDate;
     private static bool _metadataFileLoaded = false;
@@ -41,6 +43,23 @@ namespace Core.MarketAnalyzer
       "PREMARKET",
       "FX"
     };
+
+    public static void BeginRaidEligibilityCache()
+    {
+      lock (EligibilityCacheLock)
+      {
+        RaidEligibilityCache.Clear();
+      }
+    }
+
+    private static bool CacheEligibilityResult(string symbol, bool result)
+    {
+      lock (EligibilityCacheLock)
+      {
+        RaidEligibilityCache[symbol] = result;
+      }
+      return result;
+    }
 
     public static async Task RefreshAsync(string apiBase, LogHelper log, CancellationToken cancellationToken = default)
     {
@@ -211,6 +230,14 @@ namespace Core.MarketAnalyzer
         return false;
       }
 
+      lock (EligibilityCacheLock)
+      {
+        if (RaidEligibilityCache.TryGetValue(symbol, out bool cachedResult))
+        {
+          return cachedResult;
+        }
+      }
+
       EnsureMetadataLoaded();
 
       BinanceFuturesMarketMetadata metadata;
@@ -220,13 +247,13 @@ namespace Core.MarketAnalyzer
         {
           // Fail closed: an explicit analyzer universe should never silently admit an
           // unclassified Binance Futures symbol.
-          return false;
+          return CacheEligibilityResult(symbol, false);
         }
       }
 
       if (String.IsNullOrWhiteSpace(metadata.UnderlyingType))
       {
-        return false;
+        return CacheEligibilityResult(symbol, false);
       }
 
       Core.Main.DataObjects.PTMagicData.MarketAnalyzer settings = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer;
@@ -243,7 +270,7 @@ namespace Core.MarketAnalyzer
             // ProfitTrailer treats a present-but-blank allowed_underlying_type as unrestricted.
             if (_profitTrailerAllowedUnderlyingTypes.Count == 0)
             {
-              return true;
+              return CacheEligibilityResult(symbol, true);
             }
 
             includedTypes = new List<string>(_profitTrailerAllowedUnderlyingTypes);
@@ -259,10 +286,10 @@ namespace Core.MarketAnalyzer
       // Missing, null, or empty means no underlying-type restriction.
       if (includedTypes == null || includedTypes.Count == 0)
       {
-        return true;
+        return CacheEligibilityResult(symbol, true);
       }
 
-      return includedTypes.Any(type => type.Equals(metadata.UnderlyingType, StringComparison.InvariantCultureIgnoreCase));
+      return CacheEligibilityResult(symbol, includedTypes.Any(type => type.Equals(metadata.UnderlyingType, StringComparison.InvariantCultureIgnoreCase)));
     }
 
     public static List<string> FilterMarketNames(IEnumerable<string> markets, PTMagicConfiguration systemConfiguration)
