@@ -1294,8 +1294,7 @@ namespace Core.Main
     private void ValidateMarketList()
     {
       // Check if markets are valid for the selected main market
-      List<string> validMarkets = this.MarketList.FindAll(m => m.IndexOf(this.LastRuntimeSummary.MainMarket, StringComparison.InvariantCultureIgnoreCase) > -1);
-      if (validMarkets.Count == 0)
+      if (!this.MarketList.Any(m => m.IndexOf(this.LastRuntimeSummary.MainMarket, StringComparison.InvariantCultureIgnoreCase) > -1))
       {
         Exception ex = new Exception("No valid pairs found for main market '" + this.LastRuntimeSummary.MainMarket + "' in configured pars list (" + SystemHelper.ConvertListToTokenString(this.MarketList, ",", true) + ")! Terminating process...");
         Log.DoLogError(ex.Message);
@@ -1725,7 +1724,6 @@ namespace Core.Main
                       if (this.SingleMarketTrendChanges.ContainsKey(offTrigger.MarketTrendName))
                       {
                         List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[offTrigger.MarketTrendName];
-                        List<MarketTrend> marketTrends = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends;
 
                         if (marketTrendChanges.Count > 0)
                         {
@@ -1737,12 +1735,9 @@ namespace Core.Main
                           // Calculate average market change, skip any that are outside the threshold if enabled
                           if (trendThreshold.TrendThreshold != 0)
                           {
-                            var includedMarkets = from m in marketTrendChanges
-                                                  where m.TrendChange <= trendThreshold.TrendThreshold && m.TrendChange >= (trendThreshold.TrendThreshold * -1.0)
-                                                  orderby m.Market
-                                                  select m;
-
-                            averageMarketTrendChange = includedMarkets.Average(m => m.TrendChange);
+                            averageMarketTrendChange = marketTrendChanges
+                              .Where(m => m.TrendChange <= trendThreshold.TrendThreshold && m.TrendChange >= (trendThreshold.TrendThreshold * -1.0))
+                              .Average(m => m.TrendChange);
                           }
                           else
                           {
@@ -1804,10 +1799,10 @@ namespace Core.Main
                   switch (marketSetting.OffTriggerConnection.ToLower())
                   {
                     case "and":
-                      settingOffTriggered = offTriggerResults.FindAll(tr => tr == false).Count == 0;
+                      settingOffTriggered = offTriggerResults.All(tr => tr);
                       break;
                     case "or":
-                      settingOffTriggered = offTriggerResults.FindAll(tr => tr == true).Count > 0;
+                      settingOffTriggered = offTriggerResults.Any(tr => tr);
                       break;
                   }
 
@@ -1950,12 +1945,9 @@ namespace Core.Main
                       // Calculate average market change, skip any that are outside the threshold if enabled
                       if (trendThreshold.TrendThreshold != 0)
                       {
-                        var includedMarkets = from m in marketTrendChanges
-                                              where m.TrendChange <= trendThreshold.TrendThreshold && m.TrendChange >= (trendThreshold.TrendThreshold * -1.0)
-                                              orderby m.Market
-                                              select m;
-
-                        averageMarketTrendChange = includedMarkets.Average(m => m.TrendChange);
+                        averageMarketTrendChange = marketTrendChanges
+                          .Where(m => m.TrendChange <= trendThreshold.TrendThreshold && m.TrendChange >= (trendThreshold.TrendThreshold * -1.0))
+                          .Average(m => m.TrendChange);
                       }
                       else
                       {
@@ -2048,10 +2040,10 @@ namespace Core.Main
                   switch (marketSetting.TriggerConnection.ToLower())
                   {
                       case "and":
-                          settingTriggered = triggerResults.FindAll(tr => tr == false).Count == 0;
+                          settingTriggered = triggerResults.All(tr => tr);
                           break;
                       case "or":
-                          settingTriggered = triggerResults.FindAll(tr => tr == true).Count > 0;
+                          settingTriggered = triggerResults.Any(tr => tr);
                           break;
                   }
               }
