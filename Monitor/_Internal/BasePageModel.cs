@@ -46,6 +46,11 @@ namespace Monitor._Internal
         private static IServiceProvider _cachedLogProvider = null;
         private static LogHelper _cachedLog = null;
 
+        private static readonly object _runtimeSummaryLock = new object();
+        private static Summary _cachedRuntimeSummary = null;
+        private static string _cachedRuntimeSummaryPath = null;
+        private static DateTime _cachedRuntimeSummaryLastWriteUtc = DateTime.MinValue;
+
         // Profit Trailer data accessor object
         public ProfitTrailerData PtDataObject
         {
@@ -152,26 +157,53 @@ namespace Monitor._Internal
             }
         }
 
+        private Summary LoadRuntimeSummary()
+        {
+            string summaryPath = PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "LastRuntimeSummary.json";
+
+            lock (_runtimeSummaryLock)
+            {
+                while (true)
+                {
+                    DateTime lastWriteBeforeReadUtc = System.IO.File.GetLastWriteTimeUtc(summaryPath);
+
+                    if (_cachedRuntimeSummary != null
+                        && String.Equals(_cachedRuntimeSummaryPath, summaryPath, StringComparison.Ordinal)
+                        && lastWriteBeforeReadUtc == _cachedRuntimeSummaryLastWriteUtc)
+                    {
+                        return _cachedRuntimeSummary;
+                    }
+
+                    try
+                    {
+                        string summaryJson = System.IO.File.ReadAllText(summaryPath);
+                        DateTime lastWriteAfterReadUtc = System.IO.File.GetLastWriteTimeUtc(summaryPath);
+
+                        if (lastWriteBeforeReadUtc != lastWriteAfterReadUtc)
+                        {
+                            Thread.Sleep(250);
+                            continue;
+                        }
+
+                        Summary runtimeSummary = JsonConvert.DeserializeObject<Summary>(summaryJson);
+                        _cachedRuntimeSummary = runtimeSummary;
+                        _cachedRuntimeSummaryPath = summaryPath;
+                        _cachedRuntimeSummaryLastWriteUtc = lastWriteAfterReadUtc;
+                        return runtimeSummary;
+                    }
+                    catch (IOException)
+                    {
+                        // Preserve the existing retry behavior when PTMagic is writing the summary file.
+                        Thread.Sleep(250);
+                    }
+                }
+            }
+        }
+
         public void PreInit()
         {
             LoadSharedMonitorInfrastructure();
-
-            bool exitLoop = false;
-
-            while (!exitLoop)
-            {
-                try
-                {
-                    // Try to read the current runtime summary, but may be being written, so retry if necessary.
-                    Summary = JsonConvert.DeserializeObject<Summary>(System.IO.File.ReadAllText(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "LastRuntimeSummary.json"));
-                    exitLoop = true;
-                }
-                catch (IOException)
-                {
-                    // Squash exception and try again, as file was locked.
-                    Thread.Sleep(250);
-                }
-            }
+            Summary = LoadRuntimeSummary();
 
             if (Summary.CurrentGlobalSetting == null) Summary.CurrentGlobalSetting = PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(s => s.SettingName.IndexOf("default", StringComparison.InvariantCultureIgnoreCase) > -1);
 
