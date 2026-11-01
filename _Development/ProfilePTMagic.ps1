@@ -18,13 +18,13 @@ function Get-DurationArgument([int]$Seconds) {
 function Ensure-DotNetTrace {
     $traceCommand = Get-Command "dotnet-trace" -ErrorAction SilentlyContinue
     if ($null -ne $traceCommand) {
-        return $traceCommand.Source
+        return [string]$traceCommand.Source
     }
 
     Write-Host "dotnet-trace was not found. Installing the latest global tool..."
-    & dotnet tool install --global dotnet-trace
+    $installOutput = @(& dotnet tool install --global dotnet-trace 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Unable to install dotnet-trace."
+        throw "Unable to install dotnet-trace.`n$($installOutput -join [Environment]::NewLine)"
     }
 
     $globalToolsPath = Join-Path $env:USERPROFILE ".dotnet\tools"
@@ -32,12 +32,17 @@ function Ensure-DotNetTrace {
         $env:PATH = "$env:PATH;$globalToolsPath"
     }
 
-    $traceCommand = Get-Command "dotnet-trace" -ErrorAction SilentlyContinue
-    if ($null -eq $traceCommand) {
-        throw "dotnet-trace was installed but could not be found on PATH. Expected path: $globalToolsPath"
+    $traceExe = Join-Path $globalToolsPath "dotnet-trace.exe"
+    if (Test-Path $traceExe) {
+        return [string]$traceExe
     }
 
-    return $traceCommand.Source
+    $traceCommand = Get-Command "dotnet-trace" -ErrorAction SilentlyContinue
+    if ($null -eq $traceCommand) {
+        throw "dotnet-trace was installed but could not be found. Expected path: $traceExe"
+    }
+
+    return [string]$traceCommand.Source
 }
 
 function Find-PTMagicProcessId([string]$DotNetTracePath) {
@@ -46,20 +51,20 @@ function Find-PTMagicProcessId([string]$DotNetTracePath) {
         throw "dotnet-trace ps failed.`n$($processList -join [Environment]::NewLine)"
     }
 
-    $matches = @()
+    $processMatches = @()
     foreach ($line in $processList) {
         if ($line -match "PTMagic(\.dll|\.exe)?" -and $line -match "^\s*(\d+)") {
-            $matches += [PSCustomObject]@{
+            $processMatches += [PSCustomObject]@{
                 ProcessId = [int]$Matches[1]
                 Line = $line
             }
         }
     }
 
-    if ($matches.Count -eq 1) {
-        Write-Host "Automatically selected PTMagic process $($matches[0].ProcessId):"
-        Write-Host "  $($matches[0].Line)"
-        return $matches[0].ProcessId
+    if ($processMatches.Count -eq 1) {
+        Write-Host "Automatically selected PTMagic process $($processMatches[0].ProcessId):"
+        Write-Host "  $($processMatches[0].Line)"
+        return $processMatches[0].ProcessId
     }
 
     Write-Host ""
@@ -67,16 +72,16 @@ function Find-PTMagicProcessId([string]$DotNetTracePath) {
     $processList | ForEach-Object { Write-Host $_ }
     Write-Host ""
 
-    if ($matches.Count -eq 0) {
+    if ($processMatches.Count -eq 0) {
         throw "No PTMagic process was found automatically. Run this script again with -ProcessId <PID>."
     }
 
     Write-Host "Multiple PTMagic processes were found:"
-    $matches | ForEach-Object { Write-Host "  $($_.Line)" }
+    $processMatches | ForEach-Object { Write-Host "  $($_.Line)" }
     throw "Run this script again with -ProcessId <PID> for the instance you want to profile."
 }
 
-$dotNetTrace = Ensure-DotNetTrace
+$dotNetTrace = [string](Ensure-DotNetTrace)
 
 if ($ProcessId -eq 0) {
     $ProcessId = Find-PTMagicProcessId $dotNetTrace
