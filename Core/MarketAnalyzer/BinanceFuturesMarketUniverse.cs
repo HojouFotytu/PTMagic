@@ -23,6 +23,7 @@ namespace Core.MarketAnalyzer
     private static readonly object UnderlyingTypesLock = new object();
     private static readonly object EligibilityCacheLock = new object();
     private static readonly Dictionary<string, bool> RaidEligibilityCache = new Dictionary<string, bool>(StringComparer.InvariantCultureIgnoreCase);
+    private static HashSet<string> _raidAnalyzerUniverse = null;
     private static Dictionary<string, BinanceFuturesMarketMetadata> _metadata = new Dictionary<string, BinanceFuturesMarketMetadata>(StringComparer.InvariantCultureIgnoreCase);
     private static DateTime _lastRefreshUtc = Constants.confMinDate;
     private static bool _metadataFileLoaded = false;
@@ -50,6 +51,7 @@ namespace Core.MarketAnalyzer
       {
         RaidEligibilityCache.Clear();
       }
+      Volatile.Write(ref _raidAnalyzerUniverse, null);
     }
 
     private static bool CacheEligibilityResult(string symbol, bool result)
@@ -59,6 +61,55 @@ namespace Core.MarketAnalyzer
         RaidEligibilityCache[symbol] = result;
       }
       return result;
+    }
+
+    private static void BuildRaidAnalyzerUniverse(PTMagicConfiguration systemConfiguration)
+    {
+      EnsureMetadataLoaded();
+
+      Core.Main.DataObjects.PTMagicData.MarketAnalyzer settings = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer;
+      List<string> includedTypes = null;
+
+      if (settings?.UseProfitTrailerAllowedUnderlyingTypes == true)
+      {
+        RefreshEffectiveUnderlyingTypesFromFile();
+
+        lock (UnderlyingTypesLock)
+        {
+          if (_profitTrailerAllowedUnderlyingTypes != null)
+          {
+            includedTypes = new List<string>(_profitTrailerAllowedUnderlyingTypes);
+          }
+        }
+      }
+
+      if (includedTypes == null)
+      {
+        includedTypes = settings?.IncludedUnderlyingTypes;
+      }
+
+      HashSet<string> includedTypeSet = includedTypes == null || includedTypes.Count == 0
+        ? null
+        : new HashSet<string>(includedTypes, StringComparer.InvariantCultureIgnoreCase);
+      HashSet<string> analyzerUniverse = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
+
+      lock (MetadataLock)
+      {
+        foreach (KeyValuePair<string, BinanceFuturesMarketMetadata> market in _metadata)
+        {
+          if (market.Value == null || String.IsNullOrWhiteSpace(market.Value.UnderlyingType))
+          {
+            continue;
+          }
+
+          if (includedTypeSet == null || includedTypeSet.Contains(market.Value.UnderlyingType))
+          {
+            analyzerUniverse.Add(market.Key);
+          }
+        }
+      }
+
+      Volatile.Write(ref _raidAnalyzerUniverse, analyzerUniverse);
     }
 
     public static async Task RefreshAsync(string apiBase, LogHelper log, CancellationToken cancellationToken = default)
@@ -150,6 +201,7 @@ namespace Core.MarketAnalyzer
           _profitTrailerAllowedUnderlyingTypesConfiguredInProcess = false;
         }
         ClearEffectiveUnderlyingTypesFile(log);
+        BuildRaidAnalyzerUniverse(systemConfiguration);
         return;
       }
 
@@ -162,6 +214,7 @@ namespace Core.MarketAnalyzer
         }
         ClearEffectiveUnderlyingTypesFile(log);
         log.DoLogWarn("BinanceFutures - UseProfitTrailerAllowedUnderlyingTypes is enabled, but allowed_underlying_type was not found in the active PAIRS settings. Falling back to IncludedUnderlyingTypes.");
+        BuildRaidAnalyzerUniverse(systemConfiguration);
         return;
       }
 
@@ -188,6 +241,8 @@ namespace Core.MarketAnalyzer
       {
         log.DoLogInfo("BinanceFutures - Using ProfitTrailer allowed_underlying_type for analyzer universe: " + String.Join(", ", configuredTypes) + ".");
       }
+
+      BuildRaidAnalyzerUniverse(systemConfiguration);
     }
 
     private static bool TryGetProfitTrailerAllowedUnderlyingType(List<string> pairsLines, out string rawValue)
@@ -230,6 +285,12 @@ namespace Core.MarketAnalyzer
       if (String.IsNullOrWhiteSpace(symbol))
       {
         return false;
+      }
+
+      HashSet<string> analyzerUniverse = Volatile.Read(ref _raidAnalyzerUniverse);
+      if (analyzerUniverse != null)
+      {
+        return analyzerUniverse.Contains(symbol);
       }
 
       lock (EligibilityCacheLock)
