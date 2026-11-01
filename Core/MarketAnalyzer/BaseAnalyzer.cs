@@ -561,21 +561,20 @@ namespace Core.MarketAnalyzer
       HashSet<string> tradingMarkets = new HashSet<string>(marketList, StringComparer.Ordinal);
       bool useAllTradingMarkets = marketList.Count == 0;
 
-      SortedDictionary<string, Market> markets = new SortedDictionary<string, Market>(recentMarkets);
       IEnumerable<KeyValuePair<string, Market>> sortedMarkets;
       if (useBinanceFuturesAnalyzerUniverse)
       {
-        sortedMarkets = markets
+        sortedMarkets = recentMarkets
           .OrderByDescending(m => BinanceFuturesMarketUniverse.IsMarketIncluded(m.Key, systemConfiguration))
           .ThenByDescending(m => m.Value.Volume24h);
       }
       else if (sortBy.Equals("Volume"))
       {
-        sortedMarkets = markets.OrderByDescending(m => m.Value.Volume24h);
+        sortedMarkets = recentMarkets.OrderByDescending(m => m.Value.Volume24h);
       }
       else
       {
-        sortedMarkets = markets.OrderBy(m => m.Value.Position);
+        sortedMarkets = recentMarkets.OrderBy(m => m.Value.Position);
       }
 
       int marketCount = 1;
