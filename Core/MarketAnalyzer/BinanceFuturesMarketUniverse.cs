@@ -139,6 +139,8 @@ namespace Core.MarketAnalyzer
 
     public static void ConfigureProfitTrailerAllowedUnderlyingTypes(List<string> pairsLines, PTMagicConfiguration systemConfiguration, LogHelper log)
     {
+      BeginRaidEligibilityCache();
+
       Core.Main.DataObjects.PTMagicData.MarketAnalyzer settings = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer;
       if (settings?.UseProfitTrailerAllowedUnderlyingTypes != true)
       {
