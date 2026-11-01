@@ -544,7 +544,7 @@ namespace Core.MarketAnalyzer
           ignored = ignored.Replace("_", "");
           break;
       }
-      List<string> ignoredMarkets = SystemHelper.ConvertTokenStringToList(ignored, ",");
+      HashSet<string> ignoredMarkets = new HashSet<string>(SystemHelper.ConvertTokenStringToList(ignored, ","), StringComparer.Ordinal);
 
       string allowed = marketTrend.AllowedMarkets.ToUpper();
       allowed = allowed.Replace(mainMarket, "");
@@ -557,7 +557,9 @@ namespace Core.MarketAnalyzer
           allowed = allowed.Replace("_", "");
           break;
       }
-      List<string> allowedMarkets = SystemHelper.ConvertTokenStringToList(allowed, ",");
+      HashSet<string> allowedMarkets = new HashSet<string>(SystemHelper.ConvertTokenStringToList(allowed, ","), StringComparer.Ordinal);
+      HashSet<string> tradingMarkets = new HashSet<string>(marketList, StringComparer.Ordinal);
+      bool useAllTradingMarkets = marketList.Count == 0;
 
       SortedDictionary<string, Market> markets = new SortedDictionary<string, Market>(recentMarkets);
       IEnumerable<KeyValuePair<string, Market>> sortedMarkets;
@@ -579,7 +581,7 @@ namespace Core.MarketAnalyzer
       int marketCount = 1;
       foreach (KeyValuePair<string, Market> recentMarketPair in sortedMarkets)
       {
-        bool isTradingMarket = marketList.Count == 0 || marketList.Contains(recentMarketPair.Key);
+        bool isTradingMarket = useAllTradingMarkets || tradingMarkets.Contains(recentMarketPair.Key);
         bool isAnalyzerMarket = useBinanceFuturesAnalyzerUniverse
           && !systemConfiguration.AnalyzerSettings.MarketAnalyzer.UseProfitTrailerEnabledPairs
           && BinanceFuturesMarketUniverse.IsMarketIncluded(recentMarketPair.Key, systemConfiguration);
