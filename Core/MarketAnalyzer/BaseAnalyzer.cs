@@ -21,6 +21,7 @@ namespace Core.MarketAnalyzer
     private static readonly HttpClient HttpClient = CreateHttpClient();
     private static readonly object MarketDataFileIndexLock = new object();
     private static readonly Dictionary<string, MarketDataFileIndexEntry> MarketDataFileIndexes = new Dictionary<string, MarketDataFileIndexEntry>(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, Dictionary<string, Dictionary<string, Market>>> MarketDataSnapshotCaches = new Dictionary<string, Dictionary<string, Dictionary<string, Market>>>(StringComparer.OrdinalIgnoreCase);
 
     private sealed class MarketDataFileIndexEntry
     {
@@ -459,6 +460,7 @@ namespace Core.MarketAnalyzer
           DirectoryLastWriteTimeUtc = directoryLastWriteTimeUtc,
           Files = marketFiles
         };
+        MarketDataSnapshotCaches.Remove(platform);
       }
 
       return marketFiles;
@@ -505,8 +507,30 @@ namespace Core.MarketAnalyzer
       }
       try
       {
+        string snapshotKey = marketFile.FullName;
+        lock (MarketDataFileIndexLock)
+        {
+          if (MarketDataSnapshotCaches.TryGetValue(platform, out Dictionary<string, Dictionary<string, Market>> platformCache)
+            && platformCache.TryGetValue(snapshotKey, out Dictionary<string, Market> cachedSnapshot))
+          {
+            return cachedSnapshot;
+          }
+        }
+
         // Get JSON object
         result = JsonConvert.DeserializeObject<Dictionary<string, Market>>(marketFile.OpenText().ReadToEnd());
+        if (result != null)
+        {
+          lock (MarketDataFileIndexLock)
+          {
+            if (!MarketDataSnapshotCaches.TryGetValue(platform, out Dictionary<string, Dictionary<string, Market>> platformCache))
+            {
+              platformCache = new Dictionary<string, Dictionary<string, Market>>(StringComparer.OrdinalIgnoreCase);
+              MarketDataSnapshotCaches[platform] = platformCache;
+            }
+            platformCache[snapshotKey] = result;
+          }
+        }
       }
       catch (Exception ex)
       {
