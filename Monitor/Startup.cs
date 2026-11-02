@@ -5,11 +5,13 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Core.Main;
 using Core.Helper;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using Monitor._Internal;
 
 namespace Monitor
 {
@@ -47,6 +49,8 @@ namespace Monitor
       services.AddMvc(option => option.EnableEndpointRouting = false);
       services.AddAntiforgery(o => o.HeaderName = "XSRF-TOKEN");
       services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+      services.AddSingleton<LiveTcvService>(serviceProvider => new LiveTcvService(ptMagicBasePath, serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<LiveTcvService>>()));
+      services.AddSingleton<IHostedService>(serviceProvider => serviceProvider.GetRequiredService<LiveTcvService>());
       services.AddDistributedMemoryCache();
       services.AddSession(options =>
       {
