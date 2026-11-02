@@ -61,6 +61,51 @@ function cleanupOrphanedTooltips() {
   });
 }
 
+function ensurePersistentTooltip(element) {
+  var $element = $(element);
+  var tooltip = $element.data('bs.tooltip');
+
+  if (!tooltip || tooltip.config.trigger !== 'manual') {
+    if (tooltip) {
+      $element.tooltip('dispose');
+    }
+
+    $element.tooltip({
+      trigger: 'manual',
+      delay: 0
+    });
+  }
+}
+
+if ($.fn.tooltip && $.fn.tooltip.Constructor && $.fn.tooltip.Constructor.Default) {
+  $.fn.tooltip.Constructor.Default.trigger = 'manual';
+  $.fn.tooltip.Constructor.Default.delay = 0;
+}
+
+$(document)
+  .on('mouseenter', '[data-toggle="tooltip"]', function () {
+    ensurePersistentTooltip(this);
+    $(this).data('ptmagic-tooltip-hover', true).tooltip('show');
+  })
+  .on('mouseleave', '[data-toggle="tooltip"]', function () {
+    $(this).data('ptmagic-tooltip-hover', false);
+
+    if (!$(this).data('ptmagic-tooltip-focus')) {
+      $(this).tooltip('hide');
+    }
+  })
+  .on('focusin', '[data-toggle="tooltip"]', function () {
+    ensurePersistentTooltip(this);
+    $(this).data('ptmagic-tooltip-focus', true).tooltip('show');
+  })
+  .on('focusout', '[data-toggle="tooltip"]', function () {
+    $(this).data('ptmagic-tooltip-focus', false);
+
+    if (!$(this).data('ptmagic-tooltip-hover')) {
+      $(this).tooltip('hide');
+    }
+  });
+
 $.fn.autocolor = function (isSawTableCell = false) {
   return this.each(function (index) {
     var element = $(this);
