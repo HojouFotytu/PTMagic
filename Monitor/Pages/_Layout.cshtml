@@ -172,7 +172,7 @@
     var tickerTimer = null;
     var tickerRequestRunning = false;
     var tickerRefreshMilliseconds = 3000;
-    var analyzerLastRuntime = null;
+    var analyzerLastRuntime = '@Model.Summary.LastRuntime.ToUniversalTime().Ticks';
     var refreshMarketAnalyzerOnNextRun = window.location.pathname.toLowerCase().endsWith('/marketanalyzer') || window.location.pathname.toLowerCase().endsWith('/marketanalyzer/');
 
     var scheduleWidgets = function () {
@@ -207,18 +207,16 @@
         } else {
           errCount["TickerWidgets"] = 0;
           initializeMonitorTooltips(document.getElementById('ticker-widgets'));
+          $('.text-autocolor').autocolor(false);
+          $('.text-autocolor-saw').autocolor(true);
 
           if (refreshMarketAnalyzerOnNextRun) {
             var runtimeElement = document.querySelector('#ticker-widgets [data-analyzer-last-runtime]');
             var currentAnalyzerRuntime = runtimeElement ? runtimeElement.getAttribute('data-analyzer-last-runtime') : null;
 
-            if (currentAnalyzerRuntime) {
-              if (analyzerLastRuntime === null) {
-                analyzerLastRuntime = currentAnalyzerRuntime;
-              } else if (currentAnalyzerRuntime !== analyzerLastRuntime) {
-                window.location.reload();
-                return;
-              }
+            if (currentAnalyzerRuntime && currentAnalyzerRuntime !== analyzerLastRuntime) {
+              window.location.reload();
+              return;
             }
           }
         }
