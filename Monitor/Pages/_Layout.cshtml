@@ -1,4 +1,39 @@
 ﻿@{
+  Core.Main.DataObjects.PTMagicData.Summary initialSummary = Model.Summary;
+  string displayVersion = Convert.ToString(Model.CurrentBotVersion);
+  if (String.IsNullOrWhiteSpace(displayVersion))
+  {
+    displayVersion = initialSummary.Version;
+  }
+
+  int initialActiveSingleSettings = 0;
+  if (initialSummary.MarketSummary != null)
+  {
+    foreach (Core.Main.DataObjects.PTMagicData.MarketPairSummary marketSummary in initialSummary.MarketSummary.Values)
+    {
+      if (marketSummary.ActiveSingleSettings != null && marketSummary.ActiveSingleSettings.Count > 0)
+      {
+        initialActiveSingleSettings++;
+      }
+    }
+  }
+
+  string initialGlobalSettingName = initialSummary.CurrentGlobalSetting != null
+    ? Core.Helper.SystemHelper.SplitCamelCase(initialSummary.CurrentGlobalSetting.SettingName)
+    : "Default";
+
+  string initialHealthIconColor = "text-success";
+  string initialHealthIcon = "fa-heartbeat";
+  if (initialSummary.LastRuntime != Core.Main.Constants.confMinDate)
+  {
+    double initialIntervalSeconds = Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.IntervalMinutes * 60.0;
+    if (DateTime.UtcNow.Subtract(initialSummary.LastRuntime).TotalSeconds > initialIntervalSeconds * 2)
+    {
+      initialHealthIconColor = "text-danger";
+      initialHealthIcon = "fa-exclamation-triangle";
+    }
+  }
+
   string initialSalesDataVersion = "";
   string requestPath = Context.Request.Path.Value ?? "";
   if (requestPath.TrimEnd('/').EndsWith("/SalesAnalyzer", StringComparison.OrdinalIgnoreCase) && Model is Monitor.Pages.SalesAnalyzer salesAnalyzerModel)
@@ -22,7 +57,7 @@
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/css/bootstrap.min.css" rel="stylesheet" type="text/css" />
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/css/icons.css" rel="stylesheet" type="text/css" />
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/css/style.css" rel="stylesheet" type="text/css" />
-  <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/css/custom.css?v=@Html.Raw(Model.CurrentBotVersion)-tooltips2" rel="stylesheet" type="text/css" />
+  <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/css/custom.css?v=@Html.Raw(displayVersion)-tooltips2" rel="stylesheet" type="text/css" />
 
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/modernizr.min.js"></script>
 </head>
@@ -38,8 +73,8 @@
         <div class="logo">
           <a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)" class="logo"><i class="fa fa-magic text-ptmagic"></i> <span class="text-ptmagic">PTMagic</span></a>
           <span class="logo-version">
-            v<span>@Model.CurrentBotVersion</span>
-            @if (!Core.Helper.SystemHelper.IsRecentVersion(Model.CurrentBotVersion, Model.LatestVersion)) {
+            v<span>@displayVersion</span>
+            @if (!Core.Helper.SystemHelper.IsRecentVersion(displayVersion, Model.LatestVersion)) {
               <a href="https://github.com/PTMagicians/PTMagic/releases" target="_blank"><i class="fa fa-exclamation-triangle text-warning" data-toggle="tooltip" data-placement="top" title="Your PT Magic is out of date. Click here to get to the latest release."></i></a>
             } else {
               <i class="fa fa-check text-success" data-toggle="tooltip" data-placement="top" title="Your PT Magic is up to date."></i>
@@ -50,7 +85,17 @@
 
         <div class="menu-extras topbar-custom">
           <ul class="list-inline float-left mb-0">
-            <li id="ticker-widgets" class="list-inline-item ticker-widgets"></li>
+            <li id="ticker-widgets" class="list-inline-item ticker-widgets">
+              <div class="card-box card-box-mini card-box-ptmagic-outlined text-success">
+                <span data-toggle="tooltip" data-placement="bottom" title="Active global setting">@initialGlobalSettingName</span>
+              </div>
+              <div class="card-box card-box-mini card-box-ptmagic-outlined">
+                <span data-toggle="tooltip" data-placement="bottom" title="Active single market settings"><b>SMS: </b></span><span class="header-title"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)ManageSMS">@initialActiveSingleSettings</a></span>
+              </div>
+              <div class="card-box card-box-mini card-box-ptmagic-status-outlined @initialHealthIconColor" data-toggle="tooltip" data-placement="bottom" title="PTMagic analyzer status">
+                <i class="fa @initialHealthIcon @initialHealthIconColor"></i>
+              </div>
+            </li>
           </ul>
 
           <ul class="list-inline float-right pt-2">
@@ -168,7 +213,7 @@
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/bootstrap.min.js"></script>
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.slimscroll.js"></script>
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.scrollTo.min.js"></script>
-  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/custom.js?v=@Html.Raw(Model.CurrentBotVersion)-tooltips2"></script>
+  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/custom.js?v=@Html.Raw(displayVersion)-tooltips2"></script>
 
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/notifyjs/js/notify.js"></script>
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/notifications/notify-metro.js"></script>
@@ -269,8 +314,8 @@
     });
   </script>
 
-  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.core.js?v=@Html.Raw(Model.CurrentBotVersion)"></script>
-  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.app.js?v=@Html.Raw(Model.CurrentBotVersion)"></script>
+  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.core.js?v=@Html.Raw(displayVersion)"></script>
+  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.app.js?v=@Html.Raw(displayVersion)"></script>
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/circlos.js"></script>
 </body>
 </html>
