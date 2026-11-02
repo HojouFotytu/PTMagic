@@ -90,7 +90,7 @@
           errCountBuyList["BuyList"] = 0;
         }
         $("#buylist-refresh-icon").html('');
-        $('[role="tooltip"]').remove();
+        cleanupOrphanedTooltips();
         $('[data-toggle="tooltip"]').tooltip();
         $('.text-autocolor').autocolor(false);
 
