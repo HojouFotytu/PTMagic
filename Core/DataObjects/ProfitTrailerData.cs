@@ -89,8 +89,8 @@ namespace Core.Main.DataObjects
 
     public void DoLog(string message)
     {
+        // Implement your logging logic here
         Console.WriteLine(message);
-        NLog.LogManager.GetCurrentClassLogger().Info(message);
     }
     // Constructor
     public ProfitTrailerData(PTMagicConfiguration systemConfiguration)
@@ -736,7 +736,6 @@ namespace Core.Main.DataObjects
           {
             string statsUrl = BuildProfitTrailerUrl(callPath);
             Debug.WriteLine(String.Format("{0} - Calling ProfitTrailer '{1}'", DateTime.UtcNow, callPath));
-            DoLog("Requesting ProfitTrailer '/api/v2/data/stats' (stats cache refresh).");
 
             _statsResponseBytes = await SharedHttpClient.GetByteArrayAsync(statsUrl, cancellationToken).ConfigureAwait(false);
             _statsResponseRefresh = DateTime.UtcNow.AddSeconds(_systemConfiguration.GeneralSettings.Monitor.DashboardChartsRefreshSeconds - 1);
