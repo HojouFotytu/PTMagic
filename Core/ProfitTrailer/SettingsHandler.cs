@@ -335,6 +335,12 @@ namespace Core.ProfitTrailer
     {
       try
       {
+        // Keep persisted SMS state aligned with the settings that are actually active this raid.
+        ptmagicInstance.SingleMarketSettingSummaries.RemoveAll(summary =>
+          summary == null || summary.SingleMarketSetting == null ||
+          !ptmagicInstance.TriggeredSingleMarketSettings.TryGetValue(summary.Market, out List<SingleMarketSetting> triggeredSettings) ||
+          !triggeredSettings.Any(setting => setting.SettingName.Equals(summary.SingleMarketSetting.SettingName, StringComparison.InvariantCultureIgnoreCase)));
+
         List<KeyValuePair<string, string>> smsApplied = new List<KeyValuePair<string, string>>();
         List<string> globalPairsLines = new List<string>();
         List<string> globalDCALines = new List<string>();
@@ -588,6 +594,7 @@ namespace Core.ProfitTrailer
         ptmagicInstance.PairsLines = cleanedUpPairsLines;
         ptmagicInstance.DCALines = cleanedUpDCALines;
         ptmagicInstance.IndicatorsLines = cleanedUpIndicatorsLines;
+        ptmagicInstance.SingleMarketSettingSummaries.Clear();
 
         result = removedPairsSingleMarketSettings && removedDCASingleMarketSettings && removedIndicatorsSingleMarketSettings;
       }
