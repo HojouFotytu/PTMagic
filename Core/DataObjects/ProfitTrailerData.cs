@@ -67,6 +67,9 @@ namespace Core.Main.DataObjects
     private volatile object _propertiesLock = new object();  
     private volatile object _profitablePairsLock = new object(); 
     private volatile object _dailyStatsLock = new object();    
+    private readonly SemaphoreSlim _statsResponseSemaphore = new SemaphoreSlim(1, 1);
+    private byte[] _statsResponseBytes = null;
+    private DateTime _statsResponseRefresh = DateTime.MinValue;
     private TimeSpan? _offsetTimeSpan = null;
 
     private static HttpClient CreateHttpClient()
@@ -724,6 +727,28 @@ namespace Core.Main.DataObjects
 
     private async Task<Stream> GetDataFromProfitTrailerAsStreamAsync(string callPath, CancellationToken cancellationToken = default)
     {
+      if (callPath.Equals("/api/v2/data/stats", StringComparison.Ordinal))
+      {
+        await _statsResponseSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+          if (_statsResponseBytes == null || DateTime.UtcNow > _statsResponseRefresh)
+          {
+            string statsUrl = BuildProfitTrailerUrl(callPath);
+            Debug.WriteLine(String.Format("{0} - Calling ProfitTrailer '{1}'", DateTime.UtcNow, callPath));
+
+            _statsResponseBytes = await SharedHttpClient.GetByteArrayAsync(statsUrl, cancellationToken).ConfigureAwait(false);
+            _statsResponseRefresh = DateTime.UtcNow.AddSeconds(_systemConfiguration.GeneralSettings.Monitor.DashboardChartsRefreshSeconds - 1);
+          }
+
+          return new MemoryStream(_statsResponseBytes, writable: false);
+        }
+        finally
+        {
+          _statsResponseSemaphore.Release();
+        }
+      }
+
       string url = BuildProfitTrailerUrl(callPath);
       Debug.WriteLine(String.Format("{0} - Calling ProfitTrailer '{1}'", DateTime.UtcNow, callPath));
 
