@@ -63,7 +63,7 @@
       $("#dashboardTop").load('@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)_get/DashboardTop', '', function (responseText, textStatus, XMLHttpRequest) {
         $("#baglist-refresh-icon").html('');
         $("#buylist-refresh-icon").html('');
-        $('[role="tooltip"]').remove();
+        cleanupOrphanedTooltips();
         $('[data-toggle="tooltip"]').tooltip();
         $('.text-autocolor').autocolor(false);
 
