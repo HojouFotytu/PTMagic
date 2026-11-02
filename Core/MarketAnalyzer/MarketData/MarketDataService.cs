@@ -72,6 +72,20 @@ namespace Core.MarketAnalyzer.MarketData
         string symbol = distinctSymbols[index];
         int requestedCandleCount = GetRequiredCandleCount(symbol, interval, targetHistoryCandles, refreshStartedUtc);
 
+        if (requestedCandleCount == 0)
+        {
+          statuses[index] = new MarketDataRefreshStatus
+          {
+            Symbol = symbol,
+            RefreshedAtUtc = refreshStartedUtc,
+            RequestedCandleCount = 0,
+            ReceivedCandleCount = 0,
+            Succeeded = true,
+            Skipped = true
+          };
+          return;
+        }
+
         try
         {
           List<MarketCandle> candles = await loader(symbol, requestedCandleCount, log, ct).ConfigureAwait(false);
@@ -92,6 +106,7 @@ namespace Core.MarketAnalyzer.MarketData
             RequestedCandleCount = requestedCandleCount,
             ReceivedCandleCount = matchingCandles.Count,
             Succeeded = matchingCandles.Count > 0,
+            Skipped = false,
             Error = matchingCandles.Count > 0 ? "" : "No matching candles were returned."
           };
         }
@@ -108,6 +123,7 @@ namespace Core.MarketAnalyzer.MarketData
             RequestedCandleCount = requestedCandleCount,
             ReceivedCandleCount = 0,
             Succeeded = false,
+            Skipped = false,
             Error = ex.Message
           };
 
@@ -125,14 +141,16 @@ namespace Core.MarketAnalyzer.MarketData
         return targetHistoryCandles;
       }
 
-      TimeSpan age = refreshStartedUtc - latestCandle.OpenTimeUtc;
-      if (age < TimeSpan.Zero)
+      // Binance includes the currently forming candle. If that cached candle has not yet
+      // reached its exchange close timestamp, there is nothing new to request.
+      if (latestCandle.CloseTimeUtc > refreshStartedUtc)
       {
-        return RefreshOverlapCandles;
+        return 0;
       }
 
-      int missingOrCurrentIntervals = (int)Math.Ceiling(age.TotalMilliseconds / interval.TotalMilliseconds) + 1;
-      int requested = missingOrCurrentIntervals + RefreshOverlapCandles;
+      TimeSpan ageSinceClose = refreshStartedUtc - latestCandle.CloseTimeUtc;
+      int missingIntervals = (int)Math.Floor(ageSinceClose.TotalMilliseconds / interval.TotalMilliseconds) + 1;
+      int requested = missingIntervals + RefreshOverlapCandles;
       return Math.Min(targetHistoryCandles, Math.Max(RefreshOverlapCandles, requested));
     }
   }
