@@ -25,7 +25,13 @@ namespace Core.MarketAnalyzer
       await BinanceFuturesMarketUniverse.RefreshAsync(ApiBase, log, cancellationToken).ConfigureAwait(false);
       BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
 
-      return await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken).ConfigureAwait(false);
+      List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken).ConfigureAwait(false);
+      if (markets != null)
+      {
+        await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
+      }
+
+      return markets;
     }
 
     public static Task<List<MarketCandle>> GetOneMinuteMarketCandlesAsync(string marketName, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
