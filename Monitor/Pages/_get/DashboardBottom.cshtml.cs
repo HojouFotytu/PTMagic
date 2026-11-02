@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Core.Main;
 using Core.Helper;
 using Core.Main.DataObjects;
@@ -27,9 +28,6 @@ namespace Monitor.Pages
     public string AssetDistributionData = "";
     public double totalCurrentValue = 0;
     public string TotalCurrentValueLiveChartDataJSON { get; set; }
-
-    private static readonly object totalCurrentValueLiveLock = new object();
-    private static readonly List<(DateTime Timestamp, double TotalCurrentValue)> totalCurrentValueLiveList = new List<(DateTime Timestamp, double TotalCurrentValue)>();
 
     public void OnGet()
     {
@@ -70,68 +68,18 @@ namespace Monitor.Pages
       BuildMarketTrendChartData();
       BuildAssetDistributionData();
       BuildProfitChartData();
-      UpdateTotalCurrentValueLive();
       BuildTotalCurrentValueLiveChartData();
-    }
-
-    private void UpdateTotalCurrentValueLive()
-    {
-      double PairsBalance = 0.0;
-      double DCABalance = 0.0;
-      double PendingBalance = 0.0;
-      double AvailableBalance = PTData.GetCurrentBalance();
-      bool isSellStrategyTrue = false;
-      bool isTrailingSellActive = false;
-
-      foreach (DCALogData dcaLogEntry in PTData.DCALog)
-      {
-        string sellStrategyText = Core.ProfitTrailer.StrategyHelper.GetStrategyText(Summary, dcaLogEntry.SellStrategies, dcaLogEntry.SellStrategy, isSellStrategyTrue, isTrailingSellActive);
-        // Aggregate totals
-        double leverage = dcaLogEntry.Leverage;
-        if (leverage == 0)
-        {
-          leverage = 1;
-        }
-        if (sellStrategyText.Contains("PENDING"))
-        {
-          PendingBalance = PendingBalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
-        }
-        else if (dcaLogEntry.BuyStrategies.Count > 0)
-        {
-          DCABalance = DCABalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
-        }
-        else
-        {
-          PairsBalance = PairsBalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
-        }
-      }
-      double totalCurrentValueLive = PendingBalance + DCABalance + PairsBalance + AvailableBalance;
-
-      DateTime now = DateTime.UtcNow;
-      DateTime threshold = now.AddMinutes(-PTMagicConfiguration.GeneralSettings.Monitor.LiveTCVTimeframeMinutes);
-
-      lock (totalCurrentValueLiveLock)
-      {
-        totalCurrentValueLiveList.Add((now, totalCurrentValueLive));
-
-        while (totalCurrentValueLiveList.Count > 0 && totalCurrentValueLiveList[0].Timestamp < threshold)
-        {
-          totalCurrentValueLiveList.RemoveAt(0);
-        }
-      }
     }
 
     private void BuildTotalCurrentValueLiveChartData()
     {
       List<object> TotalCurrentValueLivePerIntervalList = new List<object>();
+      _Internal.LiveTcvService liveTcvService = HttpContext.RequestServices.GetRequiredService<_Internal.LiveTcvService>();
 
-      lock (totalCurrentValueLiveLock)
+      foreach (var dataPoint in liveTcvService.GetSamplesSnapshot())
       {
-        foreach (var dataPoint in totalCurrentValueLiveList)
-        {
-          long unixTimestamp = new DateTimeOffset(dataPoint.Timestamp).ToUnixTimeMilliseconds();
-          TotalCurrentValueLivePerIntervalList.Add(new { x = unixTimestamp, y = dataPoint.TotalCurrentValue });
-        }
+        long unixTimestamp = new DateTimeOffset(dataPoint.Timestamp).ToUnixTimeMilliseconds();
+        TotalCurrentValueLivePerIntervalList.Add(new { x = unixTimestamp, y = dataPoint.TotalCurrentValue });
       }
 
       if (TotalCurrentValueLivePerIntervalList.Count > 0)
