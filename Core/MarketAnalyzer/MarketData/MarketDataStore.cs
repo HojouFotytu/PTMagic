@@ -79,6 +79,18 @@ namespace Core.MarketAnalyzer.MarketData
       return false;
     }
 
+    public bool TryGetLatestClosedCandle(string symbol, TimeSpan interval, out MarketCandle candle)
+    {
+      MarketSeriesKey key = new MarketSeriesKey(symbol, interval);
+      if (_series.TryGetValue(key, out SeriesBuffer buffer))
+      {
+        return buffer.TryGetLatestClosed(out candle);
+      }
+
+      candle = null;
+      return false;
+    }
+
     public IReadOnlyList<MarketSeriesKey> GetSeriesKeys()
     {
       return _series.Keys
@@ -183,6 +195,24 @@ namespace Core.MarketAnalyzer.MarketData
 
           candle = _candles.Values.Last();
           return true;
+        }
+      }
+
+      public bool TryGetLatestClosed(out MarketCandle candle)
+      {
+        lock (_sync)
+        {
+          foreach (MarketCandle candidate in _candles.Values.Reverse())
+          {
+            if (candidate.IsClosed)
+            {
+              candle = candidate;
+              return true;
+            }
+          }
+
+          candle = null;
+          return false;
         }
       }
     }
