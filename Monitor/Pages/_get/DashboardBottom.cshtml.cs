@@ -46,10 +46,6 @@ namespace Monitor.Pages
       MiscData = this.PTData.Misc;
       List<MonthlyStatsData> monthlyStatsData = this.PTData.MonthlyStats;
       List<DailyPNLData> dailyPNLData = this.PTData.DailyPNL;
-      
-
-      // Cleanup temp files
-      FileHelper.CleanupFilesMinutes(PTMagicMonitorBasePath + "wwwroot" + System.IO.Path.DirectorySeparatorChar + "assets" + System.IO.Path.DirectorySeparatorChar + "tmp" + System.IO.Path.DirectorySeparatorChar, 5);
 
       // Convert local offset time to UTC
       TimeSpan offsetTimeSpan = TimeSpan.Parse(MiscData.TimeZoneOffset.Replace("+", ""));
