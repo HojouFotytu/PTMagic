@@ -17,8 +17,19 @@ namespace Core.MarketAnalyzer.MarketData
   {
     private const int MaxKlinesPerRequest = 500;
     private static readonly TimeSpan OneMinuteInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan FiveMinuteInterval = TimeSpan.FromMinutes(5);
 
-    internal static async Task<List<MarketCandle>> GetOneMinuteCandlesAsync(string exchangeName, string apiBase, string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
+    internal static Task<List<MarketCandle>> GetOneMinuteCandlesAsync(string exchangeName, string apiBase, string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
+    {
+      return GetCandlesAsync(exchangeName, apiBase, symbol, "1m", OneMinuteInterval, candlesNeeded, log, cancellationToken);
+    }
+
+    internal static Task<List<MarketCandle>> GetFiveMinuteCandlesAsync(string exchangeName, string apiBase, string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
+    {
+      return GetCandlesAsync(exchangeName, apiBase, symbol, "5m", FiveMinuteInterval, candlesNeeded, log, cancellationToken);
+    }
+
+    private static async Task<List<MarketCandle>> GetCandlesAsync(string exchangeName, string apiBase, string symbol, string intervalName, TimeSpan interval, int candlesNeeded, LogHelper log, CancellationToken cancellationToken)
     {
       List<MarketCandle> result = new List<MarketCandle>();
       if (candlesNeeded <= 0)
@@ -39,16 +50,16 @@ namespace Core.MarketAnalyzer.MarketData
         cancellationToken.ThrowIfCancellationRequested();
 
         int requestLimit = Math.Min(MaxKlinesPerRequest, candlesNeeded - candlesFetched);
-        string url = apiBase + "/klines?interval=1m&symbol=" + symbol + "&endTime=" + endTimeMilliseconds.ToString() + "&limit=" + requestLimit.ToString();
+        string url = apiBase + "/klines?interval=" + intervalName + "&symbol=" + symbol + "&endTime=" + endTimeMilliseconds.ToString() + "&limit=" + requestLimit.ToString();
 
-        log.DoLogDebug(exchangeName + " - Getting " + requestLimit.ToString() + " normalized 1m candles for '" + symbol + "'...");
+        log.DoLogDebug(exchangeName + " - Getting " + requestLimit.ToString() + " normalized " + intervalName + " candles for '" + symbol + "'...");
         JArray jsonArray = await BaseAnalyzer.GetSimpleJsonArrayFromURLAsync(url, log, cancellationToken).ConfigureAwait(false);
         if (jsonArray == null || jsonArray.Count == 0)
         {
           break;
         }
 
-        List<MarketCandle> page = MapKlines(symbol, jsonArray, observedAtMilliseconds);
+        List<MarketCandle> page = MapKlines(symbol, interval, jsonArray, observedAtMilliseconds);
         if (page.Count == 0)
         {
           break;
@@ -79,7 +90,7 @@ namespace Core.MarketAnalyzer.MarketData
         .ToList();
     }
 
-    internal static List<MarketCandle> MapKlines(string symbol, JArray jsonArray, long observedAtMilliseconds)
+    internal static List<MarketCandle> MapKlines(string symbol, TimeSpan interval, JArray jsonArray, long observedAtMilliseconds)
     {
       List<MarketCandle> result = new List<MarketCandle>(jsonArray?.Count ?? 0);
       if (jsonArray == null)
@@ -100,7 +111,7 @@ namespace Core.MarketAnalyzer.MarketData
         result.Add(new MarketCandle
         {
           Symbol = symbol.Trim().ToUpperInvariant(),
-          Interval = OneMinuteInterval,
+          Interval = interval,
           OpenTimeUtc = DateTimeOffset.FromUnixTimeMilliseconds(openTimeMilliseconds),
           CloseTimeUtc = DateTimeOffset.FromUnixTimeMilliseconds(closeTimeMilliseconds),
           Open = kline[1].Value<double>(),
