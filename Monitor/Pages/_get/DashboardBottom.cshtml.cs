@@ -27,6 +27,10 @@ namespace Monitor.Pages
     public string AssetDistributionData = "";
     public double totalCurrentValue = 0;
     public string TotalCurrentValueLiveChartDataJSON { get; set; }
+
+    private static readonly object totalCurrentValueLiveLock = new object();
+    private static readonly List<(DateTime Timestamp, double TotalCurrentValue)> totalCurrentValueLiveList = new List<(DateTime Timestamp, double TotalCurrentValue)>();
+
     public void OnGet()
     {
       // Initialize Config
@@ -66,107 +70,81 @@ namespace Monitor.Pages
       BuildMarketTrendChartData();
       BuildAssetDistributionData();
       BuildProfitChartData();
-      StartUpdatingTotalCurrentValueLive();
       UpdateTotalCurrentValueLive();
       BuildTotalCurrentValueLiveChartData();
     }
-    private static System.Timers.Timer timer;
-    private static List<(DateTime Timestamp, double TotalCurrentValue)> totalCurrentValueLiveList;
 
-public void StartUpdatingTotalCurrentValueLive()
-{
-    int liveTCVInterval = PTMagicConfiguration.GeneralSettings.Monitor.DashboardChartsRefreshSeconds;
-    if (timer != null)
+    private void UpdateTotalCurrentValueLive()
     {
-        // Timer is already running
-        return;
-    }
+      double PairsBalance = 0.0;
+      double DCABalance = 0.0;
+      double PendingBalance = 0.0;
+      double AvailableBalance = PTData.GetCurrentBalance();
+      bool isSellStrategyTrue = false;
+      bool isTrailingSellActive = false;
 
-    totalCurrentValueLiveList = new List<(DateTime Timestamp, double TotalCurrentValueLive)>();
-
-    timer = new System.Timers.Timer(liveTCVInterval * 1000); // Set interval to liveTCVTimer seconds
-    timer.Elapsed += (sender, e) => UpdateTotalCurrentValueLive();
-    timer.Start();
-}
-
-private void UpdateTotalCurrentValueLive()
-{
-    double PairsBalance = 0.0;
-    double DCABalance = 0.0;
-    double PendingBalance = 0.0;
-    double AvailableBalance = PTData.GetCurrentBalance();
-    bool isSellStrategyTrue = false;
-    bool isTrailingSellActive = false;
-
-    foreach (DCALogData dcaLogEntry in PTData.DCALog)
-    {
+      foreach (DCALogData dcaLogEntry in PTData.DCALog)
+      {
         string sellStrategyText = Core.ProfitTrailer.StrategyHelper.GetStrategyText(Summary, dcaLogEntry.SellStrategies, dcaLogEntry.SellStrategy, isSellStrategyTrue, isTrailingSellActive);
         // Aggregate totals
         double leverage = dcaLogEntry.Leverage;
         if (leverage == 0)
         {
-            leverage = 1;
+          leverage = 1;
         }
         if (sellStrategyText.Contains("PENDING"))
         {
-            PendingBalance = PendingBalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
+          PendingBalance = PendingBalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
         }
         else if (dcaLogEntry.BuyStrategies.Count > 0)
         {
-            DCABalance = DCABalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
+          DCABalance = DCABalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
         }
         else
         {
-            PairsBalance = PairsBalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
+          PairsBalance = PairsBalance + (dcaLogEntry.Amount * dcaLogEntry.CurrentPrice / leverage);
         }
+      }
+      double totalCurrentValueLive = PendingBalance + DCABalance + PairsBalance + AvailableBalance;
+
+      DateTime now = DateTime.UtcNow;
+      DateTime threshold = now.AddMinutes(-PTMagicConfiguration.GeneralSettings.Monitor.LiveTCVTimeframeMinutes);
+
+      lock (totalCurrentValueLiveLock)
+      {
+        totalCurrentValueLiveList.Add((now, totalCurrentValueLive));
+
+        while (totalCurrentValueLiveList.Count > 0 && totalCurrentValueLiveList[0].Timestamp < threshold)
+        {
+          totalCurrentValueLiveList.RemoveAt(0);
+        }
+      }
     }
-    double totalCurrentValueLive = PendingBalance + DCABalance + PairsBalance + AvailableBalance;
 
-    // Get the current time
-    DateTime now = DateTime.UtcNow;
-    totalCurrentValueLiveList.Add((now, totalCurrentValueLive));
-    
-    // Get liveTCVTimeframe from PTMagicConfiguration.GeneralSettings.Monitor
-    int liveTCVTimeframe = PTMagicConfiguration.GeneralSettings.Monitor.LiveTCVTimeframeMinutes;
-
-    // Calculate the timestamp that is liveTCVTimeframe minutes ago
-    DateTime threshold = now.AddMinutes(-liveTCVTimeframe);
-
-    // Remove all data points that are older than the threshold
-    while (totalCurrentValueLiveList.Count > 0 && totalCurrentValueLiveList[0].Item1 < threshold)
+    private void BuildTotalCurrentValueLiveChartData()
     {
-        totalCurrentValueLiveList.RemoveAt(0);
-    }
-}
+      List<object> TotalCurrentValueLivePerIntervalList = new List<object>();
 
-private void BuildTotalCurrentValueLiveChartData()
-{
-    List<object> TotalCurrentValueLivePerIntervalList = new List<object>();
-
-    if (totalCurrentValueLiveList.Count > 0)
-    {
+      lock (totalCurrentValueLiveLock)
+      {
         foreach (var dataPoint in totalCurrentValueLiveList)
         {
-            DateTime timestamp = dataPoint.Timestamp;
-            double totalCurrentValueLive = dataPoint.TotalCurrentValue;
-
-            // Convert the timestamp to a Unix timestamp
-            long unixTimestamp = new DateTimeOffset(timestamp).ToUnixTimeMilliseconds();
-
-            // Add the data point to the list
-            TotalCurrentValueLivePerIntervalList.Add(new { x = unixTimestamp, y = totalCurrentValueLive });
+          long unixTimestamp = new DateTimeOffset(dataPoint.Timestamp).ToUnixTimeMilliseconds();
+          TotalCurrentValueLivePerIntervalList.Add(new { x = unixTimestamp, y = dataPoint.TotalCurrentValue });
         }
+      }
 
-        // Convert the list to a JSON string using Newtonsoft.Json
+      if (TotalCurrentValueLivePerIntervalList.Count > 0)
+      {
         TotalCurrentValueLiveChartDataJSON = Newtonsoft.Json.JsonConvert.SerializeObject(new[] {
-            new {
-                key = "Total Current Value",
-                color = Constants.ChartLineColors[1],
-                values = TotalCurrentValueLivePerIntervalList
-            }
+          new {
+            key = "Total Current Value",
+            color = Constants.ChartLineColors[1],
+            values = TotalCurrentValueLivePerIntervalList
+          }
         });
+      }
     }
-}
     
 
     private void BuildMarketTrendChartData()
