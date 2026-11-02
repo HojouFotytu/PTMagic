@@ -35,13 +35,25 @@ namespace Core.MarketAnalyzer.MarketData
 
       AnalyzerUniverseMarket[] normalizedMarkets = markets
         .Where(market => market != null && !String.IsNullOrWhiteSpace(market.Symbol))
-        .GroupBy(market => market.Symbol, StringComparer.OrdinalIgnoreCase)
+        .GroupBy(market => market.Symbol.Trim(), StringComparer.OrdinalIgnoreCase)
         .Select(group => group.Last())
+        .Select(market => new AnalyzerUniverseMarket
+        {
+          Symbol = market.Symbol.Trim().ToUpperInvariant(),
+          ContractType = (market.ContractType ?? "").Trim().ToUpperInvariant(),
+          UnderlyingType = (market.UnderlyingType ?? "").Trim().ToUpperInvariant(),
+          UnderlyingSubTypes = Array.AsReadOnly((market.UnderlyingSubTypes ?? Array.Empty<string>())
+            .Where(value => !String.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToArray())
+        })
         .OrderBy(market => market.Symbol, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
       Markets = new ReadOnlyCollection<AnalyzerUniverseMarket>(normalizedMarkets);
-      Symbols = new ReadOnlyCollection<string>(normalizedMarkets.Select(market => market.Symbol.Trim().ToUpperInvariant()).ToArray());
+      Symbols = new ReadOnlyCollection<string>(normalizedMarkets.Select(market => market.Symbol).ToArray());
     }
 
     public DateTimeOffset TimestampUtc { get; }
