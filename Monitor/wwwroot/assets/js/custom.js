@@ -87,7 +87,18 @@ function initializeMonitorTooltips(context) {
 }
 
 function isMonitorTooltipActive() {
-  return $('[data-toggle="tooltip"]:hover, [data-toggle="tooltip"]:focus').length > 0;
+  var activeElement = document.activeElement;
+  var tooltipTargets = document.querySelectorAll('[data-toggle="tooltip"]');
+
+  for (var i = 0; i < tooltipTargets.length; i++) {
+    var target = tooltipTargets[i];
+
+    if (target === activeElement || target.matches(':hover')) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 $.fn.autocolor = function (isSawTableCell = false) {
