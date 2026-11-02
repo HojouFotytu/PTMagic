@@ -7,6 +7,8 @@ namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
   /// Immutable read boundary for one normalized market time series.
+  /// Feature calculations should consume ClosedCandles rather than Candles unless
+  /// a calculation explicitly requires the currently forming candle.
   /// </summary>
   public sealed class MarketDataSeriesSnapshot
   {
@@ -18,16 +20,25 @@ namespace Core.MarketAnalyzer.MarketData
       MarketCandle[] orderedCandles = (candles ?? Enumerable.Empty<MarketCandle>())
         .OrderBy(candle => candle.OpenTimeUtc)
         .ToArray();
+      MarketCandle[] closedCandles = orderedCandles
+        .Where(candle => candle.IsClosed && candle.CloseTimeUtc <= AsOfUtc)
+        .ToArray();
 
       Candles = new ReadOnlyCollection<MarketCandle>(orderedCandles);
+      ClosedCandles = new ReadOnlyCollection<MarketCandle>(closedCandles);
       SampleCount = orderedCandles.Length;
+      ClosedSampleCount = closedCandles.Length;
       IsAvailable = SampleCount > 0;
+      HasClosedData = ClosedSampleCount > 0;
 
       if (!IsAvailable)
       {
         FirstOpenTimeUtc = null;
         LatestOpenTimeUtc = null;
         LatestCloseTimeUtc = null;
+        LatestClosedOpenTimeUtc = null;
+        LatestClosedCloseTimeUtc = null;
+        LatestClosedCandle = null;
         IsStale = true;
         MissingCandleCount = 0;
         HasDetectedGaps = false;
@@ -37,7 +48,21 @@ namespace Core.MarketAnalyzer.MarketData
       FirstOpenTimeUtc = orderedCandles[0].OpenTimeUtc;
       LatestOpenTimeUtc = orderedCandles[SampleCount - 1].OpenTimeUtc;
       LatestCloseTimeUtc = orderedCandles[SampleCount - 1].CloseTimeUtc;
-      IsStale = AsOfUtc - LatestCloseTimeUtc.Value > staleAfter;
+
+      if (HasClosedData)
+      {
+        LatestClosedCandle = closedCandles[ClosedSampleCount - 1];
+        LatestClosedOpenTimeUtc = LatestClosedCandle.OpenTimeUtc;
+        LatestClosedCloseTimeUtc = LatestClosedCandle.CloseTimeUtc;
+        IsStale = AsOfUtc - LatestClosedCloseTimeUtc.Value > staleAfter;
+      }
+      else
+      {
+        LatestClosedCandle = null;
+        LatestClosedOpenTimeUtc = null;
+        LatestClosedCloseTimeUtc = null;
+        IsStale = true;
+      }
 
       int missingCandleCount = 0;
       for (int index = 1; index < orderedCandles.Length; index++)
@@ -61,14 +86,26 @@ namespace Core.MarketAnalyzer.MarketData
     public string Symbol => Key.Symbol;
     public TimeSpan Interval => Key.Interval;
     public IReadOnlyList<MarketCandle> Candles { get; }
+    public IReadOnlyList<MarketCandle> ClosedCandles { get; }
     public DateTimeOffset AsOfUtc { get; }
     public int SampleCount { get; }
+    public int ClosedSampleCount { get; }
     public bool IsAvailable { get; }
+    public bool HasClosedData { get; }
     public bool IsStale { get; }
     public bool HasDetectedGaps { get; }
     public int MissingCandleCount { get; }
     public DateTimeOffset? FirstOpenTimeUtc { get; }
     public DateTimeOffset? LatestOpenTimeUtc { get; }
     public DateTimeOffset? LatestCloseTimeUtc { get; }
+    public DateTimeOffset? LatestClosedOpenTimeUtc { get; }
+    public DateTimeOffset? LatestClosedCloseTimeUtc { get; }
+    public MarketCandle LatestClosedCandle { get; }
+
+    public bool TryGetLatestClosedCandle(out MarketCandle candle)
+    {
+      candle = LatestClosedCandle;
+      return candle != null;
+    }
   }
 }
