@@ -10,16 +10,18 @@ namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
   /// Observation-only runtime for the Phase 1 Binance Futures analytics data foundation.
-  /// It maintains normalized 1-minute OHLCV history independently from the legacy
+  /// It maintains normalized 5-minute OHLCV history independently from the legacy
   /// MarketData_*.json trend pipeline.
   /// </summary>
   public static class BinanceFuturesAnalyticsRuntime
   {
-    private const int BootstrapHistoryCandles = 1500;
+    // 360 x 5m = 30 hours. This covers all initial Phase 1 return horizons through 24h
+    // plus headroom for ATRP and recent volume-expansion baselines.
+    private const int BootstrapHistoryCandles = 360;
     private const int RefreshConcurrency = 2;
-    private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
-    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(2000));
+    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(500));
     private static AnalyzerUniverseSnapshot _currentUniverse;
     private static IReadOnlyList<MarketDataRefreshStatus> _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
 
@@ -67,8 +69,6 @@ namespace Core.MarketAnalyzer.MarketData
       {
         // The exact PT-enabled population is not available until PTMagic has completed
         // BuildMarketList(). Do not create a falsely labelled analyzer universe here.
-        // The normalized pipeline remains observation-only and is skipped for this mode
-        // until the post-BuildMarketList freeze point is wired.
         lock (SnapshotLock)
         {
           _currentUniverse = null;
@@ -109,7 +109,7 @@ namespace Core.MarketAnalyzer.MarketData
         universe.Symbols,
         BaseInterval,
         BootstrapHistoryCandles,
-        BinanceFutures.GetOneMinuteMarketCandlesAsync,
+        BinanceFutures.GetFiveMinuteMarketCandlesAsync,
         log,
         RefreshConcurrency,
         cancellationToken).ConfigureAwait(false);
@@ -121,14 +121,24 @@ namespace Core.MarketAnalyzer.MarketData
         _lastRefreshStatuses = Array.AsReadOnly(statusSnapshot);
       }
 
-      int succeeded = statusSnapshot.Count(status => status != null && status.Succeeded);
-      int failed = statusSnapshot.Length - succeeded;
+      int skipped = statusSnapshot.Count(status => status != null && status.Skipped);
+      int refreshed = statusSnapshot.Count(status => status != null && status.Succeeded && !status.Skipped);
+      int failed = statusSnapshot.Count(status => status == null || !status.Succeeded);
       int receivedCandles = statusSnapshot.Where(status => status != null).Sum(status => status.ReceivedCandleCount);
 
-      log.DoLogInfo(
-        "BinanceFutures analytics - normalized 1m data refreshed for " + succeeded + "/" + universe.MarketCount +
-        " markets (" + receivedCandles + " candles received, " + failed + " failed). Store series: " +
-        DataServiceInstance.Store.SeriesCount + ".");
+      if (refreshed == 0 && failed == 0)
+      {
+        log.DoLogInfo(
+          "BinanceFutures analytics - normalized 5m data current; no kline requests required for " + skipped +
+          " markets. Store series: " + DataServiceInstance.Store.SeriesCount + ".");
+      }
+      else
+      {
+        log.DoLogInfo(
+          "BinanceFutures analytics - normalized 5m data refreshed for " + refreshed + "/" + universe.MarketCount +
+          " markets (" + receivedCandles + " candles received, " + skipped + " current/skipped, " + failed +
+          " failed). Store series: " + DataServiceInstance.Store.SeriesCount + ".");
+      }
     }
   }
 }
