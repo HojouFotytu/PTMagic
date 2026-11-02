@@ -39,6 +39,11 @@ namespace Core.MarketAnalyzer
       return BinanceKlineClient.GetOneMinuteCandlesAsync(ExchangeName, ApiBase, marketName, candlesNeeded, log, cancellationToken);
     }
 
+    public static Task<List<MarketCandle>> GetFiveMinuteMarketCandlesAsync(string marketName, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
+    {
+      return BinanceKlineClient.GetFiveMinuteCandlesAsync(ExchangeName, ApiBase, marketName, candlesNeeded, log, cancellationToken);
+    }
+
     public static Task CheckFirstSeenDatesAsync(Dictionary<string, Market> markets, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
       return BinanceAnalyzerCommon.CheckFirstSeenDatesAsync(ExchangeName, ApiBase, markets, marketInfos, systemConfiguration, log, cancellationToken);
