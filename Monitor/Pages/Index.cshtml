@@ -26,7 +26,6 @@
 
   <script type="text/javascript">
     var errCountIndex = [];
-    var counterIndex = [];
 
     var dashboardTopTimer = null;
     var dashboardBottomTimer = null;
@@ -91,22 +90,9 @@
       }
 
       dashboardBottomRequestRunning = true;
-      console.log(counterIndex["DashboardBottom"]);
 
-      // Destroy all d3 svg graph to avoid memory leak every 10 refreshes of Dashboard Bottom
-      if (counterIndex["DashboardBottom"] >= 10) {
-        $(".nvtooltip").remove();
-        $("svg > *").remove();
-        $("svg").remove();
-        $("svg").off(); // Remove all event listeners from SVG elements
-        nv.charts = {};
-        nv.graphs = [];
-        nv.logs = {};
-        nv.tooltip = {};
-        window.cleanupData();
-        // Reset the counter
-        counterIndex["DashboardBottom"] = 0;
-        console.log("d3 svg graph destroyed");
+      if (typeof window.cleanupDashboardBottomCharts === 'function') {
+        window.cleanupDashboardBottomCharts();
       }
 
       // Load dashboard
@@ -121,9 +107,6 @@
           return;
         } else {
           errCountIndex["DashboardBottom"] = 0;
-
-          // Increment the counter
-          counterIndex["DashboardBottom"] = (counterIndex["DashboardBottom"] || 0) + 1;
         }
 
         dashboardBottomRequestRunning = false;
