@@ -9,6 +9,7 @@ namespace Core.MarketAnalyzer.MarketData
     public int RequestedCandleCount { get; init; }
     public int ReceivedCandleCount { get; init; }
     public bool Succeeded { get; init; }
+    public bool Skipped { get; init; }
     public string Error { get; init; } = "";
   }
 }
