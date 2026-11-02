@@ -173,7 +173,8 @@
     var tickerRequestRunning = false;
     var tickerRefreshMilliseconds = 3000;
     var analyzerLastRuntime = '@Model.Summary.LastRuntime.ToUniversalTime().Ticks';
-    var refreshMarketAnalyzerOnNextRun = window.location.pathname.toLowerCase().endsWith('/marketanalyzer') || window.location.pathname.toLowerCase().endsWith('/marketanalyzer/');
+    var currentMonitorPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
+    var refreshOnNextAnalyzerRun = currentMonitorPath.endsWith('/marketanalyzer') || currentMonitorPath.endsWith('/managesms') || currentMonitorPath.endsWith('/statussummary');
 
     var scheduleWidgets = function () {
       clearTimeout(tickerTimer);
@@ -210,7 +211,7 @@
           $('.text-autocolor').autocolor(false);
           $('.text-autocolor-saw').autocolor(true);
 
-          if (refreshMarketAnalyzerOnNextRun) {
+          if (refreshOnNextAnalyzerRun) {
             var runtimeElement = document.querySelector('#ticker-widgets [data-analyzer-last-runtime]');
             var currentAnalyzerRuntime = runtimeElement ? runtimeElement.getAttribute('data-analyzer-last-runtime') : null;
 
