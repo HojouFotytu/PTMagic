@@ -3,15 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using Core.Main.DataObjects;
 using Core.Main.DataObjects.PTMagicData;
-using System.IO; 
-using Microsoft.AspNetCore.Hosting; 
+using System.IO;
+using Microsoft.AspNetCore.Hosting;
 using System.Threading;
 
 namespace Monitor.Pages {
   public class TickerWidgetsModel : _Internal.BasePageModelSecureAJAX {
     public ProfitTrailerData PTData = null;
     public List<string> MarketsWithSingleSettings = new List<string>();
-    private readonly IWebHostEnvironment _hostingEnvironment; 
+    public string SalesDataVersion = "";
+    private readonly IWebHostEnvironment _hostingEnvironment;
     private Mutex mutex = new Mutex(false, "analyzerStateMutex");
 
     public TickerWidgetsModel(IWebHostEnvironment hostingEnvironment) // Add this constructor
@@ -22,7 +23,7 @@ namespace Monitor.Pages {
     public void OnGet() {
       // Initialize Config
       base.Init();
-      
+
       BindData();
     }
     public bool IsAnalyzerRunning()
@@ -55,6 +56,8 @@ namespace Monitor.Pages {
 
     private void BindData() {
       PTData = this.PtDataObject;
+      SalesDataVersion = _Internal.SalesDataVersionHelper.GetVersion(PTData);
+
       // Get markets with active single settings
       var MarketsWithSingleSettingsData = from x in Summary.MarketSummary
                                           where x.Value.ActiveSingleSettings != null
@@ -71,7 +74,7 @@ namespace Monitor.Pages {
         }
         activeSettings = activeSettings.Substring(2); // Chop the unrequired comma
 
-        MarketsWithSingleSettings.Add(String.Format("{0} : {1}", market.Key, activeSettings));        
+        MarketsWithSingleSettings.Add(String.Format("{0} : {1}", market.Key, activeSettings));
       }
     }
   }
