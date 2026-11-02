@@ -36,6 +36,8 @@
   }
 }
 
+<span data-analyzer-last-runtime="@lastRuntime.ToUniversalTime().Ticks" style="display:none"></span>
+
 <div class="card-box card-box-mini card-box-ptmagic-outlined @globalIconColor">
    <span data-toggle="tooltip" data-placement="bottom" title="Active global setting">
    @Core.Helper.SystemHelper.SplitCamelCase(Model.Summary.CurrentGlobalSetting.SettingName)</span><span class = "header-title"><a href="StatusSummary">@Html.Raw(" " + globalSettingInfoIcon)</a></span>
