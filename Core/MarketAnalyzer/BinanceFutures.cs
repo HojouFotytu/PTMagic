@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Core.Helper;
 using Core.Main;
 using Core.Main.DataObjects.PTMagicData;
+using Core.MarketAnalyzer.MarketData;
 
 namespace Core.MarketAnalyzer
 {
@@ -25,6 +26,11 @@ namespace Core.MarketAnalyzer
       BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
 
       return await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static Task<List<MarketCandle>> GetOneMinuteMarketCandlesAsync(string marketName, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
+    {
+      return BinanceKlineClient.GetOneMinuteCandlesAsync(ExchangeName, ApiBase, marketName, candlesNeeded, log, cancellationToken);
     }
 
     public static Task CheckFirstSeenDatesAsync(Dictionary<string, Market> markets, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
