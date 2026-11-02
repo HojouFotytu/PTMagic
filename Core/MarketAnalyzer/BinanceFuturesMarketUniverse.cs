@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Core.Helper;
 using Core.Main;
 using Core.Main.DataObjects.PTMagicData;
+using Core.MarketAnalyzer.MarketData;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -202,6 +203,7 @@ namespace Core.MarketAnalyzer
         }
         ClearEffectiveUnderlyingTypesFile(log);
         BuildRaidAnalyzerUniverse(systemConfiguration);
+        FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
         return;
       }
 
@@ -215,6 +217,7 @@ namespace Core.MarketAnalyzer
         ClearEffectiveUnderlyingTypesFile(log);
         log.DoLogWarn("BinanceFutures - UseProfitTrailerAllowedUnderlyingTypes is enabled, but allowed_underlying_type was not found in the active PAIRS settings. Falling back to IncludedUnderlyingTypes.");
         BuildRaidAnalyzerUniverse(systemConfiguration);
+        FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
         return;
       }
 
@@ -243,6 +246,19 @@ namespace Core.MarketAnalyzer
       }
 
       BuildRaidAnalyzerUniverse(systemConfiguration);
+      FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
+    }
+
+    private static void FinalizeAnalyticsUniverse(List<string> pairsLines, PTMagicConfiguration systemConfiguration, LogHelper log)
+    {
+      try
+      {
+        BinanceFuturesAnalyticsRuntime.FreezeAnalyzerUniverse(pairsLines, systemConfiguration, log);
+      }
+      catch (Exception ex)
+      {
+        log.DoLogWarn("BinanceFutures analytics - unable to freeze analyzer universe; legacy analysis will continue. " + ex.Message);
+      }
     }
 
     private static bool TryGetProfitTrailerAllowedUnderlyingType(List<string> pairsLines, out string rawValue)
@@ -308,8 +324,6 @@ namespace Core.MarketAnalyzer
       {
         if (!_metadata.TryGetValue(symbol, out metadata))
         {
-          // Fail closed: an explicit analyzer universe should never silently admit an
-          // unclassified Binance Futures symbol.
           return CacheEligibilityResult(symbol, false);
         }
       }
@@ -330,7 +344,6 @@ namespace Core.MarketAnalyzer
         {
           if (_profitTrailerAllowedUnderlyingTypes != null)
           {
-            // ProfitTrailer treats a present-but-blank allowed_underlying_type as unrestricted.
             if (_profitTrailerAllowedUnderlyingTypes.Count == 0)
             {
               return CacheEligibilityResult(symbol, true);
@@ -346,7 +359,6 @@ namespace Core.MarketAnalyzer
         includedTypes = settings?.IncludedUnderlyingTypes;
       }
 
-      // Missing, null, or empty means no underlying-type restriction.
       if (includedTypes == null || includedTypes.Count == 0)
       {
         return CacheEligibilityResult(symbol, true);
@@ -375,6 +387,33 @@ namespace Core.MarketAnalyzer
       return markets
         .Where(market => IsMarketIncluded(market.Key, systemConfiguration))
         .ToDictionary(market => market.Key, market => market.Value, StringComparer.InvariantCultureIgnoreCase);
+    }
+
+    public static BinanceFuturesMarketMetadata GetMarketMetadataSnapshot(string symbol)
+    {
+      if (String.IsNullOrWhiteSpace(symbol))
+      {
+        return null;
+      }
+
+      EnsureMetadataLoaded();
+      lock (MetadataLock)
+      {
+        if (!_metadata.TryGetValue(symbol, out BinanceFuturesMarketMetadata metadata) || metadata == null)
+        {
+          return null;
+        }
+
+        return new BinanceFuturesMarketMetadata
+        {
+          Symbol = metadata.Symbol ?? "",
+          ContractType = metadata.ContractType ?? "",
+          UnderlyingType = metadata.UnderlyingType ?? "",
+          UnderlyingSubTypes = metadata.UnderlyingSubTypes == null
+            ? new List<string>()
+            : new List<string>(metadata.UnderlyingSubTypes)
+        };
+      }
     }
 
     private static bool HasFreshMetadata()
