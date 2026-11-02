@@ -1,4 +1,12 @@
-﻿<!DOCTYPE html>
+﻿@{
+  string initialSalesDataVersion = "";
+  string requestPath = Context.Request.Path.Value ?? "";
+  if (requestPath.TrimEnd('/').EndsWith("/SalesAnalyzer", StringComparison.OrdinalIgnoreCase) && Model is Monitor.Pages.SalesAnalyzer salesAnalyzerModel)
+  {
+    initialSalesDataVersion = Monitor._Internal.SalesDataVersionHelper.GetVersion(salesAnalyzerModel.PTData);
+  }
+}
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -175,6 +183,8 @@
     var analyzerLastRuntime = '@Model.Summary.LastRuntime.ToUniversalTime().Ticks';
     var currentMonitorPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
     var refreshOnNextAnalyzerRun = currentMonitorPath.endsWith('/marketanalyzer') || currentMonitorPath.endsWith('/managesms') || currentMonitorPath.endsWith('/statussummary');
+    var refreshOnSalesDataChange = currentMonitorPath.endsWith('/salesanalyzer');
+    var salesDataVersion = '@initialSalesDataVersion';
 
     var scheduleWidgets = function () {
       clearTimeout(tickerTimer);
@@ -211,13 +221,27 @@
           $('.text-autocolor').autocolor(false);
           $('.text-autocolor-saw').autocolor(true);
 
+          var stateElement = document.querySelector('#ticker-widgets [data-analyzer-last-runtime]');
+
           if (refreshOnNextAnalyzerRun) {
-            var runtimeElement = document.querySelector('#ticker-widgets [data-analyzer-last-runtime]');
-            var currentAnalyzerRuntime = runtimeElement ? runtimeElement.getAttribute('data-analyzer-last-runtime') : null;
+            var currentAnalyzerRuntime = stateElement ? stateElement.getAttribute('data-analyzer-last-runtime') : null;
 
             if (currentAnalyzerRuntime && currentAnalyzerRuntime !== analyzerLastRuntime) {
               window.location.reload();
               return;
+            }
+          }
+
+          if (refreshOnSalesDataChange) {
+            var currentSalesDataVersion = stateElement ? stateElement.getAttribute('data-sales-data-version') : null;
+
+            if (currentSalesDataVersion) {
+              if (salesDataVersion && currentSalesDataVersion !== salesDataVersion) {
+                window.location.reload();
+                return;
+              }
+
+              salesDataVersion = currentSalesDataVersion;
             }
           }
         }
