@@ -51,6 +51,16 @@ function isFloat(n) {
   return Number(n) === n && n % 1 !== 0;
 }
 
+function cleanupOrphanedTooltips() {
+  $('[role="tooltip"]').each(function () {
+    var tooltipId = this.id;
+
+    if (!tooltipId || $('[aria-describedby="' + tooltipId + '"]').length === 0) {
+      $(this).remove();
+    }
+  });
+}
+
 $.fn.autocolor = function (isSawTableCell = false) {
   return this.each(function (index) {
     var element = $(this);
