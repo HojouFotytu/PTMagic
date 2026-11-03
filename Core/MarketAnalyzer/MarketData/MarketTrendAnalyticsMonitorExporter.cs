@@ -4,20 +4,17 @@ using System.IO;
 using System.Linq;
 using Core.Helper;
 using Core.Main;
-using Core.Main.DataObjects.PTMagicData;
-using Core.MarketAnalyzer;
 using Newtonsoft.Json;
 
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Builds an observation-only snapshot of explicitly configured MarketTrend analytics for the Monitor.
-  /// This does not participate in GlobalSetting or SingleMarketSetting trigger evaluation.
+  /// Persists the exact post-Phase-0 MarketTrend analytics runtime snapshot for the Monitor.
+  /// Metric calculation and universe selection are completed before this exporter is called.
   /// </summary>
   public static class MarketTrendAnalyticsMonitorExporter
   {
     private const string SnapshotFileName = "MarketTrendAnalytics.json";
-    private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
 
     public static void ClearSnapshot(LogHelper log)
     {
@@ -35,111 +32,56 @@ namespace Core.MarketAnalyzer.MarketData
       }
     }
 
-    public static void BuildAndSave(
-      IEnumerable<string> exchangeMarkets,
-      string mainMarket,
-      PTMagicConfiguration systemConfiguration,
+    public static void SaveCurrentRuntimeSnapshot(LogHelper log)
+    {
+      Save(BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses, log);
+    }
+
+    public static void Save(
+      IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> analyses,
       LogHelper log)
     {
-      if (exchangeMarkets == null || systemConfiguration == null || log == null)
+      if (log == null)
       {
         return;
       }
 
-      Core.Main.DataObjects.PTMagicData.MarketAnalyzer analyzerSettings = systemConfiguration.AnalyzerSettings?.MarketAnalyzer;
-      if (analyzerSettings?.MarketTrends == null || analyzerSettings.MarketTrends.Count == 0)
+      if (analyses == null || analyses.Count == 0)
       {
         ClearSnapshot(log);
-        return;
-      }
-
-      // PT enabled_pairs/disabled_pairs and allowed_underlying_type are finalized later
-      // in the raid. Do not publish a misleading early snapshot when either policy is active.
-      if (analyzerSettings.UseProfitTrailerEnabledPairs || analyzerSettings.UseProfitTrailerAllowedUnderlyingTypes)
-      {
-        ClearSnapshot(log);
-        log.DoLogWarn("BinanceFutures analytics monitor snapshot skipped because the configured analytics universe depends on ProfitTrailer pair or underlying-type settings that are finalized later in the raid.");
         return;
       }
 
       try
       {
-        string[] eligibleSymbols = BinanceFuturesMarketUniverse
-          .FilterMarketNames(exchangeMarkets, systemConfiguration)
-          .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
-          .Select(symbol => symbol.Trim().ToUpperInvariant())
-          .Distinct(StringComparer.OrdinalIgnoreCase)
+        MarketTrendAnalysisSnapshot[] validAnalyses = analyses.Values
+          .Where(analysis => analysis != null)
           .ToArray();
 
-        if (eligibleSymbols.Length == 0)
+        if (validAnalyses.Length == 0)
         {
           ClearSnapshot(log);
           return;
         }
 
-        Dictionary<string, Market> recentMarkets = BaseAnalyzer.GetMarketDataFromFile(
-          systemConfiguration,
-          log,
-          "Exchange",
-          DateTime.UtcNow,
-          "Recent");
-
         MarketTrendAnalyticsMonitorSnapshot monitorSnapshot = new MarketTrendAnalyticsMonitorSnapshot
         {
-          TimestampUtc = DateTimeOffset.UtcNow
+          TimestampUtc = validAnalyses.Max(analysis => analysis.CalculatedAtUtc)
         };
 
-        foreach (MarketTrend marketTrend in analyzerSettings.MarketTrends
-          .Where(trend => trend != null && trend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)))
+        foreach (MarketTrendAnalysisSnapshot analysis in validAnalyses
+          .OrderBy(analysis => analysis.MarketTrendName, StringComparer.OrdinalIgnoreCase))
         {
-          if (String.IsNullOrWhiteSpace(marketTrend.Metrics))
-          {
-            continue;
-          }
-
-          IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
-          if (!enabledMetrics.Any(MarketTrendMetrics.IsKnown))
-          {
-            continue;
-          }
-
-          string[] assetSymbols = ApplyTrendMarketFilters(
-            eligibleSymbols,
-            mainMarket,
-            marketTrend);
-
-          string[] volumeRankedSymbols = assetSymbols
-            .Where(symbol => recentMarkets != null && recentMarkets.ContainsKey(symbol))
-            .OrderByDescending(symbol => recentMarkets[symbol].Volume24h)
-            .ThenBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-          if (marketTrend.MaxMarkets > 0)
-          {
-            volumeRankedSymbols = volumeRankedSymbols.Take(marketTrend.MaxMarkets).ToArray();
-          }
-
-          string[] globalSymbols = ApplyTrendThreshold(
-            volumeRankedSymbols,
-            marketTrend,
-            monitorSnapshot.TimestampUtc);
-
-          MarketTrendAnalysisSnapshot analysis = MarketTrendAnalyticsEngine.Calculate(
-            marketTrend,
-            globalSymbols,
-            assetSymbols,
-            BinanceFuturesAnalyticsRuntime.DataService.Store,
-            BaseInterval,
-            monitorSnapshot.TimestampUtc);
-
-          monitorSnapshot.Trends[marketTrend.Name] = ToMonitorTrend(analysis);
+          monitorSnapshot.Trends[analysis.MarketTrendName] = ToMonitorTrend(analysis);
         }
 
         string snapshotPath = GetSnapshotPath();
         Directory.CreateDirectory(Path.GetDirectoryName(snapshotPath));
         File.WriteAllText(snapshotPath, JsonConvert.SerializeObject(monitorSnapshot, Formatting.None));
 
-        log.DoLogInfo("BinanceFutures analytics - Monitor snapshot saved for " + monitorSnapshot.Trends.Count + " configured MarketTrend(s).");
+        log.DoLogInfo(
+          "BinanceFutures analytics - exact Monitor snapshot saved for " +
+          monitorSnapshot.Trends.Count + " configured MarketTrend(s).");
       }
       catch (Exception ex)
       {
@@ -154,67 +96,6 @@ namespace Core.MarketAnalyzer.MarketData
         Directory.GetCurrentDirectory(),
         Constants.PTMagicPathData,
         SnapshotFileName);
-    }
-
-    private static string[] ApplyTrendMarketFilters(
-      IEnumerable<string> symbols,
-      string mainMarket,
-      MarketTrend marketTrend)
-    {
-      string normalizedMainMarket = mainMarket?.Trim().ToUpperInvariant() ?? "";
-      HashSet<string> ignoredMarkets = NormalizeConfiguredMarkets(marketTrend.IgnoredMarkets, normalizedMainMarket);
-      HashSet<string> allowedMarkets = NormalizeConfiguredMarkets(marketTrend.AllowedMarkets, normalizedMainMarket);
-
-      return symbols
-        .Where(symbol =>
-        {
-          string simpleSymbol = StripMainMarket(symbol, normalizedMainMarket);
-          if (ignoredMarkets.Contains(simpleSymbol))
-          {
-            return false;
-          }
-
-          return allowedMarkets.Count == 0 || allowedMarkets.Contains(simpleSymbol);
-        })
-        .ToArray();
-    }
-
-    private static string[] ApplyTrendThreshold(
-      IEnumerable<string> symbols,
-      MarketTrend marketTrend,
-      DateTimeOffset calculatedAtUtc)
-    {
-      string[] rankedSymbols = symbols.ToArray();
-      if (marketTrend.TrendThreshold == 0)
-      {
-        return rankedSymbols;
-      }
-
-      double threshold = Math.Abs(marketTrend.TrendThreshold);
-      List<string> filtered = new List<string>(rankedSymbols.Length);
-      foreach (string symbol in rankedSymbols)
-      {
-        MarketDataSeriesSnapshot series = BinanceFuturesAnalyticsRuntime.DataService.Store.GetSnapshot(
-          symbol,
-          BaseInterval,
-          calculatedAtUtc);
-        FeatureValueSnapshot feature = MarketTrendAnalyticsEngine.CalculateReturn(
-          series,
-          marketTrend.TrendMinutes,
-          calculatedAtUtc);
-
-        if (feature.IsValid
-          && !feature.IsStale
-          && feature.Value.HasValue
-          && double.IsFinite(feature.Value.Value)
-          && feature.Value.Value <= threshold
-          && feature.Value.Value >= -threshold)
-        {
-          filtered.Add(symbol);
-        }
-      }
-
-      return filtered.ToArray();
     }
 
     private static MarketTrendAnalyticsMonitorTrend ToMonitorTrend(MarketTrendAnalysisSnapshot analysis)
@@ -240,27 +121,6 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       return result;
-    }
-
-    private static HashSet<string> NormalizeConfiguredMarkets(string configuredMarkets, string mainMarket)
-    {
-      return new HashSet<string>(
-        SystemHelper.ConvertTokenStringToList(configuredMarkets ?? "", ",")
-          .Where(value => !String.IsNullOrWhiteSpace(value))
-          .Select(value => StripMainMarket(value.Trim().ToUpperInvariant(), mainMarket)),
-        StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static string StripMainMarket(string symbol, string mainMarket)
-    {
-      string normalized = symbol?.Trim().ToUpperInvariant() ?? "";
-      if (!String.IsNullOrWhiteSpace(mainMarket)
-        && normalized.EndsWith(mainMarket, StringComparison.OrdinalIgnoreCase))
-      {
-        return normalized.Substring(0, normalized.Length - mainMarket.Length);
-      }
-
-      return normalized.Replace("-", "").Replace("_", "");
     }
   }
 }
