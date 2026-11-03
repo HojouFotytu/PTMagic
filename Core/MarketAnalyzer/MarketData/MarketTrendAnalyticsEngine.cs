@@ -38,35 +38,53 @@ namespace Core.MarketAnalyzer.MarketData
 
       string[] globalUniverse = NormalizeSymbols(globalSymbols);
       string[] assetUniverse = NormalizeSymbols(assetSymbols);
-      string[] allSymbols = globalUniverse
-        .Concat(assetUniverse)
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToArray();
       IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
 
+      bool needsMeanPriceTrend = enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase)
+        || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
+        || enabledMetrics.Contains(MarketTrendMetrics.Dispersion, StringComparer.OrdinalIgnoreCase);
+      bool needsMedianPriceTrend = enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase)
+        || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
+        || enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
+      bool needsBreadth = enabledMetrics.Contains(MarketTrendMetrics.Breadth, StringComparer.OrdinalIgnoreCase);
+      bool needsDispersion = enabledMetrics.Contains(MarketTrendMetrics.Dispersion, StringComparer.OrdinalIgnoreCase);
+      bool needsConcentration = enabledMetrics.Contains(MarketTrendMetrics.Concentration, StringComparer.OrdinalIgnoreCase);
+      bool needsRelativeStrengthMarket = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
+      bool needsRelativeStrengthBTC = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthBTC, StringComparer.OrdinalIgnoreCase);
+      bool needsGlobalReturns = needsMeanPriceTrend || needsMedianPriceTrend || needsBreadth || needsConcentration;
+      bool needsAssetReturns = needsRelativeStrengthMarket || needsRelativeStrengthBTC;
+
+      HashSet<string> symbolsToCalculate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      if (needsGlobalReturns)
+      {
+        symbolsToCalculate.UnionWith(globalUniverse);
+      }
+      if (needsAssetReturns)
+      {
+        symbolsToCalculate.UnionWith(assetUniverse);
+      }
+
       Dictionary<string, FeatureValueSnapshot> returns = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-      foreach (string symbol in allSymbols)
+      foreach (string symbol in symbolsToCalculate)
       {
         MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, calculatedAtUtc);
         returns[symbol] = CalculateReturn(series, marketTrend.TrendMinutes, calculatedAtUtc);
       }
 
-      List<FeatureValueSnapshot> globalReturns = globalUniverse
-        .Where(returns.ContainsKey)
-        .Select(symbol => returns[symbol])
-        .Where(IsUsable)
-        .ToList();
+      List<FeatureValueSnapshot> globalReturns = needsGlobalReturns
+        ? globalUniverse
+          .Where(returns.ContainsKey)
+          .Select(symbol => returns[symbol])
+          .Where(IsUsable)
+          .ToList()
+        : new List<FeatureValueSnapshot>();
 
-      FeatureValueSnapshot meanPriceTrend = CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
-      FeatureValueSnapshot medianPriceTrend = CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
-      FeatureValueSnapshot meanMedianSpread = CalculateMeanMedianSpread(
-        meanPriceTrend,
-        medianPriceTrend,
-        globalReturns.Count,
-        calculatedAtUtc,
-        marketTrend.TrendMinutes);
-      FeatureValueSnapshot breadth = CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
-      FeatureValueSnapshot dispersion = CalculateDispersion(globalReturns, meanPriceTrend, calculatedAtUtc, marketTrend.TrendMinutes);
+      FeatureValueSnapshot meanPriceTrend = needsMeanPriceTrend
+        ? CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes)
+        : null;
+      FeatureValueSnapshot medianPriceTrend = needsMedianPriceTrend
+        ? CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes)
+        : null;
 
       Dictionary<string, FeatureValueSnapshot> marketMetrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
       if (enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase))
@@ -79,17 +97,22 @@ namespace Core.MarketAnalyzer.MarketData
       }
       if (enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase))
       {
-        marketMetrics[MarketTrendMetrics.MeanMedianSpread] = meanMedianSpread;
+        marketMetrics[MarketTrendMetrics.MeanMedianSpread] = CalculateMeanMedianSpread(
+          meanPriceTrend,
+          medianPriceTrend,
+          globalReturns.Count,
+          calculatedAtUtc,
+          marketTrend.TrendMinutes);
       }
-      if (enabledMetrics.Contains(MarketTrendMetrics.Breadth, StringComparer.OrdinalIgnoreCase))
+      if (needsBreadth)
       {
-        marketMetrics[MarketTrendMetrics.Breadth] = breadth;
+        marketMetrics[MarketTrendMetrics.Breadth] = CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
       }
-      if (enabledMetrics.Contains(MarketTrendMetrics.Dispersion, StringComparer.OrdinalIgnoreCase))
+      if (needsDispersion)
       {
-        marketMetrics[MarketTrendMetrics.Dispersion] = dispersion;
+        marketMetrics[MarketTrendMetrics.Dispersion] = CalculateDispersion(globalReturns, meanPriceTrend, calculatedAtUtc, marketTrend.TrendMinutes);
       }
-      if (enabledMetrics.Contains(MarketTrendMetrics.Concentration, StringComparer.OrdinalIgnoreCase))
+      if (needsConcentration)
       {
         marketMetrics[MarketTrendMetrics.Concentration] = CalculateConcentration(
           globalUniverse,
@@ -99,42 +122,52 @@ namespace Core.MarketAnalyzer.MarketData
           calculatedAtUtc);
       }
 
-      FeatureValueSnapshot btcReturn = CalculateReturn(
-        store.GetSnapshot("BTCUSDT", interval, calculatedAtUtc),
-        marketTrend.TrendMinutes,
-        calculatedAtUtc);
-
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetMetrics =
         new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(StringComparer.OrdinalIgnoreCase);
 
-      foreach (string symbol in assetUniverse)
+      FeatureValueSnapshot btcReturn = null;
+      if (needsRelativeStrengthBTC)
       {
-        Dictionary<string, FeatureValueSnapshot> metrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-        FeatureValueSnapshot assetReturn = returns.TryGetValue(symbol, out FeatureValueSnapshot value)
-          ? value
-          : InvalidFeature(calculatedAtUtc, 0, "No normalized return data is available for '" + symbol + "'.");
-
-        if (enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase))
+        if (!returns.TryGetValue("BTCUSDT", out btcReturn))
         {
-          metrics[MarketTrendMetrics.RelativeStrengthMarket] = CalculateDifference(
-            assetReturn,
-            medianPriceTrend,
-            calculatedAtUtc,
-            "Asset return or MedianPriceTrend is unavailable for MarketTrend '" + marketTrend.Name + "'.");
+          btcReturn = CalculateReturn(
+            store.GetSnapshot("BTCUSDT", interval, calculatedAtUtc),
+            marketTrend.TrendMinutes,
+            calculatedAtUtc);
         }
+      }
 
-        if (enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthBTC, StringComparer.OrdinalIgnoreCase))
+      if (needsAssetReturns)
+      {
+        foreach (string symbol in assetUniverse)
         {
-          metrics[MarketTrendMetrics.RelativeStrengthBTC] = CalculateDifference(
-            assetReturn,
-            btcReturn,
-            calculatedAtUtc,
-            "Asset return or BTC return is unavailable for MarketTrend '" + marketTrend.Name + "'.");
-        }
+          Dictionary<string, FeatureValueSnapshot> metrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          FeatureValueSnapshot assetReturn = returns.TryGetValue(symbol, out FeatureValueSnapshot value)
+            ? value
+            : InvalidFeature(calculatedAtUtc, 0, "No normalized return data is available for '" + symbol + "'.");
 
-        if (metrics.Count > 0)
-        {
-          assetMetrics[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(metrics);
+          if (needsRelativeStrengthMarket)
+          {
+            metrics[MarketTrendMetrics.RelativeStrengthMarket] = CalculateDifference(
+              assetReturn,
+              medianPriceTrend,
+              calculatedAtUtc,
+              "Asset return or MedianPriceTrend is unavailable for MarketTrend '" + marketTrend.Name + "'.");
+          }
+
+          if (needsRelativeStrengthBTC)
+          {
+            metrics[MarketTrendMetrics.RelativeStrengthBTC] = CalculateDifference(
+              assetReturn,
+              btcReturn,
+              calculatedAtUtc,
+              "Asset return or BTC return is unavailable for MarketTrend '" + marketTrend.Name + "'.");
+          }
+
+          if (metrics.Count > 0)
+          {
+            assetMetrics[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(metrics);
+          }
         }
       }
 
@@ -160,36 +193,47 @@ namespace Core.MarketAnalyzer.MarketData
       {
         return InvalidFeature(calculatedAtUtc, 0, "TrendMinutes must be greater than zero.");
       }
-      if (series == null || series.LatestClosedCandle == null || series.ClosedCandles == null || series.ClosedCandles.Count == 0)
+      if (series == null || series.ClosedCandles == null || series.ClosedCandles.Count == 0)
       {
         return InvalidFeature(calculatedAtUtc, 0, "No closed candle data is available.");
       }
-      if (series.IsStale)
+      if (series.Interval <= TimeSpan.Zero)
       {
-        return InvalidFeature(calculatedAtUtc, 0, "The normalized candle series is stale.", true, series.LatestClosedCandle.CloseTimeUtc);
+        return InvalidFeature(calculatedAtUtc, 0, "The normalized candle interval is invalid.");
       }
 
-      MarketCandle latest = series.LatestClosedCandle;
-      DateTimeOffset targetCloseTimeUtc = latest.CloseTimeUtc - TimeSpan.FromMinutes(trendMinutes);
+      DateTimeOffset expectedCloseTimeUtc = GetExpectedClosedCandleCloseTime(calculatedAtUtc, series.Interval);
+      MarketCandle latest = FindByCloseTime(series.ClosedCandles, expectedCloseTimeUtc);
+      if (latest == null)
+      {
+        return InvalidFeature(
+          calculatedAtUtc,
+          0,
+          "No exact closed-candle endpoint exists for the current normalized interval.",
+          series.IsStale,
+          series.LatestClosedCloseTimeUtc);
+      }
+
+      DateTimeOffset targetCloseTimeUtc = expectedCloseTimeUtc - TimeSpan.FromMinutes(trendMinutes);
       MarketCandle reference = FindByCloseTime(series.ClosedCandles, targetCloseTimeUtc);
       if (reference == null)
       {
         return InvalidFeature(
           calculatedAtUtc,
           1,
-          "No exact closed-candle reference exists " + trendMinutes + " minutes before the latest closed candle. StoreDataMaxHours may be insufficient or TrendMinutes may not align with the normalized interval.",
+          "No exact closed-candle reference exists " + trendMinutes + " minutes before the current normalized endpoint. StoreDataMaxHours may be insufficient or TrendMinutes may not align with the normalized interval.",
           false,
-          latest.CloseTimeUtc);
+          expectedCloseTimeUtc);
       }
       if (!IsValidPrice(latest.Close) || !IsValidPrice(reference.Close))
       {
-        return InvalidFeature(calculatedAtUtc, 2, "The latest or reference close is invalid.", false, reference.CloseTimeUtc);
+        return InvalidFeature(calculatedAtUtc, 2, "The endpoint or reference close is invalid.", false, expectedCloseTimeUtc);
       }
 
       return ValidFeature(
         ((latest.Close / reference.Close) - 1.0) * 100.0,
         calculatedAtUtc,
-        reference.CloseTimeUtc,
+        expectedCloseTimeUtc,
         2);
     }
 
@@ -286,11 +330,12 @@ namespace Core.MarketAnalyzer.MarketData
       TimeSpan interval,
       DateTimeOffset calculatedAtUtc)
     {
+      DateTimeOffset expectedCloseTimeUtc = GetExpectedClosedCandleCloseTime(calculatedAtUtc, interval);
       List<RankedMarket> rankedMarkets = new List<RankedMarket>();
       foreach (string symbol in globalUniverse)
       {
         MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, calculatedAtUtc);
-        if (TryCalculateCompleteTrailingQuoteVolume(series, interval, out double quoteVolume))
+        if (TryCalculateCompleteTrailingQuoteVolume(series, interval, expectedCloseTimeUtc, out double quoteVolume))
         {
           rankedMarkets.Add(new RankedMarket
           {
@@ -305,26 +350,33 @@ namespace Core.MarketAnalyzer.MarketData
         return InvalidFeature(
           calculatedAtUtc,
           rankedMarkets.Count,
-          "At least 11 markets with a complete trailing 24-hour quote-volume window are required for concentration. StoreDataMaxHours may be insufficient.");
+          "At least 11 markets with a complete trailing 24-hour quote-volume window ending at the current normalized endpoint are required for concentration. StoreDataMaxHours may be insufficient.");
       }
 
-      HashSet<string> top10 = rankedMarkets
+      RankedMarket[] orderedMarkets = rankedMarkets
         .OrderByDescending(market => market.QuoteVolume)
         .ThenBy(market => market.Symbol, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+      HashSet<string> top10 = orderedMarkets
         .Take(10)
         .Select(market => market.Symbol)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-      List<FeatureValueSnapshot> topReturns = new List<FeatureValueSnapshot>();
-      List<FeatureValueSnapshot> remainingReturns = new List<FeatureValueSnapshot>();
-      foreach (string symbol in globalUniverse)
+      List<FeatureValueSnapshot> topReturns = new List<FeatureValueSnapshot>(10);
+      List<FeatureValueSnapshot> remainingReturns = new List<FeatureValueSnapshot>(orderedMarkets.Length - 10);
+      foreach (RankedMarket rankedMarket in orderedMarkets)
       {
-        if (!returns.TryGetValue(symbol, out FeatureValueSnapshot feature) || !IsUsable(feature))
+        if (!returns.TryGetValue(rankedMarket.Symbol, out FeatureValueSnapshot feature) || !IsUsable(feature))
         {
-          continue;
+          return InvalidFeature(
+            calculatedAtUtc,
+            rankedMarkets.Count,
+            "A return is unavailable for volume-ranked market '" + rankedMarket.Symbol + "'; concentration requires aligned returns for the complete ranked population.",
+            feature?.IsStale == true,
+            feature?.SourceDataTimestampUtc);
         }
 
-        if (top10.Contains(symbol))
+        if (top10.Contains(rankedMarket.Symbol))
         {
           topReturns.Add(feature);
         }
@@ -334,9 +386,9 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      if (topReturns.Count == 0 || remainingReturns.Count == 0)
+      if (topReturns.Count != 10 || remainingReturns.Count == 0)
       {
-        return InvalidFeature(calculatedAtUtc, topReturns.Count + remainingReturns.Count, "Top10 or remaining-universe returns are unavailable for concentration.");
+        return InvalidFeature(calculatedAtUtc, topReturns.Count + remainingReturns.Count, "A complete Top10 and remaining-universe return population is required for concentration.");
       }
 
       double topMean = topReturns.Average(feature => feature.Value.Value);
@@ -348,19 +400,26 @@ namespace Core.MarketAnalyzer.MarketData
         topReturns.Count + remainingReturns.Count);
     }
 
-    private static bool TryCalculateCompleteTrailingQuoteVolume(MarketDataSeriesSnapshot series, TimeSpan interval, out double quoteVolume)
+    private static bool TryCalculateCompleteTrailingQuoteVolume(
+      MarketDataSeriesSnapshot series,
+      TimeSpan interval,
+      DateTimeOffset expectedCloseTimeUtc,
+      out double quoteVolume)
     {
       quoteVolume = 0;
-      if (series == null || series.IsStale || series.LatestClosedCandle == null || series.ClosedCandles == null)
+      if (series == null || series.ClosedCandles == null || series.ClosedCandles.Count == 0)
+      {
+        return false;
+      }
+      if (FindByCloseTime(series.ClosedCandles, expectedCloseTimeUtc) == null)
       {
         return false;
       }
 
       int requiredCandles = (int)Math.Ceiling(ConcentrationRankingWindow.TotalMilliseconds / interval.TotalMilliseconds);
-      MarketCandle latest = series.LatestClosedCandle;
-      DateTimeOffset firstRequiredClose = latest.CloseTimeUtc - ConcentrationRankingWindow + interval;
+      DateTimeOffset firstRequiredClose = expectedCloseTimeUtc - ConcentrationRankingWindow + interval;
       MarketCandle[] selected = series.ClosedCandles
-        .Where(candle => candle != null && candle.IsClosed && candle.CloseTimeUtc >= firstRequiredClose && candle.CloseTimeUtc <= latest.CloseTimeUtc)
+        .Where(candle => candle != null && candle.IsClosed && candle.CloseTimeUtc >= firstRequiredClose && candle.CloseTimeUtc <= expectedCloseTimeUtc)
         .OrderBy(candle => candle.CloseTimeUtc)
         .ToArray();
 
@@ -408,6 +467,19 @@ namespace Core.MarketAnalyzer.MarketData
         calculatedAtUtc,
         GetOldestSourceTimestamp(new FeatureValueSnapshot[] { left, right }),
         2);
+    }
+
+    private static DateTimeOffset GetExpectedClosedCandleCloseTime(DateTimeOffset calculatedAtUtc, TimeSpan interval)
+    {
+      long intervalMilliseconds = checked((long)interval.TotalMilliseconds);
+      if (intervalMilliseconds <= 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(interval));
+      }
+
+      long asOfMilliseconds = calculatedAtUtc.ToUniversalTime().ToUnixTimeMilliseconds();
+      long currentIntervalOpenMilliseconds = asOfMilliseconds - (asOfMilliseconds % intervalMilliseconds);
+      return DateTimeOffset.FromUnixTimeMilliseconds(currentIntervalOpenMilliseconds - 1);
     }
 
     private static MarketCandle FindByCloseTime(IReadOnlyList<MarketCandle> candles, DateTimeOffset targetCloseTimeUtc)
