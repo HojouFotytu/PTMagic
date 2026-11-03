@@ -79,10 +79,6 @@ namespace Core.MarketAnalyzer.MarketData
         throw new ArgumentNullException(nameof(log));
       }
 
-      // Cache the exchange-qualified population before the final analyzer-universe policy
-      // is frozen. ProfitTrailer allowed_underlying_type and enabled_pairs are resolved later
-      // during BuildMarketList(), so applying those filters here would make the cache depend on
-      // stale or not-yet-resolved PT settings.
       string[] exchangeSymbols = exchangeMarkets
         .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
         .Select(symbol => symbol.Trim().ToUpperInvariant())
@@ -171,15 +167,26 @@ namespace Core.MarketAnalyzer.MarketData
       bool usePtEnabledPairs = settings?.UseProfitTrailerEnabledPairs == true;
       string mainMarket = GetPropertyValue(pairsLines, "MARKET").Trim().ToUpperInvariant();
       string enabledPairs = GetPropertyValue(pairsLines, "enabled_pairs");
+      string disabledPairs = GetPropertyValue(pairsLines, "disabled_pairs");
 
       if (usePtEnabledPairs && !IsAllPairsValue(enabledPairs))
       {
         HashSet<string> enabledSymbols = SystemHelper.ConvertTokenStringToList(enabledPairs, ",")
           .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
-          .Select(symbol => SystemHelper.GetFullMarketName(mainMarket, symbol.Trim(), "BinanceFutures").ToUpperInvariant())
+          .Select(symbol => ToFullMarketSymbol(mainMarket, symbol))
           .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         eligibleSymbols = eligibleSymbols.Where(enabledSymbols.Contains).ToList();
+      }
+
+      if (usePtEnabledPairs && !String.IsNullOrWhiteSpace(disabledPairs) && !disabledPairs.Equals("false", StringComparison.OrdinalIgnoreCase))
+      {
+        HashSet<string> disabledSymbols = SystemHelper.ConvertTokenStringToList(disabledPairs, ",")
+          .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+          .Select(symbol => ToFullMarketSymbol(mainMarket, symbol))
+          .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        eligibleSymbols = eligibleSymbols.Where(symbol => !disabledSymbols.Contains(symbol)).ToList();
       }
 
       List<AnalyzerUniverseMarket> markets = new List<AnalyzerUniverseMarket>(eligibleSymbols.Count);
@@ -201,16 +208,11 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       string selectionReason = usePtEnabledPairs
-        ? "Binance Futures exchange population filtered by the active underlying-type policy and ProfitTrailer enabled_pairs"
+        ? "Binance Futures exchange population filtered by the active underlying-type policy and ProfitTrailer enabled_pairs/disabled_pairs"
         : "Binance Futures exchange population filtered by the active underlying-type policy";
 
       DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
-      AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(
-        calculatedAtUtc,
-        mainMarket,
-        markets,
-        selectionReason);
-
+      AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(calculatedAtUtc, mainMarket, markets, selectionReason);
       MarketAnalysisSnapshot analysis = BuildPriceReturnAnalysis(universe, calculatedAtUtc);
 
       lock (SnapshotLock)
@@ -252,6 +254,22 @@ namespace Core.MarketAnalyzer.MarketData
         MarketFeatures = new ReadOnlyDictionary<string, FeatureValueSnapshot>(new Dictionary<string, FeatureValueSnapshot>()),
         Assets = new ReadOnlyDictionary<string, AssetFeatureSnapshot>(assets)
       };
+    }
+
+    private static string ToFullMarketSymbol(string mainMarket, string symbol)
+    {
+      string normalized = symbol?.Trim().ToUpperInvariant() ?? "";
+      if (normalized.Length == 0 || mainMarket.Length == 0)
+      {
+        return normalized;
+      }
+
+      if (normalized.EndsWith(mainMarket, StringComparison.OrdinalIgnoreCase))
+      {
+        return normalized;
+      }
+
+      return SystemHelper.GetFullMarketName(mainMarket, normalized, "BinanceFutures").ToUpperInvariant();
     }
 
     private static string GetPropertyValue(List<string> lines, string propertyName)
