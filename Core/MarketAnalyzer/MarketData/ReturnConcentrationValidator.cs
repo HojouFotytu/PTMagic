@@ -65,7 +65,7 @@ namespace Core.MarketAnalyzer.MarketData
       foreach (ReturnHorizon horizon in PriceReturnCalculator.Horizons)
       {
         List<IndependentReturn> top = new List<IndependentReturn>();
-        List<IndependentReturn> rest = new List<IndependentReturn>();
+        List<IndependentReturn> remaining = new List<IndependentReturn>();
 
         foreach (AnalyzerUniverseMarket market in universe.Markets)
         {
@@ -81,11 +81,11 @@ namespace Core.MarketAnalyzer.MarketData
           }
           else
           {
-            rest.Add(independentReturn);
+            remaining.Add(independentReturn);
           }
         }
 
-        results.Add(BuildValidation(horizon, top10Symbols, top, rest, analysis));
+        results.Add(BuildValidation(horizon, top10Symbols, top, remaining, analysis));
       }
 
       return new ReadOnlyCollection<ReturnConcentrationValidationSnapshot>(results);
@@ -101,12 +101,12 @@ namespace Core.MarketAnalyzer.MarketData
       return "Phase 1 return-concentration validation " + validation.Horizon +
         ": Top10=" + String.Join(",", validation.Top10Symbols) +
         ", topN=" + validation.TopSampleCount +
-        ", restN=" + validation.RestSampleCount +
+        ", remainingN=" + validation.RemainingUniverseSampleCount +
         ", topMean=" + FormatPercent(validation.Top10MeanReturn) +
-        ", restMean=" + FormatPercent(validation.RestMeanReturn) +
+        ", remainingMean=" + FormatPercent(validation.RemainingUniverseMeanReturn) +
         ", advantage=" + FormatPercent(validation.Top10ReturnAdvantage) +
         ", topMedian=" + FormatPercent(validation.Top10MedianReturn) +
-        ", restMedian=" + FormatPercent(validation.RestMedianReturn) +
+        ", remainingMedian=" + FormatPercent(validation.RemainingUniverseMedianReturn) +
         ", mismatches=" + validation.MismatchCount + ".";
     }
 
@@ -114,44 +114,44 @@ namespace Core.MarketAnalyzer.MarketData
       ReturnHorizon horizon,
       string[] top10Symbols,
       List<IndependentReturn> top,
-      List<IndependentReturn> rest,
+      List<IndependentReturn> remaining,
       MarketAnalysisSnapshot analysis)
     {
-      if (top.Count == 0 || rest.Count == 0)
+      if (top.Count == 0 || remaining.Count == 0)
       {
         return new ReturnConcentrationValidationSnapshot
         {
           Horizon = horizon.DisplayName,
           Top10Symbols = new ReadOnlyCollection<string>((string[])top10Symbols.Clone()),
           TopSampleCount = top.Count,
-          RestSampleCount = rest.Count,
+          RemainingUniverseSampleCount = remaining.Count,
           MismatchCount = 5
         };
       }
 
       double topMean = top.Average(item => item.Value);
-      double restMean = rest.Average(item => item.Value);
+      double remainingMean = remaining.Average(item => item.Value);
       double topMedian = CalculateMedian(top.Select(item => item.Value).ToArray());
-      double restMedian = CalculateMedian(rest.Select(item => item.Value).ToArray());
-      double advantage = topMean - restMean;
+      double remainingMedian = CalculateMedian(remaining.Select(item => item.Value).ToArray());
+      double advantage = topMean - remainingMean;
 
       int mismatches = 0;
       mismatches += FeatureMatches(analysis, "Top10MeanReturn" + horizon.DisplayName, topMean, top.Count) ? 0 : 1;
-      mismatches += FeatureMatches(analysis, "RestMeanReturn" + horizon.DisplayName, restMean, rest.Count) ? 0 : 1;
+      mismatches += FeatureMatches(analysis, "RemainingUniverseMeanReturn" + horizon.DisplayName, remainingMean, remaining.Count) ? 0 : 1;
       mismatches += FeatureMatches(analysis, "Top10MedianReturn" + horizon.DisplayName, topMedian, top.Count) ? 0 : 1;
-      mismatches += FeatureMatches(analysis, "RestMedianReturn" + horizon.DisplayName, restMedian, rest.Count) ? 0 : 1;
-      mismatches += FeatureMatches(analysis, "Top10ReturnAdvantage" + horizon.DisplayName, advantage, top.Count + rest.Count) ? 0 : 1;
+      mismatches += FeatureMatches(analysis, "RemainingUniverseMedianReturn" + horizon.DisplayName, remainingMedian, remaining.Count) ? 0 : 1;
+      mismatches += FeatureMatches(analysis, "Top10ReturnAdvantage" + horizon.DisplayName, advantage, top.Count + remaining.Count) ? 0 : 1;
 
       return new ReturnConcentrationValidationSnapshot
       {
         Horizon = horizon.DisplayName,
         Top10Symbols = new ReadOnlyCollection<string>((string[])top10Symbols.Clone()),
         TopSampleCount = top.Count,
-        RestSampleCount = rest.Count,
+        RemainingUniverseSampleCount = remaining.Count,
         Top10MeanReturn = topMean,
-        RestMeanReturn = restMean,
+        RemainingUniverseMeanReturn = remainingMean,
         Top10MedianReturn = topMedian,
-        RestMedianReturn = restMedian,
+        RemainingUniverseMedianReturn = remainingMedian,
         Top10ReturnAdvantage = advantage,
         MismatchCount = mismatches
       };
@@ -300,13 +300,13 @@ namespace Core.MarketAnalyzer.MarketData
     public string Horizon { get; init; } = "";
     public IReadOnlyList<string> Top10Symbols { get; init; } = Array.Empty<string>();
     public int TopSampleCount { get; init; }
-    public int RestSampleCount { get; init; }
+    public int RemainingUniverseSampleCount { get; init; }
     public double Top10MeanReturn { get; init; }
-    public double RestMeanReturn { get; init; }
+    public double RemainingUniverseMeanReturn { get; init; }
     public double Top10MedianReturn { get; init; }
-    public double RestMedianReturn { get; init; }
+    public double RemainingUniverseMedianReturn { get; init; }
     public double Top10ReturnAdvantage { get; init; }
     public int MismatchCount { get; init; }
-    public bool IsValid => TopSampleCount > 0 && RestSampleCount > 0 && MismatchCount == 0;
+    public bool IsValid => TopSampleCount > 0 && RemainingUniverseSampleCount > 0 && MismatchCount == 0;
   }
 }
