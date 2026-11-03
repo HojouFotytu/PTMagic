@@ -33,11 +33,11 @@
             @Model.Analytics.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
           </div>
           <div class="col-md-4">
-            <strong>Configured trends</strong><br />
+            <strong>Metric-Enabled Trends</strong><br />
             @trends.Count
           </div>
           <div class="col-md-4">
-            <strong>Markets with asset metrics</strong><br />
+            <strong>Markets with Per-Market Metrics</strong><br />
             @markets.Count
           </div>
         </div>
@@ -61,7 +61,7 @@
                 <th class="text-right">Markets</th>
                 @foreach (string metric in Model.GlobalMetricNames)
                 {
-                  <th class="text-right">@Model.MetricTitle(metric)</th>
+                  <th class="text-right" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">@Model.MetricTitle(metric)</th>
                 }
               </tr>
             </thead>
@@ -70,7 +70,7 @@
               {
                 <tr>
                   <td>@Core.Helper.SystemHelper.SplitCamelCase(trend.Name)</td>
-                  <td class="text-right">@Core.Helper.SystemHelper.GetProperDurationTime(trend.TrendMinutes * 60, false)</td>
+                  <td class="text-right">@Model.FormatTimeframe(trend.TrendMinutes)</td>
                   <td class="text-right">@trend.GlobalSymbols.Count</td>
                   @foreach (string metric in Model.GlobalMetricNames)
                   {
@@ -111,7 +111,7 @@
                   {
                     foreach (string metric in Model.AssetMetricNames)
                     {
-                      <th scope="col" data-tablesaw-sortable-col class="text-right">
+                      <th scope="col" data-tablesaw-sortable-col class="text-right" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">
                         @Core.Helper.SystemHelper.SplitCamelCase(trend.Name) @Model.MetricTitle(metric)
                       </th>
                     }
