@@ -29,6 +29,7 @@ namespace Core.MarketAnalyzer
       if (markets != null)
       {
         await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
+        MarketTrendAnalyticsMonitorExporter.BuildAndSave(markets, mainMarket, systemConfiguration, log);
       }
 
       return markets;
