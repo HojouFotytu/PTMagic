@@ -64,8 +64,10 @@ namespace Core.MarketAnalyzer
         return markets;
       }
 
+      // Only populate normalized observation data here. Metric evaluation is deliberately
+      // deferred until PTMagic's Phase 0 pipeline has finalized the exact per-trend global
+      // and single-market populations.
       await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
-      MarketTrendAnalyticsMonitorExporter.BuildAndSave(markets, mainMarket, systemConfiguration, log);
 
       return markets;
     }
