@@ -32,11 +32,21 @@ namespace Core.MarketAnalyzer
         && trend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)
         && !String.IsNullOrWhiteSpace(trend.Metrics)) == true;
 
-      if (markets != null && hasConfiguredAnalytics)
+      if (markets == null)
       {
-        await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
-        MarketTrendAnalyticsMonitorExporter.BuildAndSave(markets, mainMarket, systemConfiguration, log);
+        MarketTrendAnalyticsMonitorExporter.ClearSnapshot(log);
+        return null;
       }
+
+      if (!hasConfiguredAnalytics)
+      {
+        BinanceFuturesAnalyticsRuntime.DataService.Store.Clear();
+        MarketTrendAnalyticsMonitorExporter.ClearSnapshot(log);
+        return markets;
+      }
+
+      await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
+      MarketTrendAnalyticsMonitorExporter.BuildAndSave(markets, mainMarket, systemConfiguration, log);
 
       return markets;
     }
