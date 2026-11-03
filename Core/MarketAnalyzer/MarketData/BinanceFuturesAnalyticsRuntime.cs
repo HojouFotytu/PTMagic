@@ -244,6 +244,32 @@ namespace Core.MarketAnalyzer.MarketData
       log.DoLogInfo(
         "BinanceFutures analytics - Phase 1B market mean/median/breadth/dispersion calculated for " +
         validAggregateHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
+
+      IReadOnlyList<MarketReturnValidationSnapshot> validations = MarketReturnValidator.Validate(
+        universe,
+        DataServiceInstance.Store,
+        BaseInterval,
+        analysis,
+        calculatedAtUtc);
+
+      foreach (MarketReturnValidationSnapshot validation in validations)
+      {
+        log.DoLogInfo("BinanceFutures analytics - " + MarketReturnValidator.FormatLogLine(validation));
+      }
+
+      int validValidationHorizons = validations.Count(validation => validation.IsValid);
+      if (validValidationHorizons == validations.Count)
+      {
+        log.DoLogInfo(
+          "BinanceFutures analytics - Phase 1 independent validation passed for " + validValidationHorizons +
+          "/" + validations.Count + " horizons.");
+      }
+      else
+      {
+        log.DoLogWarn(
+          "BinanceFutures analytics - Phase 1 independent validation passed for " + validValidationHorizons +
+          "/" + validations.Count + " horizons; inspect mismatch counts above.");
+      }
     }
 
     private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(AnalyzerUniverseSnapshot universe, DateTimeOffset calculatedAtUtc)
