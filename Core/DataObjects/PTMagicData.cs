@@ -209,8 +209,10 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string MarketTrendName { get; set; } = "";
 
-    [DefaultValue("PriceTrend")]
-    public string Metric { get; set; } = "PriceTrend";
+    // Blank/omitted preserves PTMagic's legacy PriceTrend trigger behavior. An explicit
+    // "PriceTrend" can therefore be distinguished later from the backward-compatible default.
+    [DefaultValue("")]
+    public string Metric { get; set; } = "";
 
     [DefaultValue("Relative")]
     public string MarketTrendRelation { get; set; } = "Relative";
@@ -239,8 +241,9 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string MarketTrendName { get; set; } = "";
 
-    [DefaultValue("PriceTrend")]
-    public string Metric { get; set; } = "PriceTrend";
+    // Blank/omitted preserves PTMagic's legacy PriceTrend off-trigger behavior.
+    [DefaultValue("")]
+    public string Metric { get; set; } = "";
 
     [DefaultValue("Relative")]
     public string MarketTrendRelation { get; set; } = "Relative";
