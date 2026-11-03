@@ -245,6 +245,16 @@ namespace Core.MarketAnalyzer.MarketData
         "BinanceFutures analytics - Phase 1B market mean/median/breadth/dispersion calculated for " +
         validAggregateHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
 
+      int validRelativeStrengthHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
+        analysis.Assets.Values.All(asset =>
+          asset.Features.TryGetValue("RelativeStrengthMarket" + horizon.DisplayName, out FeatureValueSnapshot marketRelativeStrength)
+          && marketRelativeStrength.IsValid
+          && asset.Features.TryGetValue("RelativeStrengthBTC" + horizon.DisplayName, out FeatureValueSnapshot btcRelativeStrength)
+          && btcRelativeStrength.IsValid));
+      log.DoLogInfo(
+        "BinanceFutures analytics - Phase 1B relative strength vs market/BTC calculated for " +
+        validRelativeStrengthHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
+
       IReadOnlyList<MarketReturnValidationSnapshot> validations = MarketReturnValidator.Validate(
         universe,
         DataServiceInstance.Store,
@@ -270,6 +280,33 @@ namespace Core.MarketAnalyzer.MarketData
           "BinanceFutures analytics - Phase 1 independent validation passed for " + validValidationHorizons +
           "/" + validations.Count + " horizons; inspect mismatch counts above.");
       }
+
+      IReadOnlyList<RelativeStrengthValidationSnapshot> relativeStrengthValidations = RelativeStrengthValidator.Validate(
+        universe,
+        DataServiceInstance.Store,
+        BaseInterval,
+        analysis,
+        calculatedAtUtc);
+
+      foreach (RelativeStrengthValidationSnapshot validation in relativeStrengthValidations)
+      {
+        log.DoLogInfo("BinanceFutures analytics - " + RelativeStrengthValidator.FormatLogLine(validation));
+      }
+
+      int validRelativeStrengthValidationHorizons = relativeStrengthValidations.Count(validation => validation.IsValid);
+      if (validRelativeStrengthValidationHorizons == relativeStrengthValidations.Count)
+      {
+        log.DoLogInfo(
+          "BinanceFutures analytics - Phase 1 relative-strength independent validation passed for " +
+          validRelativeStrengthValidationHorizons + "/" + relativeStrengthValidations.Count + " horizons.");
+      }
+      else
+      {
+        log.DoLogWarn(
+          "BinanceFutures analytics - Phase 1 relative-strength independent validation passed for " +
+          validRelativeStrengthValidationHorizons + "/" + relativeStrengthValidations.Count +
+          " horizons; inspect mismatch counts above.");
+      }
     }
 
     private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(AnalyzerUniverseSnapshot universe, DateTimeOffset calculatedAtUtc)
@@ -283,13 +320,20 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       IReadOnlyDictionary<string, FeatureValueSnapshot> marketFeatures = MarketReturnAggregator.Calculate(assets, calculatedAtUtc);
+      MarketDataSeriesSnapshot btcSeries = DataServiceInstance.Store.GetSnapshot("BTCUSDT", BaseInterval, calculatedAtUtc);
+      AssetFeatureSnapshot btcBenchmark = PriceReturnCalculator.Calculate(btcSeries);
+      IReadOnlyDictionary<string, AssetFeatureSnapshot> assetsWithRelativeStrength = RelativeStrengthCalculator.Calculate(
+        assets,
+        marketFeatures,
+        btcBenchmark,
+        calculatedAtUtc);
 
       return new MarketAnalysisSnapshot
       {
         TimestampUtc = calculatedAtUtc,
         Universe = universe,
         MarketFeatures = marketFeatures,
-        Assets = new ReadOnlyDictionary<string, AssetFeatureSnapshot>(assets)
+        Assets = assetsWithRelativeStrength
       };
     }
 
