@@ -136,13 +136,24 @@ namespace Core.MarketAnalyzer.MarketData
 
     private int GetRequiredCandleCount(string symbol, TimeSpan interval, int targetHistoryCandles, DateTimeOffset refreshStartedUtc)
     {
-      if (!_store.TryGetLatestCandle(symbol, interval, out MarketCandle latestCandle))
+      MarketDataSeriesSnapshot snapshot = _store.GetSnapshot(symbol, interval, refreshStartedUtc);
+      if (!snapshot.IsAvailable)
       {
         return targetHistoryCandles;
       }
 
-      // Binance includes the currently forming candle. If that cached candle has not yet
-      // reached its exchange close timestamp, there is nothing new to request.
+      // A current latest candle is not enough to declare the series complete. Refill the
+      // full requested window whenever retention was increased, an earlier fetch was
+      // incomplete, or a gap exists anywhere in the retained series.
+      if (snapshot.SampleCount < targetHistoryCandles || snapshot.HasDetectedGaps)
+      {
+        return targetHistoryCandles;
+      }
+
+      MarketCandle latestCandle = snapshot.Candles[snapshot.Candles.Count - 1];
+
+      // Binance includes the currently forming candle. If the retained window is complete
+      // and that candle has not yet reached its exchange close timestamp, no request is needed.
       if (latestCandle.CloseTimeUtc > refreshStartedUtc)
       {
         return 0;
