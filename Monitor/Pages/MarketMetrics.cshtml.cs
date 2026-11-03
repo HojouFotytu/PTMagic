@@ -17,8 +17,8 @@ namespace Monitor.Pages
 
     public IReadOnlyList<string> GlobalMetricNames { get; } = new string[]
     {
-      MarketTrendMetrics.MeanReturn,
-      MarketTrendMetrics.MedianReturn,
+      MarketTrendMetrics.MedianPriceTrend,
+      MarketTrendMetrics.MeanMedianSpread,
       MarketTrendMetrics.Breadth,
       MarketTrendMetrics.Dispersion,
       MarketTrendMetrics.Concentration
@@ -88,7 +88,8 @@ namespace Monitor.Pages
         return "--";
       }
 
-      bool isReturnDifference = metric.Equals(MarketTrendMetrics.RelativeStrengthMarket, StringComparison.OrdinalIgnoreCase)
+      bool isReturnDifference = metric.Equals(MarketTrendMetrics.MeanMedianSpread, StringComparison.OrdinalIgnoreCase)
+        || metric.Equals(MarketTrendMetrics.RelativeStrengthMarket, StringComparison.OrdinalIgnoreCase)
         || metric.Equals(MarketTrendMetrics.RelativeStrengthBTC, StringComparison.OrdinalIgnoreCase)
         || metric.Equals(MarketTrendMetrics.Concentration, StringComparison.OrdinalIgnoreCase);
 
@@ -130,8 +131,8 @@ namespace Monitor.Pages
     {
       return metric switch
       {
-        MarketTrendMetrics.MeanReturn => "Mean Return",
-        MarketTrendMetrics.MedianReturn => "Median Return",
+        MarketTrendMetrics.MedianPriceTrend => "Median Price Trend",
+        MarketTrendMetrics.MeanMedianSpread => "Mean-Median Spread",
         MarketTrendMetrics.Breadth => "Positive Breadth",
         MarketTrendMetrics.Dispersion => "Dispersion",
         MarketTrendMetrics.RelativeStrengthMarket => "RS vs Market",
@@ -145,13 +146,13 @@ namespace Monitor.Pages
     {
       return metric switch
       {
-        MarketTrendMetrics.MeanReturn => "Arithmetic mean return of valid markets over this MarketTrend timeframe. Displayed as a percentage return.",
-        MarketTrendMetrics.MedianReturn => "Median return of valid markets over this MarketTrend timeframe. Displayed as a percentage return.",
-        MarketTrendMetrics.Breadth => "Percentage of valid markets with a return greater than 0 over this MarketTrend timeframe.",
-        MarketTrendMetrics.Dispersion => "Population standard deviation of valid market returns over this MarketTrend timeframe. Displayed as a percentage magnitude.",
-        MarketTrendMetrics.RelativeStrengthMarket => "Individual market return minus the MarketTrend median return. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns (formally percentage points), not a relative percentage increase.",
-        MarketTrendMetrics.RelativeStrengthBTC => "Individual market return minus BTC return over the same timeframe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns (formally percentage points), not a relative percentage increase.",
-        MarketTrendMetrics.Concentration => "Mean return of the Top10 markets by trailing 24-hour quote volume minus the mean return of the remaining MarketTrend universe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns (formally percentage points), not a relative percentage increase.",
+        MarketTrendMetrics.MedianPriceTrend => "Median percentage price change of valid markets over this MarketTrend timeframe. Unlike PTMagic's existing PriceTrend arithmetic mean, the median is resistant to a small number of extreme movers.",
+        MarketTrendMetrics.MeanMedianSpread => "Arithmetic mean market return minus MedianPriceTrend for the same normalized market population and timeframe. Positive values mean upside outliers are pulling the mean above the median; negative values mean downside outliers are pulling it below the median. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns.",
+        MarketTrendMetrics.Breadth => "Percentage of valid markets with a price change greater than 0 over this MarketTrend timeframe.",
+        MarketTrendMetrics.Dispersion => "Population standard deviation of valid market price changes over this MarketTrend timeframe. Displayed as a percentage magnitude.",
+        MarketTrendMetrics.RelativeStrengthMarket => "Individual market price change minus MedianPriceTrend. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
+        MarketTrendMetrics.RelativeStrengthBTC => "Individual market price change minus BTC price change over the same timeframe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
+        MarketTrendMetrics.Concentration => "Mean return of the Top10 markets by trailing 24-hour quote volume minus the mean return of the remaining MarketTrend universe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
         _ => metric
       };
     }
