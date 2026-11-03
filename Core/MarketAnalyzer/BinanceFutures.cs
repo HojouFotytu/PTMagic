@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Helper;
@@ -26,7 +27,12 @@ namespace Core.MarketAnalyzer
       BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
 
       List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken).ConfigureAwait(false);
-      if (markets != null)
+      bool hasConfiguredAnalytics = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer?.MarketTrends?.Any(trend =>
+        trend != null
+        && trend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)
+        && !String.IsNullOrWhiteSpace(trend.Metrics)) == true;
+
+      if (markets != null && hasConfiguredAnalytics)
       {
         await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
         MarketTrendAnalyticsMonitorExporter.BuildAndSave(markets, mainMarket, systemConfiguration, log);
