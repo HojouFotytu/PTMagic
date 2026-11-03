@@ -53,12 +53,12 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
 
-      // PT enabled_pairs/disabled_pairs are finalized later in the raid. Do not publish a
-      // misleading monitor snapshot when the configured analytics universe depends on them.
-      if (analyzerSettings.UseProfitTrailerEnabledPairs)
+      // PT enabled_pairs/disabled_pairs and allowed_underlying_type are finalized later
+      // in the raid. Do not publish a misleading early snapshot when either policy is active.
+      if (analyzerSettings.UseProfitTrailerEnabledPairs || analyzerSettings.UseProfitTrailerAllowedUnderlyingTypes)
       {
         ClearSnapshot(log);
-        log.DoLogWarn("BinanceFutures analytics monitor snapshot skipped because UseProfitTrailerEnabledPairs is enabled; the exact PT pair universe is not finalized at this stage of the raid.");
+        log.DoLogWarn("BinanceFutures analytics monitor snapshot skipped because the configured analytics universe depends on ProfitTrailer pair or underlying-type settings that are finalized later in the raid.");
         return;
       }
 
