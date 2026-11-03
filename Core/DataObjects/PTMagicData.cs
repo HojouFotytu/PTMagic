@@ -136,6 +136,9 @@ namespace Core.Main.DataObjects.PTMagicData
     public int MaxMarkets { get; set; } = 0;
     public int TrendMinutes { get; set; } = 0;
 
+    [DefaultValue("")]
+    public string Metrics { get; set; } = "";
+
     [DefaultValue(true)]
     public bool DisplayGraph { get; set; } = true;
 
@@ -206,6 +209,9 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string MarketTrendName { get; set; } = "";
 
+    [DefaultValue("PriceTrend")]
+    public string Metric { get; set; } = "PriceTrend";
+
     [DefaultValue("Relative")]
     public string MarketTrendRelation { get; set; } = "Relative";
 
@@ -232,6 +238,9 @@ namespace Core.Main.DataObjects.PTMagicData
 
     [DefaultValue("")]
     public string MarketTrendName { get; set; } = "";
+
+    [DefaultValue("PriceTrend")]
+    public string Metric { get; set; } = "PriceTrend";
 
     [DefaultValue("Relative")]
     public string MarketTrendRelation { get; set; } = "Relative";
