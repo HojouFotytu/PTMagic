@@ -11,7 +11,7 @@ using Newtonsoft.Json;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Builds an observation-only snapshot of configured MarketTrend analytics for the Monitor.
+  /// Builds an observation-only snapshot of explicitly configured MarketTrend analytics for the Monitor.
   /// This does not participate in GlobalSetting or SingleMarketSetting trigger evaluation.
   /// </summary>
   public static class MarketTrendAnalyticsMonitorExporter
@@ -73,8 +73,13 @@ namespace Core.MarketAnalyzer.MarketData
         foreach (MarketTrend marketTrend in analyzerSettings.MarketTrends
           .Where(trend => trend != null && trend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)))
         {
+          if (String.IsNullOrWhiteSpace(marketTrend.Metrics))
+          {
+            continue;
+          }
+
           IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
-          if (!enabledMetrics.Any(metric => !metric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)))
+          if (!enabledMetrics.Any(MarketTrendMetrics.IsKnown))
           {
             continue;
           }
