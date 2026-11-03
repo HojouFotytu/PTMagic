@@ -19,6 +19,22 @@ namespace Core.MarketAnalyzer.MarketData
     private const string SnapshotFileName = "MarketTrendAnalytics.json";
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
 
+    public static void ClearSnapshot(LogHelper log)
+    {
+      try
+      {
+        string snapshotPath = GetSnapshotPath();
+        if (File.Exists(snapshotPath))
+        {
+          File.Delete(snapshotPath);
+        }
+      }
+      catch (Exception ex)
+      {
+        log?.DoLogWarn("BinanceFutures analytics - unable to clear stale Monitor metric snapshot. " + ex.Message);
+      }
+    }
+
     public static void BuildAndSave(
       IEnumerable<string> exchangeMarkets,
       string mainMarket,
@@ -33,6 +49,7 @@ namespace Core.MarketAnalyzer.MarketData
       Core.Main.DataObjects.PTMagicData.MarketAnalyzer analyzerSettings = systemConfiguration.AnalyzerSettings?.MarketAnalyzer;
       if (analyzerSettings?.MarketTrends == null || analyzerSettings.MarketTrends.Count == 0)
       {
+        ClearSnapshot(log);
         return;
       }
 
@@ -40,6 +57,7 @@ namespace Core.MarketAnalyzer.MarketData
       // misleading monitor snapshot when the configured analytics universe depends on them.
       if (analyzerSettings.UseProfitTrailerEnabledPairs)
       {
+        ClearSnapshot(log);
         log.DoLogWarn("BinanceFutures analytics monitor snapshot skipped because UseProfitTrailerEnabledPairs is enabled; the exact PT pair universe is not finalized at this stage of the raid.");
         return;
       }
@@ -55,6 +73,7 @@ namespace Core.MarketAnalyzer.MarketData
 
         if (eligibleSymbols.Length == 0)
         {
+          ClearSnapshot(log);
           return;
         }
 
@@ -116,10 +135,7 @@ namespace Core.MarketAnalyzer.MarketData
           monitorSnapshot.Trends[marketTrend.Name] = ToMonitorTrend(analysis);
         }
 
-        string snapshotPath = Path.Combine(
-          Directory.GetCurrentDirectory(),
-          Constants.PTMagicPathData,
-          SnapshotFileName);
+        string snapshotPath = GetSnapshotPath();
         Directory.CreateDirectory(Path.GetDirectoryName(snapshotPath));
         File.WriteAllText(snapshotPath, JsonConvert.SerializeObject(monitorSnapshot, Formatting.None));
 
@@ -127,8 +143,17 @@ namespace Core.MarketAnalyzer.MarketData
       }
       catch (Exception ex)
       {
+        ClearSnapshot(log);
         log.DoLogWarn("BinanceFutures analytics - unable to save Monitor metric snapshot. " + ex.Message);
       }
+    }
+
+    private static string GetSnapshotPath()
+    {
+      return Path.Combine(
+        Directory.GetCurrentDirectory(),
+        Constants.PTMagicPathData,
+        SnapshotFileName);
     }
 
     private static string[] ApplyTrendMarketFilters(
