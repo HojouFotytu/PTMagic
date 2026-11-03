@@ -1365,17 +1365,24 @@ namespace Core.Main
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name == trigger.MarketTrendName);
                     if (marketTrend != null)
                     {
-                        // Get market trend change for trigger
-                        if (this.AverageMarketTrendChanges.ContainsKey(marketTrend.Name))
+                        // Explicit metrics use the normalized Phase 1 runtime; omitted Metric remains legacy.
+                        bool useNormalizedMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(marketTrend, trigger.Metric);
+                        double resolvedMetricValue;
+                        string metricError = "";
+                        bool hasMetricValue = useNormalizedMetric
+                          ? Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveGlobal(
+                              this.PTMagicConfiguration, marketTrend, trigger.Metric, out resolvedMetricValue, out metricError)
+                          : this.AverageMarketTrendChanges.TryGetValue(marketTrend.Name, out resolvedMetricValue);
+                        if (hasMetricValue)
                         {
-                            double averageMarketTrendChange = this.AverageMarketTrendChanges[marketTrend.Name];
+                            double averageMarketTrendChange = resolvedMetricValue;
                             bool isTriggered = averageMarketTrendChange >= trigger.MinChange && averageMarketTrendChange < trigger.MaxChange;
                             triggerResults[trigger.Tag] = isTriggered;
 
                             if (isTriggered)
                             {
                                 // Trigger met!
-                                this.Log.DoLogInfo("Trigger '" + trigger.MarketTrendName + "' triggered! TrendChange = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
+                                this.Log.DoLogInfo("Trigger '" + trigger.MarketTrendName + (useNormalizedMetric ? "' [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "]" : "'") + " triggered! TrendChange = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
 
                                 string triggerContent = trigger.MarketTrendName + " - ";
                                 if (trigger.MinChange != Constants.MinTrendChange)
@@ -1397,11 +1404,20 @@ namespace Core.Main
                         }
                         else
                         {
-                            this.Log.DoLogError("Trigger '" + trigger.MarketTrendName + "' not found in this.AverageMarketTrendChanges[] (" + SystemHelper.ConvertListToTokenString(this.AverageMarketTrendChanges.Keys.ToList(), ",", true) + "). Unable to load recent trends?");
+                            triggerResults[trigger.Tag] = false;
+                            if (useNormalizedMetric)
+                            {
+                              this.Log.DoLogWarn("Trigger '" + trigger.MarketTrendName + "' metric '" + trigger.Metric + "' unavailable: " + metricError);
+                            }
+                            else
+                            {
+                              this.Log.DoLogError("Trigger '" + trigger.MarketTrendName + "' not found in this.AverageMarketTrendChanges[] (" + SystemHelper.ConvertListToTokenString(this.AverageMarketTrendChanges.Keys.ToList(), ",", true) + "). Unable to load recent trends?");
+                            }
                         }
                     }
                     else
                     {
+                        triggerResults[trigger.Tag] = false;
                         this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' not found! Trigger ignored!");
                     }
                 }
@@ -1580,6 +1596,7 @@ namespace Core.Main
 
         int marketPairProcess = 1;
         Dictionary<string, List<string>> matchedMarketTriggers = new Dictionary<string, List<string>>();
+        HashSet<string> metricWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string mainMarket = this.LastRuntimeSummary.MainMarket;
         string exchange = this.PTMagicConfiguration.GeneralSettings.Application.Exchange.ToLower();
 
@@ -1732,8 +1749,23 @@ namespace Core.Main
                     }
                     else
                     {
-                      // Check for market trend Off triggers
-                      if (this.SingleMarketTrendChanges.ContainsKey(offTrigger.MarketTrendName))
+                      // Normalized metrics compare directly; omitted Metric preserves legacy relations.
+                      MarketTrend metricTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
+                        .Find(mt => mt.Name.Equals(offTrigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
+                      if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, offTrigger.Metric))
+                      {
+                        double metricValue;
+                        string metricError;
+                        bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
+                          this.PTMagicConfiguration, metricTrend, offTrigger.Metric, marketPair, out metricValue, out metricError);
+                        if (!validMetric && metricWarnings.Add("off|" + marketSetting.SettingName + "|" + offTrigger.MarketTrendName + "|" + offTrigger.Metric + "|" + metricError))
+                        {
+                          this.Log.DoLogWarn("SMS '" + marketSetting.SettingName + "' off-trigger metric '" + offTrigger.Metric +
+                            "' unavailable for '" + marketPair + "': " + metricError);
+                        }
+                        offTriggerResults.Add(validMetric && metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange);
+                      }
+                      else if (this.SingleMarketTrendChanges.ContainsKey(offTrigger.MarketTrendName))
                       {
                         List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[offTrigger.MarketTrendName];
 
@@ -1943,7 +1975,31 @@ namespace Core.Main
                 else
                 {
                   #region Check for market trend triggers
-                  if (this.SingleMarketTrendChanges.ContainsKey(trigger.MarketTrendName))
+                  MarketTrend metricTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
+                    .Find(mt => mt.Name.Equals(trigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
+                  if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, trigger.Metric))
+                  {
+                    double metricValue;
+                    string metricError;
+                    bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
+                      this.PTMagicConfiguration, metricTrend, trigger.Metric, marketPair, out metricValue, out metricError);
+                    bool metricTriggered = validMetric && metricValue >= trigger.MinChange && metricValue < trigger.MaxChange;
+                    triggerResults.Add(metricTriggered);
+                    triggerTagsResults[trigger.Tag] = metricTriggered;
+                    if (metricTriggered)
+                    {
+                      relevantTriggers.Add(triggerIndex, metricValue);
+                      matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": " + trigger.MarketTrendName +
+                        " [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "] - Value: " +
+                        metricValue.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
+                    }
+                    else if (!validMetric && metricWarnings.Add("on|" + marketSetting.SettingName + "|" + trigger.MarketTrendName + "|" + trigger.Metric + "|" + metricError))
+                    {
+                      this.Log.DoLogWarn("SMS '" + marketSetting.SettingName + "' trigger metric '" + trigger.Metric +
+                        "' unavailable for '" + marketPair + "': " + metricError);
+                    }
+                  }
+                  else if (this.SingleMarketTrendChanges.ContainsKey(trigger.MarketTrendName))
                   {
 
                     List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[trigger.MarketTrendName];
