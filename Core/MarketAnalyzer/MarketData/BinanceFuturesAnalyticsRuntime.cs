@@ -374,7 +374,11 @@ namespace Core.MarketAnalyzer.MarketData
         enrichedAssets,
         calculatedAtUtc);
 
-      Dictionary<string, FeatureValueSnapshot> marketFeatures = new Dictionary<string, FeatureValueSnapshot>(baseMarketFeatures, StringComparer.OrdinalIgnoreCase);
+      Dictionary<string, FeatureValueSnapshot> marketFeatures = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+      foreach (KeyValuePair<string, FeatureValueSnapshot> pair in baseMarketFeatures)
+      {
+        marketFeatures[pair.Key] = pair.Value;
+      }
       foreach (KeyValuePair<string, FeatureValueSnapshot> pair in concentration.Features)
       {
         marketFeatures[pair.Key] = pair.Value;
