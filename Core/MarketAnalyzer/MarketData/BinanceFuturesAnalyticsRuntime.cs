@@ -460,6 +460,12 @@ namespace Core.MarketAnalyzer.MarketData
         return true;
       }
 
+      if (!String.Equals(marketTrend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase))
+      {
+        error = "Normalized metrics require an Exchange MarketTrend.";
+        return false;
+      }
+
       if (!MarketTrendMetrics.IsEnabled(marketTrend, normalizedMetric))
       {
         error = "MarketTrend '" + marketTrend.Name + "' does not enable metric '" + normalizedMetric + "'.";
