@@ -98,6 +98,36 @@ namespace Monitor.Pages
       return feature.Value.Value.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + suffix;
     }
 
+    public string FormatTimeframe(int trendMinutes)
+    {
+      if (trendMinutes <= 0)
+      {
+        return "0m";
+      }
+
+      int remainingMinutes = trendMinutes;
+      int days = remainingMinutes / 1440;
+      remainingMinutes %= 1440;
+      int hours = remainingMinutes / 60;
+      int minutes = remainingMinutes % 60;
+
+      List<string> parts = new List<string>();
+      if (days > 0)
+      {
+        parts.Add(days + "d");
+      }
+      if (hours > 0)
+      {
+        parts.Add(hours + "h");
+      }
+      if (minutes > 0)
+      {
+        parts.Add(minutes + "m");
+      }
+
+      return parts.Count > 0 ? String.Join(" ", parts) : "0m";
+    }
+
     public string MetricTitle(string metric)
     {
       return metric switch
@@ -108,7 +138,22 @@ namespace Monitor.Pages
         MarketTrendMetrics.Dispersion => "Dispersion",
         MarketTrendMetrics.RelativeStrengthMarket => "RS vs Market",
         MarketTrendMetrics.RelativeStrengthBTC => "RS vs BTC",
-        MarketTrendMetrics.Concentration => "Top10 Advantage",
+        MarketTrendMetrics.Concentration => "Top10 Return Advantage",
+        _ => metric
+      };
+    }
+
+    public string MetricTooltip(string metric)
+    {
+      return metric switch
+      {
+        MarketTrendMetrics.MeanReturn => "Arithmetic mean return of valid markets over this MarketTrend timeframe.",
+        MarketTrendMetrics.MedianReturn => "Median return of valid markets over this MarketTrend timeframe.",
+        MarketTrendMetrics.Breadth => "Percentage of valid markets with a return greater than 0 over this MarketTrend timeframe.",
+        MarketTrendMetrics.Dispersion => "Population standard deviation of valid market returns over this MarketTrend timeframe.",
+        MarketTrendMetrics.RelativeStrengthMarket => "Individual market return minus the MarketTrend median return, in percentage points.",
+        MarketTrendMetrics.RelativeStrengthBTC => "Individual market return minus BTC return over the same timeframe, in percentage points.",
+        MarketTrendMetrics.Concentration => "Mean return of the Top10 markets by trailing 24-hour quote volume minus the mean return of the remaining MarketTrend universe, in percentage points.",
         _ => metric
       };
     }
