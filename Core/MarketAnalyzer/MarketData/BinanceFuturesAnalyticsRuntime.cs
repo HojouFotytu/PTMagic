@@ -213,7 +213,7 @@ namespace Core.MarketAnalyzer.MarketData
 
       DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
       AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(calculatedAtUtc, mainMarket, markets, selectionReason);
-      MarketAnalysisSnapshot analysis = BuildPriceReturnAnalysis(universe, calculatedAtUtc);
+      MarketAnalysisSnapshot analysis = BuildPriceReturnAnalysis(universe, calculatedAtUtc, out ReturnConcentrationResult concentration);
 
       lock (SnapshotLock)
       {
@@ -247,13 +247,22 @@ namespace Core.MarketAnalyzer.MarketData
 
       int validRelativeStrengthHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
         analysis.Assets.Values.All(asset =>
-          asset.Features.TryGetValue("RelativeStrengthMarket" + horizon.DisplayName, out FeatureValueSnapshot marketRelativeStrength)
-          && marketRelativeStrength.IsValid
-          && asset.Features.TryGetValue("RelativeStrengthBTC" + horizon.DisplayName, out FeatureValueSnapshot btcRelativeStrength)
-          && btcRelativeStrength.IsValid));
+          asset.Features.TryGetValue("RelativeStrengthMarket" + horizon.DisplayName, out FeatureValueSnapshot marketRelative) && marketRelative.IsValid
+          && asset.Features.TryGetValue("RelativeStrengthBTC" + horizon.DisplayName, out FeatureValueSnapshot btcRelative) && btcRelative.IsValid));
       log.DoLogInfo(
         "BinanceFutures analytics - Phase 1B relative strength vs market/BTC calculated for " +
         validRelativeStrengthHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
+
+      int validConcentrationHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
+        analysis.MarketFeatures.TryGetValue("Top10MeanReturn" + horizon.DisplayName, out FeatureValueSnapshot topMean) && topMean.IsValid
+        && analysis.MarketFeatures.TryGetValue("RestMeanReturn" + horizon.DisplayName, out FeatureValueSnapshot restMean) && restMean.IsValid
+        && analysis.MarketFeatures.TryGetValue("Top10MedianReturn" + horizon.DisplayName, out FeatureValueSnapshot topMedian) && topMedian.IsValid
+        && analysis.MarketFeatures.TryGetValue("RestMedianReturn" + horizon.DisplayName, out FeatureValueSnapshot restMedian) && restMedian.IsValid
+        && analysis.MarketFeatures.TryGetValue("Top10ReturnAdvantage" + horizon.DisplayName, out FeatureValueSnapshot advantage) && advantage.IsValid);
+      log.DoLogInfo(
+        "BinanceFutures analytics - Phase 1B return concentration calculated for " + validConcentrationHorizons + "/" +
+        PriceReturnCalculator.Horizons.Count + " horizons using Top10 by trailing 24h closed-candle quote volume: " +
+        String.Join(",", concentration.Top10Symbols) + ".");
 
       IReadOnlyList<MarketReturnValidationSnapshot> validations = MarketReturnValidator.Validate(
         universe,
@@ -307,9 +316,39 @@ namespace Core.MarketAnalyzer.MarketData
           validRelativeStrengthValidationHorizons + "/" + relativeStrengthValidations.Count +
           " horizons; inspect mismatch counts above.");
       }
+
+      IReadOnlyList<ReturnConcentrationValidationSnapshot> concentrationValidations = ReturnConcentrationValidator.Validate(
+        universe,
+        DataServiceInstance.Store,
+        BaseInterval,
+        analysis,
+        calculatedAtUtc);
+
+      foreach (ReturnConcentrationValidationSnapshot validation in concentrationValidations)
+      {
+        log.DoLogInfo("BinanceFutures analytics - " + ReturnConcentrationValidator.FormatLogLine(validation));
+      }
+
+      int validConcentrationValidationHorizons = concentrationValidations.Count(validation => validation.IsValid);
+      if (validConcentrationValidationHorizons == concentrationValidations.Count)
+      {
+        log.DoLogInfo(
+          "BinanceFutures analytics - Phase 1 return-concentration independent validation passed for " +
+          validConcentrationValidationHorizons + "/" + concentrationValidations.Count + " horizons.");
+      }
+      else
+      {
+        log.DoLogWarn(
+          "BinanceFutures analytics - Phase 1 return-concentration independent validation passed for " +
+          validConcentrationValidationHorizons + "/" + concentrationValidations.Count +
+          " horizons; inspect mismatch counts above.");
+      }
     }
 
-    private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(AnalyzerUniverseSnapshot universe, DateTimeOffset calculatedAtUtc)
+    private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(
+      AnalyzerUniverseSnapshot universe,
+      DateTimeOffset calculatedAtUtc,
+      out ReturnConcentrationResult concentration)
     {
       Dictionary<string, AssetFeatureSnapshot> assets = new Dictionary<string, AssetFeatureSnapshot>(StringComparer.OrdinalIgnoreCase);
 
@@ -319,21 +358,34 @@ namespace Core.MarketAnalyzer.MarketData
         assets[market.Symbol] = PriceReturnCalculator.Calculate(series);
       }
 
-      IReadOnlyDictionary<string, FeatureValueSnapshot> marketFeatures = MarketReturnAggregator.Calculate(assets, calculatedAtUtc);
+      IReadOnlyDictionary<string, FeatureValueSnapshot> baseMarketFeatures = MarketReturnAggregator.Calculate(assets, calculatedAtUtc);
       MarketDataSeriesSnapshot btcSeries = DataServiceInstance.Store.GetSnapshot("BTCUSDT", BaseInterval, calculatedAtUtc);
       AssetFeatureSnapshot btcBenchmark = PriceReturnCalculator.Calculate(btcSeries);
-      IReadOnlyDictionary<string, AssetFeatureSnapshot> assetsWithRelativeStrength = RelativeStrengthCalculator.Calculate(
+      IReadOnlyDictionary<string, AssetFeatureSnapshot> enrichedAssets = RelativeStrengthCalculator.Calculate(
         assets,
-        marketFeatures,
+        baseMarketFeatures,
         btcBenchmark,
         calculatedAtUtc);
+
+      concentration = ReturnConcentrationCalculator.Calculate(
+        universe,
+        DataServiceInstance.Store,
+        BaseInterval,
+        enrichedAssets,
+        calculatedAtUtc);
+
+      Dictionary<string, FeatureValueSnapshot> marketFeatures = new Dictionary<string, FeatureValueSnapshot>(baseMarketFeatures, StringComparer.OrdinalIgnoreCase);
+      foreach (KeyValuePair<string, FeatureValueSnapshot> pair in concentration.Features)
+      {
+        marketFeatures[pair.Key] = pair.Value;
+      }
 
       return new MarketAnalysisSnapshot
       {
         TimestampUtc = calculatedAtUtc,
         Universe = universe,
-        MarketFeatures = marketFeatures,
-        Assets = assetsWithRelativeStrength
+        MarketFeatures = new ReadOnlyDictionary<string, FeatureValueSnapshot>(marketFeatures),
+        Assets = enrichedAssets
       };
     }
 
