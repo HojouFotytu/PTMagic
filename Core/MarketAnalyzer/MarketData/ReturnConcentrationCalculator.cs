@@ -38,7 +38,7 @@ namespace Core.MarketAnalyzer.MarketData
       foreach (AnalyzerUniverseMarket market in universe.Markets)
       {
         MarketDataSeriesSnapshot series = store.GetSnapshot(market.Symbol, interval, calculatedAtUtc);
-        if (!TryCalculateTrailingQuoteVolume(series, calculatedAtUtc, out double quoteVolume, out DateTimeOffset? sourceTimestampUtc))
+        if (!TryCalculateTrailingQuoteVolume(series, out double quoteVolume))
         {
           continue;
         }
@@ -46,8 +46,7 @@ namespace Core.MarketAnalyzer.MarketData
         rankedMarkets.Add(new RankedMarket
         {
           Symbol = market.Symbol,
-          QuoteVolume = quoteVolume,
-          SourceTimestampUtc = sourceTimestampUtc
+          QuoteVolume = quoteVolume
         });
       }
 
@@ -64,7 +63,7 @@ namespace Core.MarketAnalyzer.MarketData
       foreach (ReturnHorizon horizon in PriceReturnCalculator.Horizons)
       {
         List<FeatureValueSnapshot> top = new List<FeatureValueSnapshot>();
-        List<FeatureValueSnapshot> rest = new List<FeatureValueSnapshot>();
+        List<FeatureValueSnapshot> remaining = new List<FeatureValueSnapshot>();
 
         foreach (KeyValuePair<string, AssetFeatureSnapshot> pair in assets)
         {
@@ -81,11 +80,11 @@ namespace Core.MarketAnalyzer.MarketData
           }
           else
           {
-            rest.Add(feature);
+            remaining.Add(feature);
           }
         }
 
-        AddHorizonFeatures(features, horizon, top, rest, calculatedAtUtc);
+        AddHorizonFeatures(features, horizon, top, remaining, calculatedAtUtc);
       }
 
       return new ReturnConcentrationResult
@@ -100,43 +99,38 @@ namespace Core.MarketAnalyzer.MarketData
       Dictionary<string, FeatureValueSnapshot> output,
       ReturnHorizon horizon,
       List<FeatureValueSnapshot> top,
-      List<FeatureValueSnapshot> rest,
+      List<FeatureValueSnapshot> remaining,
       DateTimeOffset calculatedAtUtc)
     {
       string suffix = horizon.DisplayName;
-      if (top.Count == 0 || rest.Count == 0)
+      if (top.Count == 0 || remaining.Count == 0)
       {
         output["Top10MeanReturn" + suffix] = InvalidFeature(calculatedAtUtc, top.Count, "Top10 or remaining-universe returns are unavailable.");
-        output["RestMeanReturn" + suffix] = InvalidFeature(calculatedAtUtc, rest.Count, "Top10 or remaining-universe returns are unavailable.");
+        output["RemainingUniverseMeanReturn" + suffix] = InvalidFeature(calculatedAtUtc, remaining.Count, "Top10 or remaining-universe returns are unavailable.");
         output["Top10MedianReturn" + suffix] = InvalidFeature(calculatedAtUtc, top.Count, "Top10 or remaining-universe returns are unavailable.");
-        output["RestMedianReturn" + suffix] = InvalidFeature(calculatedAtUtc, rest.Count, "Top10 or remaining-universe returns are unavailable.");
-        output["Top10ReturnAdvantage" + suffix] = InvalidFeature(calculatedAtUtc, top.Count + rest.Count, "Top10 or remaining-universe returns are unavailable.");
+        output["RemainingUniverseMedianReturn" + suffix] = InvalidFeature(calculatedAtUtc, remaining.Count, "Top10 or remaining-universe returns are unavailable.");
+        output["Top10ReturnAdvantage" + suffix] = InvalidFeature(calculatedAtUtc, top.Count + remaining.Count, "Top10 or remaining-universe returns are unavailable.");
         return;
       }
 
       double topMean = top.Average(feature => feature.Value.Value);
-      double restMean = rest.Average(feature => feature.Value.Value);
+      double remainingMean = remaining.Average(feature => feature.Value.Value);
       double topMedian = CalculateMedian(top.Select(feature => feature.Value.Value).ToArray());
-      double restMedian = CalculateMedian(rest.Select(feature => feature.Value.Value).ToArray());
+      double remainingMedian = CalculateMedian(remaining.Select(feature => feature.Value.Value).ToArray());
       DateTimeOffset? topSource = GetOldestSourceTimestamp(top);
-      DateTimeOffset? restSource = GetOldestSourceTimestamp(rest);
-      DateTimeOffset? combinedSource = GetOldestSourceTimestamp(top.Concat(rest));
+      DateTimeOffset? remainingSource = GetOldestSourceTimestamp(remaining);
+      DateTimeOffset? combinedSource = GetOldestSourceTimestamp(top.Concat(remaining));
 
       output["Top10MeanReturn" + suffix] = ValidFeature(topMean, calculatedAtUtc, topSource, top.Count);
-      output["RestMeanReturn" + suffix] = ValidFeature(restMean, calculatedAtUtc, restSource, rest.Count);
+      output["RemainingUniverseMeanReturn" + suffix] = ValidFeature(remainingMean, calculatedAtUtc, remainingSource, remaining.Count);
       output["Top10MedianReturn" + suffix] = ValidFeature(topMedian, calculatedAtUtc, topSource, top.Count);
-      output["RestMedianReturn" + suffix] = ValidFeature(restMedian, calculatedAtUtc, restSource, rest.Count);
-      output["Top10ReturnAdvantage" + suffix] = ValidFeature(topMean - restMean, calculatedAtUtc, combinedSource, top.Count + rest.Count);
+      output["RemainingUniverseMedianReturn" + suffix] = ValidFeature(remainingMedian, calculatedAtUtc, remainingSource, remaining.Count);
+      output["Top10ReturnAdvantage" + suffix] = ValidFeature(topMean - remainingMean, calculatedAtUtc, combinedSource, top.Count + remaining.Count);
     }
 
-    private static bool TryCalculateTrailingQuoteVolume(
-      MarketDataSeriesSnapshot series,
-      DateTimeOffset calculatedAtUtc,
-      out double quoteVolume,
-      out DateTimeOffset? sourceTimestampUtc)
+    private static bool TryCalculateTrailingQuoteVolume(MarketDataSeriesSnapshot series, out double quoteVolume)
     {
       quoteVolume = 0;
-      sourceTimestampUtc = null;
       if (series == null || series.IsStale || series.ClosedCandles == null || series.ClosedCandles.Count == 0)
       {
         return false;
@@ -159,7 +153,6 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       quoteVolume = selected.Sum(candle => candle.QuoteVolume);
-      sourceTimestampUtc = latest.CloseTimeUtc;
       return double.IsFinite(quoteVolume);
     }
 
@@ -237,7 +230,6 @@ namespace Core.MarketAnalyzer.MarketData
     {
       public string Symbol { get; init; } = "";
       public double QuoteVolume { get; init; }
-      public DateTimeOffset? SourceTimestampUtc { get; init; }
     }
   }
 
