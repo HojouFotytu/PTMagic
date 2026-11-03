@@ -19,8 +19,8 @@ namespace Core.MarketAnalyzer.MarketData
   public static class MarketTrendMetrics
   {
     public const string PriceTrend = "PriceTrend";
-    public const string MeanReturn = "MeanReturn";
-    public const string MedianReturn = "MedianReturn";
+    public const string MedianPriceTrend = "MedianPriceTrend";
+    public const string MeanMedianSpread = "MeanMedianSpread";
     public const string Breadth = "Breadth";
     public const string Dispersion = "Dispersion";
     public const string RelativeStrengthMarket = "RelativeStrengthMarket";
@@ -31,8 +31,8 @@ namespace Core.MarketAnalyzer.MarketData
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
       {
         [PriceTrend] = MarketTrendMetricScope.Both,
-        [MeanReturn] = MarketTrendMetricScope.Global,
-        [MedianReturn] = MarketTrendMetricScope.Global,
+        [MedianPriceTrend] = MarketTrendMetricScope.Global,
+        [MeanMedianSpread] = MarketTrendMetricScope.Global,
         [Breadth] = MarketTrendMetricScope.Global,
         [Dispersion] = MarketTrendMetricScope.Global,
         [RelativeStrengthMarket] = MarketTrendMetricScope.Asset,
