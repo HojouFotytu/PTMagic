@@ -5,6 +5,7 @@ using System.Linq;
 using Core.Helper;
 using Core.Main;
 using Core.Main.DataObjects.PTMagicData;
+using Core.MarketAnalyzer;
 using Newtonsoft.Json;
 
 namespace Core.MarketAnalyzer.MarketData
