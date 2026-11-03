@@ -5,9 +5,9 @@ using Core.Main.DataObjects.PTMagicData;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Resolves configured trigger metrics without changing the legacy PriceTrend path.
-  /// Non-PriceTrend metrics are compared directly to MinChange/MaxChange; the legacy
-  /// MarketTrendRelation setting is intentionally not applied to them.
+  /// Resolves explicitly configured normalized trigger metrics while preserving the
+  /// legacy PriceTrend path when Trigger/OffTrigger.Metric is omitted or the referenced
+  /// MarketTrend has no normalized Metrics configured.
   /// </summary>
   public static class MarketTrendMetricTriggerResolver
   {
@@ -39,14 +39,6 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static string GetUnit(string metric)
     {
-      string normalized = MarketTrendMetrics.Normalize(metric);
-      if (normalized.Equals(MarketTrendMetrics.RelativeStrengthMarket, StringComparison.OrdinalIgnoreCase)
-        || normalized.Equals(MarketTrendMetrics.RelativeStrengthBTC, StringComparison.OrdinalIgnoreCase)
-        || normalized.Equals(MarketTrendMetrics.Concentration, StringComparison.OrdinalIgnoreCase))
-      {
-        return " pp";
-      }
-
       return "%";
     }
 
@@ -62,8 +54,13 @@ namespace Core.MarketAnalyzer.MarketData
       value = 0;
       error = "";
 
+      bool metricOmitted = String.IsNullOrWhiteSpace(metric);
       string normalizedMetric = MarketTrendMetrics.Normalize(metric);
-      if (IsPriceTrend(normalizedMetric))
+
+      // Omitted Metric preserves the pre-Phase-1 PriceTrend trigger path. An explicitly
+      // named PriceTrend also remains legacy when the MarketTrend has no Metrics configured.
+      if (metricOmitted
+        || (IsPriceTrend(normalizedMetric) && String.IsNullOrWhiteSpace(marketTrend?.Metrics)))
       {
         error = "PriceTrend is resolved by PTMagic's legacy trend path.";
         return false;
@@ -77,11 +74,11 @@ namespace Core.MarketAnalyzer.MarketData
 
       if (!configuration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
       {
-        error = "Additional MarketTrend metrics are currently available only for BinanceFutures.";
+        error = "Normalized MarketTrend metrics are currently available only for BinanceFutures.";
         return false;
       }
 
-      if (!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(marketTrend, normalizedMetric, globalSettingContext, out error))
+      if (!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(marketTrend, metric, globalSettingContext, out error))
       {
         return false;
       }
