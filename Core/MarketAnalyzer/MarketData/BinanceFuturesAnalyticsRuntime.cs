@@ -255,9 +255,9 @@ namespace Core.MarketAnalyzer.MarketData
 
       int validConcentrationHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
         analysis.MarketFeatures.TryGetValue("Top10MeanReturn" + horizon.DisplayName, out FeatureValueSnapshot topMean) && topMean.IsValid
-        && analysis.MarketFeatures.TryGetValue("RestMeanReturn" + horizon.DisplayName, out FeatureValueSnapshot restMean) && restMean.IsValid
+        && analysis.MarketFeatures.TryGetValue("RemainingUniverseMeanReturn" + horizon.DisplayName, out FeatureValueSnapshot remainingMean) && remainingMean.IsValid
         && analysis.MarketFeatures.TryGetValue("Top10MedianReturn" + horizon.DisplayName, out FeatureValueSnapshot topMedian) && topMedian.IsValid
-        && analysis.MarketFeatures.TryGetValue("RestMedianReturn" + horizon.DisplayName, out FeatureValueSnapshot restMedian) && restMedian.IsValid
+        && analysis.MarketFeatures.TryGetValue("RemainingUniverseMedianReturn" + horizon.DisplayName, out FeatureValueSnapshot remainingMedian) && remainingMedian.IsValid
         && analysis.MarketFeatures.TryGetValue("Top10ReturnAdvantage" + horizon.DisplayName, out FeatureValueSnapshot advantage) && advantage.IsValid);
       log.DoLogInfo(
         "BinanceFutures analytics - Phase 1B return concentration calculated for " + validConcentrationHorizons + "/" +
