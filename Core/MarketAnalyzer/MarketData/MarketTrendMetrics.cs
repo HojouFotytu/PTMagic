@@ -31,7 +31,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
       {
-        [PriceTrend] = MarketTrendMetricScope.Both,
+        [PriceTrend] = MarketTrendMetricScope.Global,
         [MedianPriceTrend] = MarketTrendMetricScope.Global,
         [MeanMedianSpread] = MarketTrendMetricScope.Global,
         [Breadth] = MarketTrendMetricScope.Global,
