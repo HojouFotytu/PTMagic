@@ -1,31 +1,31 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Helper;
 using Core.Main;
+using Core.Main.DataObjects.PTMagicData;
 
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Observation-only runtime for the Phase 1 Binance Futures analytics pipeline.
-  /// It maintains normalized 5-minute OHLCV history independently from the legacy
-  /// MarketData_*.json trend pipeline and exposes immutable analytics snapshots.
+  /// Runtime for normalized Binance Futures analytics. Raw 5-minute candles are shared
+  /// across all configured MarketTrends. Additional metrics are calculated only when a
+  /// MarketTrend requests them through MarketTrend.Metrics.
   /// </summary>
   public static class BinanceFuturesAnalyticsRuntime
   {
-    // 900 x 5m = 75 hours. This covers the Phase 1B return horizons through 72h
-    // with 3 hours of headroom. Binance serves at most 500 klines per request, so a
-    // cold bootstrap requires two paged kline requests per symbol.
-    private const int BootstrapHistoryCandles = 900;
     private const int RefreshConcurrency = 2;
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
-    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(1000));
+    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(2));
     private static AnalyzerUniverseSnapshot _currentUniverse;
     private static MarketAnalysisSnapshot _currentAnalysis;
+    private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> _currentTrendAnalyses =
+      new ReadOnlyDictionary<string, MarketTrendAnalysisSnapshot>(new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase));
     private static IReadOnlyList<string> _cachedExchangeSymbols = Array.Empty<string>();
     private static IReadOnlyList<MarketDataRefreshStatus> _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
 
@@ -42,6 +42,10 @@ namespace Core.MarketAnalyzer.MarketData
       }
     }
 
+    /// <summary>
+    /// Compatibility property for the earlier fixed-horizon prototype. Production
+    /// MarketTrend-driven analytics are exposed through CurrentTrendAnalyses.
+    /// </summary>
     public static MarketAnalysisSnapshot CurrentAnalysis
     {
       get
@@ -49,6 +53,17 @@ namespace Core.MarketAnalyzer.MarketData
         lock (SnapshotLock)
         {
           return _currentAnalysis;
+        }
+      }
+    }
+
+    public static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> CurrentTrendAnalyses
+    {
+      get
+      {
+        lock (SnapshotLock)
+        {
+          return _currentTrendAnalyses;
         }
       }
     }
@@ -64,7 +79,12 @@ namespace Core.MarketAnalyzer.MarketData
       }
     }
 
-    public static async Task RefreshObservationDataAsync(IEnumerable<string> exchangeMarkets, string mainMarket, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
+    public static async Task RefreshObservationDataAsync(
+      IEnumerable<string> exchangeMarkets,
+      string mainMarket,
+      PTMagicConfiguration systemConfiguration,
+      LogHelper log,
+      CancellationToken cancellationToken = default)
     {
       if (exchangeMarkets == null)
       {
@@ -91,6 +111,7 @@ namespace Core.MarketAnalyzer.MarketData
         _cachedExchangeSymbols = Array.AsReadOnly(exchangeSymbols);
         _currentUniverse = null;
         _currentAnalysis = null;
+        _currentTrendAnalyses = EmptyTrendAnalyses();
       }
 
       if (exchangeSymbols.Length == 0)
@@ -104,10 +125,26 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
 
+      int storeDataMaxHours = systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0;
+      if (storeDataMaxHours <= 0)
+      {
+        DataServiceInstance.Store.Clear();
+        lock (SnapshotLock)
+        {
+          _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
+        }
+
+        log.DoLogWarn("BinanceFutures analytics - StoreDataMaxHours must be greater than zero to calculate normalized MarketTrend metrics. Legacy PriceTrend analysis will continue.");
+        return;
+      }
+
+      int targetHistoryCandles = GetTargetHistoryCandles(storeDataMaxHours);
+      DataServiceInstance.Store.SetMaxCandlesPerSeries(targetHistoryCandles);
+
       IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAsync(
         exchangeSymbols,
         BaseInterval,
-        BootstrapHistoryCandles,
+        targetHistoryCandles,
         BinanceFutures.GetFiveMinuteMarketCandlesAsync,
         log,
         RefreshConcurrency,
@@ -128,17 +165,23 @@ namespace Core.MarketAnalyzer.MarketData
       {
         log.DoLogInfo(
           "BinanceFutures analytics - normalized 5m data current; no kline requests required for " + skipped +
-          " markets. Store series: " + DataServiceInstance.Store.SeriesCount + ".");
+          " markets. StoreDataMaxHours=" + storeDataMaxHours + ", per-series capacity=" + targetHistoryCandles +
+          ", store series=" + DataServiceInstance.Store.SeriesCount + ".");
       }
       else
       {
         log.DoLogInfo(
           "BinanceFutures analytics - normalized 5m data refreshed for " + refreshed + "/" + exchangeSymbols.Length +
           " markets (" + receivedCandles + " candles received, " + skipped + " current/skipped, " + failed +
-          " failed). Store series: " + DataServiceInstance.Store.SeriesCount + ".");
+          " failed). StoreDataMaxHours=" + storeDataMaxHours + ", per-series capacity=" + targetHistoryCandles +
+          ", store series=" + DataServiceInstance.Store.SeriesCount + ".");
       }
     }
 
+    /// <summary>
+    /// Freezes the broad normalized analytics eligibility boundary after PT pair/type
+    /// filters are known. It no longer calculates a fixed list of time horizons.
+    /// </summary>
     public static void FreezeAnalyzerUniverse(List<string> pairsLines, PTMagicConfiguration systemConfiguration, LogHelper log)
     {
       if (systemConfiguration == null)
@@ -211,14 +254,12 @@ namespace Core.MarketAnalyzer.MarketData
         ? "Binance Futures exchange population filtered by the active underlying-type policy and ProfitTrailer enabled_pairs/disabled_pairs"
         : "Binance Futures exchange population filtered by the active underlying-type policy";
 
-      DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
-      AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(calculatedAtUtc, mainMarket, markets, selectionReason);
-      MarketAnalysisSnapshot analysis = BuildPriceReturnAnalysis(universe, calculatedAtUtc, out ReturnConcentrationResult concentration);
-
+      AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(DateTimeOffset.UtcNow, mainMarket, markets, selectionReason);
       lock (SnapshotLock)
       {
         _currentUniverse = universe;
-        _currentAnalysis = analysis;
+        _currentAnalysis = null;
+        _currentTrendAnalyses = EmptyTrendAnalyses();
       }
 
       string typeCounts = String.Join(", ", universe.Markets
@@ -229,168 +270,250 @@ namespace Core.MarketAnalyzer.MarketData
       log.DoLogInfo(
         "BinanceFutures analytics - analyzer universe frozen: " + universe.MarketCount + "/" + cachedSymbols.Count +
         " cached exchange markets eligible" + (String.IsNullOrWhiteSpace(typeCounts) ? "." : " (" + typeCounts + ")."));
+    }
 
-      int validAssets = analysis.Assets.Values.Count(asset => asset.IsValid);
-      int valid72hAssets = analysis.Assets.Values.Count(asset => asset.Features.TryGetValue("Return72h", out FeatureValueSnapshot feature) && feature.IsValid);
-      log.DoLogInfo(
-        "BinanceFutures analytics - Phase 1B returns calculated for " + validAssets + "/" + universe.MarketCount +
-        " assets; " + valid72hAssets + " have valid 72h returns.");
-
-      int validAggregateHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
-        analysis.MarketFeatures.TryGetValue("MeanReturn" + horizon.DisplayName, out FeatureValueSnapshot mean) && mean.IsValid
-        && analysis.MarketFeatures.TryGetValue("MedianReturn" + horizon.DisplayName, out FeatureValueSnapshot median) && median.IsValid
-        && analysis.MarketFeatures.TryGetValue("PositiveBreadth" + horizon.DisplayName, out FeatureValueSnapshot breadth) && breadth.IsValid
-        && analysis.MarketFeatures.TryGetValue("ReturnStdDev" + horizon.DisplayName, out FeatureValueSnapshot dispersion) && dispersion.IsValid);
-      log.DoLogInfo(
-        "BinanceFutures analytics - Phase 1B market mean/median/breadth/dispersion calculated for " +
-        validAggregateHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
-
-      int validRelativeStrengthHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
-        analysis.Assets.Values.All(asset =>
-          asset.Features.TryGetValue("RelativeStrengthMarket" + horizon.DisplayName, out FeatureValueSnapshot marketRelative) && marketRelative.IsValid
-          && asset.Features.TryGetValue("RelativeStrengthBTC" + horizon.DisplayName, out FeatureValueSnapshot btcRelative) && btcRelative.IsValid));
-      log.DoLogInfo(
-        "BinanceFutures analytics - Phase 1B relative strength vs market/BTC calculated for " +
-        validRelativeStrengthHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
-
-      int validConcentrationHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
-        analysis.MarketFeatures.TryGetValue("Top10MeanReturn" + horizon.DisplayName, out FeatureValueSnapshot topMean) && topMean.IsValid
-        && analysis.MarketFeatures.TryGetValue("RemainingUniverseMeanReturn" + horizon.DisplayName, out FeatureValueSnapshot remainingMean) && remainingMean.IsValid
-        && analysis.MarketFeatures.TryGetValue("Top10MedianReturn" + horizon.DisplayName, out FeatureValueSnapshot topMedian) && topMedian.IsValid
-        && analysis.MarketFeatures.TryGetValue("RemainingUniverseMedianReturn" + horizon.DisplayName, out FeatureValueSnapshot remainingMedian) && remainingMedian.IsValid
-        && analysis.MarketFeatures.TryGetValue("Top10ReturnAdvantage" + horizon.DisplayName, out FeatureValueSnapshot advantage) && advantage.IsValid);
-      log.DoLogInfo(
-        "BinanceFutures analytics - Phase 1B return concentration calculated for " + validConcentrationHorizons + "/" +
-        PriceReturnCalculator.Horizons.Count + " horizons using Top10 by trailing 24h closed-candle quote volume: " +
-        String.Join(",", concentration.Top10Symbols) + ".");
-
-      IReadOnlyList<MarketReturnValidationSnapshot> validations = MarketReturnValidator.Validate(
-        universe,
-        DataServiceInstance.Store,
-        BaseInterval,
-        analysis,
-        calculatedAtUtc);
-
-      foreach (MarketReturnValidationSnapshot validation in validations)
+    /// <summary>
+    /// Calculates additional metrics for configured Exchange MarketTrends after the
+    /// legacy PTMagic trend pipeline has resolved each trend's market population.
+    /// PriceTrend remains owned by the legacy pipeline and is not recalculated here.
+    /// </summary>
+    public static void EvaluateConfiguredMarketTrends(
+      IReadOnlyDictionary<string, List<MarketTrendChange>> globalMarketTrendChanges,
+      IReadOnlyDictionary<string, List<MarketTrendChange>> singleMarketTrendChanges,
+      PTMagicConfiguration systemConfiguration,
+      LogHelper log)
+    {
+      if (systemConfiguration == null)
       {
-        log.DoLogInfo("BinanceFutures analytics - " + MarketReturnValidator.FormatLogLine(validation));
+        throw new ArgumentNullException(nameof(systemConfiguration));
+      }
+      if (log == null)
+      {
+        throw new ArgumentNullException(nameof(log));
       }
 
-      int validValidationHorizons = validations.Count(validation => validation.IsValid);
-      if (validValidationHorizons == validations.Count)
+      AnalyzerUniverseSnapshot universe;
+      lock (SnapshotLock)
       {
-        log.DoLogInfo(
-          "BinanceFutures analytics - Phase 1 independent validation passed for " + validValidationHorizons +
-          "/" + validations.Count + " horizons.");
-      }
-      else
-      {
-        log.DoLogWarn(
-          "BinanceFutures analytics - Phase 1 independent validation passed for " + validValidationHorizons +
-          "/" + validations.Count + " horizons; inspect mismatch counts above.");
+        universe = _currentUniverse;
       }
 
-      IReadOnlyList<RelativeStrengthValidationSnapshot> relativeStrengthValidations = RelativeStrengthValidator.Validate(
-        universe,
-        DataServiceInstance.Store,
-        BaseInterval,
-        analysis,
-        calculatedAtUtc);
-
-      foreach (RelativeStrengthValidationSnapshot validation in relativeStrengthValidations)
+      if (universe == null)
       {
-        log.DoLogInfo("BinanceFutures analytics - " + RelativeStrengthValidator.FormatLogLine(validation));
+        log.DoLogWarn("BinanceFutures analytics - configured MarketTrend metrics were not calculated because the analyzer universe is unavailable.");
+        return;
       }
 
-      int validRelativeStrengthValidationHorizons = relativeStrengthValidations.Count(validation => validation.IsValid);
-      if (validRelativeStrengthValidationHorizons == relativeStrengthValidations.Count)
+      HashSet<string> eligibleSymbols = universe.Markets
+        .Select(market => market.Symbol)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+      Dictionary<string, MarketTrendAnalysisSnapshot> analyses =
+        new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase);
+      DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
+
+      IEnumerable<MarketTrend> configuredTrends = systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? Enumerable.Empty<MarketTrend>();
+
+      foreach (MarketTrend marketTrend in configuredTrends)
       {
-        log.DoLogInfo(
-          "BinanceFutures analytics - Phase 1 relative-strength independent validation passed for " +
-          validRelativeStrengthValidationHorizons + "/" + relativeStrengthValidations.Count + " horizons.");
-      }
-      else
-      {
-        log.DoLogWarn(
-          "BinanceFutures analytics - Phase 1 relative-strength independent validation passed for " +
-          validRelativeStrengthValidationHorizons + "/" + relativeStrengthValidations.Count +
-          " horizons; inspect mismatch counts above.");
+        if (marketTrend == null
+          || !marketTrend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)
+          || String.IsNullOrWhiteSpace(marketTrend.Metrics))
+        {
+          continue;
+        }
+
+        IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
+        List<string> invalidMetrics = enabledMetrics
+          .Where(metric => !metric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase) && !MarketTrendMetrics.IsKnown(metric))
+          .ToList();
+        if (invalidMetrics.Count > 0)
+        {
+          log.DoLogError(
+            "BinanceFutures analytics - MarketTrend '" + marketTrend.Name + "' contains unknown Metrics: " +
+            String.Join(", ", invalidMetrics) + ". Unknown metrics will be ignored.");
+        }
+
+        bool hasKnownAdditionalMetric = enabledMetrics.Any(metric =>
+          !metric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
+          && MarketTrendMetrics.IsKnown(metric));
+        if (!hasKnownAdditionalMetric)
+        {
+          continue;
+        }
+
+        List<MarketTrendChange> globalChanges = GetTrendChanges(globalMarketTrendChanges, marketTrend.Name);
+        List<MarketTrendChange> singleChanges = GetTrendChanges(singleMarketTrendChanges, marketTrend.Name);
+
+        IEnumerable<MarketTrendChange> thresholdFilteredGlobalChanges = globalChanges;
+        if (marketTrend.TrendThreshold != 0)
+        {
+          double threshold = Math.Abs(marketTrend.TrendThreshold);
+          thresholdFilteredGlobalChanges = globalChanges.Where(change =>
+            change != null && change.TrendChange <= threshold && change.TrendChange >= -threshold);
+        }
+
+        string[] globalSymbols = thresholdFilteredGlobalChanges
+          .Where(change => change != null && eligibleSymbols.Contains(change.Market))
+          .Select(change => change.Market)
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .ToArray();
+        string[] assetSymbols = singleChanges
+          .Where(change => change != null && eligibleSymbols.Contains(change.Market))
+          .Select(change => change.Market)
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .ToArray();
+
+        MarketTrendAnalysisSnapshot analysis = MarketTrendAnalyticsEngine.Calculate(
+          marketTrend,
+          globalSymbols,
+          assetSymbols,
+          DataServiceInstance.Store,
+          BaseInterval,
+          calculatedAtUtc);
+        analyses[marketTrend.Name] = analysis;
+
+        LogTrendAnalysis(marketTrend, analysis, log);
       }
 
-      IReadOnlyList<ReturnConcentrationValidationSnapshot> concentrationValidations = ReturnConcentrationValidator.Validate(
-        universe,
-        DataServiceInstance.Store,
-        BaseInterval,
-        analysis,
-        calculatedAtUtc);
-
-      foreach (ReturnConcentrationValidationSnapshot validation in concentrationValidations)
+      lock (SnapshotLock)
       {
-        log.DoLogInfo("BinanceFutures analytics - " + ReturnConcentrationValidator.FormatLogLine(validation));
-      }
-
-      int validConcentrationValidationHorizons = concentrationValidations.Count(validation => validation.IsValid);
-      if (validConcentrationValidationHorizons == concentrationValidations.Count)
-      {
-        log.DoLogInfo(
-          "BinanceFutures analytics - Phase 1 return-concentration independent validation passed for " +
-          validConcentrationValidationHorizons + "/" + concentrationValidations.Count + " horizons.");
-      }
-      else
-      {
-        log.DoLogWarn(
-          "BinanceFutures analytics - Phase 1 return-concentration independent validation passed for " +
-          validConcentrationValidationHorizons + "/" + concentrationValidations.Count +
-          " horizons; inspect mismatch counts above.");
+        _currentTrendAnalyses = new ReadOnlyDictionary<string, MarketTrendAnalysisSnapshot>(analyses);
       }
     }
 
-    private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(
-      AnalyzerUniverseSnapshot universe,
-      DateTimeOffset calculatedAtUtc,
-      out ReturnConcentrationResult concentration)
+    public static bool TryGetMetric(
+      string marketTrendName,
+      string metric,
+      string marketSymbol,
+      out FeatureValueSnapshot feature)
     {
-      Dictionary<string, AssetFeatureSnapshot> assets = new Dictionary<string, AssetFeatureSnapshot>(StringComparer.OrdinalIgnoreCase);
+      feature = null;
+      string normalizedMetric = MarketTrendMetrics.Normalize(metric);
+      MarketTrendAnalysisSnapshot analysis;
 
-      foreach (AnalyzerUniverseMarket market in universe.Markets)
+      lock (SnapshotLock)
       {
-        MarketDataSeriesSnapshot series = DataServiceInstance.Store.GetSnapshot(market.Symbol, BaseInterval, calculatedAtUtc);
-        assets[market.Symbol] = PriceReturnCalculator.Calculate(series);
+        if (!_currentTrendAnalyses.TryGetValue(marketTrendName ?? "", out analysis))
+        {
+          return false;
+        }
       }
 
-      IReadOnlyDictionary<string, FeatureValueSnapshot> baseMarketFeatures = MarketReturnAggregator.Calculate(assets, calculatedAtUtc);
-      MarketDataSeriesSnapshot btcSeries = DataServiceInstance.Store.GetSnapshot("BTCUSDT", BaseInterval, calculatedAtUtc);
-      AssetFeatureSnapshot btcBenchmark = PriceReturnCalculator.Calculate(btcSeries);
-      IReadOnlyDictionary<string, AssetFeatureSnapshot> enrichedAssets = RelativeStrengthCalculator.Calculate(
-        assets,
-        baseMarketFeatures,
-        btcBenchmark,
-        calculatedAtUtc);
-
-      concentration = ReturnConcentrationCalculator.Calculate(
-        universe,
-        DataServiceInstance.Store,
-        BaseInterval,
-        enrichedAssets,
-        calculatedAtUtc);
-
-      Dictionary<string, FeatureValueSnapshot> marketFeatures = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-      foreach (KeyValuePair<string, FeatureValueSnapshot> pair in baseMarketFeatures)
+      if (!MarketTrendMetrics.TryGetScope(normalizedMetric, out MarketTrendMetricScope scope))
       {
-        marketFeatures[pair.Key] = pair.Value;
-      }
-      foreach (KeyValuePair<string, FeatureValueSnapshot> pair in concentration.Features)
-      {
-        marketFeatures[pair.Key] = pair.Value;
+        return false;
       }
 
-      return new MarketAnalysisSnapshot
+      if (scope == MarketTrendMetricScope.Global)
       {
-        TimestampUtc = calculatedAtUtc,
-        Universe = universe,
-        MarketFeatures = new ReadOnlyDictionary<string, FeatureValueSnapshot>(marketFeatures),
-        Assets = enrichedAssets
-      };
+        return analysis.MarketMetrics.TryGetValue(normalizedMetric, out feature);
+      }
+
+      if (scope == MarketTrendMetricScope.Asset && !String.IsNullOrWhiteSpace(marketSymbol))
+      {
+        return analysis.AssetMetrics.TryGetValue(marketSymbol, out IReadOnlyDictionary<string, FeatureValueSnapshot> assetMetrics)
+          && assetMetrics.TryGetValue(normalizedMetric, out feature);
+      }
+
+      return false;
+    }
+
+    public static bool ValidateMetricReference(
+      MarketTrend marketTrend,
+      string metric,
+      bool globalSettingContext,
+      out string error)
+    {
+      error = "";
+      string normalizedMetric = MarketTrendMetrics.Normalize(metric);
+
+      if (!MarketTrendMetrics.IsKnown(normalizedMetric))
+      {
+        error = "Unknown metric '" + normalizedMetric + "'.";
+        return false;
+      }
+
+      if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase))
+      {
+        return true;
+      }
+
+      if (marketTrend == null)
+      {
+        error = "The referenced MarketTrend does not exist.";
+        return false;
+      }
+
+      if (!MarketTrendMetrics.IsEnabled(marketTrend, normalizedMetric))
+      {
+        error = "MarketTrend '" + marketTrend.Name + "' does not enable metric '" + normalizedMetric + "'.";
+        return false;
+      }
+
+      if (globalSettingContext
+        && MarketTrendMetrics.TryGetScope(normalizedMetric, out MarketTrendMetricScope scope)
+        && scope == MarketTrendMetricScope.Asset)
+      {
+        error = "Metric '" + normalizedMetric + "' requires a market-specific context and cannot be used by a GlobalSetting trigger.";
+        return false;
+      }
+
+      return true;
+    }
+
+    private static int GetTargetHistoryCandles(int storeDataMaxHours)
+    {
+      double intervals = TimeSpan.FromHours(storeDataMaxHours).TotalMilliseconds / BaseInterval.TotalMilliseconds;
+      // One boundary candle is required to measure a return across the full configured
+      // duration, and one additional slot permits Binance's currently forming candle.
+      return checked((int)Math.Ceiling(intervals) + 2);
+    }
+
+    private static List<MarketTrendChange> GetTrendChanges(
+      IReadOnlyDictionary<string, List<MarketTrendChange>> source,
+      string marketTrendName)
+    {
+      if (source != null && source.TryGetValue(marketTrendName ?? "", out List<MarketTrendChange> changes) && changes != null)
+      {
+        return changes;
+      }
+
+      return new List<MarketTrendChange>();
+    }
+
+    private static void LogTrendAnalysis(MarketTrend marketTrend, MarketTrendAnalysisSnapshot analysis, LogHelper log)
+    {
+      List<string> marketValues = new List<string>();
+      foreach (KeyValuePair<string, FeatureValueSnapshot> pair in analysis.MarketMetrics.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+      {
+        marketValues.Add(FormatMetric(pair.Key, pair.Value));
+      }
+
+      int validAssetValues = analysis.AssetMetrics.Values.Sum(metrics => metrics.Values.Count(feature => feature.IsValid));
+      int totalAssetValues = analysis.AssetMetrics.Values.Sum(metrics => metrics.Count);
+
+      log.DoLogInfo(
+        "BinanceFutures analytics - MarketTrend '" + marketTrend.Name + "' (" + marketTrend.TrendMinutes +
+        "m) metrics: " + (marketValues.Count == 0 ? "no global metrics" : String.Join(", ", marketValues)) +
+        "; asset metrics valid=" + validAssetValues + "/" + totalAssetValues +
+        "; global universe=" + analysis.GlobalSymbols.Count + ", asset universe=" + analysis.AssetSymbols.Count + ".");
+    }
+
+    private static string FormatMetric(string name, FeatureValueSnapshot feature)
+    {
+      if (feature == null || !feature.IsValid || !feature.Value.HasValue)
+      {
+        return name + "=unavailable" + (String.IsNullOrWhiteSpace(feature?.InvalidReason) ? "" : " (" + feature.InvalidReason + ")");
+      }
+
+      return name + "=" + feature.Value.Value.ToString("0.########", CultureInfo.InvariantCulture);
+    }
+
+    private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> EmptyTrendAnalyses()
+    {
+      return new ReadOnlyDictionary<string, MarketTrendAnalysisSnapshot>(
+        new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase));
     }
 
     private static string ToFullMarketSymbol(string mainMarket, string symbol)
