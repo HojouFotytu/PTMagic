@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,20 +10,22 @@ using Core.Main;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Observation-only runtime for the Phase 1 Binance Futures analytics data foundation.
+  /// Observation-only runtime for the Phase 1 Binance Futures analytics pipeline.
   /// It maintains normalized 5-minute OHLCV history independently from the legacy
-  /// MarketData_*.json trend pipeline.
+  /// MarketData_*.json trend pipeline and exposes immutable analytics snapshots.
   /// </summary>
   public static class BinanceFuturesAnalyticsRuntime
   {
-    // 360 x 5m = 30 hours. This covers all initial Phase 1 return horizons through 24h
-    // plus headroom for ATRP and recent volume-expansion baselines.
-    private const int BootstrapHistoryCandles = 360;
+    // 900 x 5m = 75 hours. This covers the Phase 1B return horizons through 72h
+    // with 3 hours of headroom. Binance serves at most 500 klines per request, so a
+    // cold bootstrap requires two paged kline requests per symbol.
+    private const int BootstrapHistoryCandles = 900;
     private const int RefreshConcurrency = 2;
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
-    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(500));
+    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(1000));
     private static AnalyzerUniverseSnapshot _currentUniverse;
+    private static MarketAnalysisSnapshot _currentAnalysis;
     private static IReadOnlyList<string> _cachedExchangeSymbols = Array.Empty<string>();
     private static IReadOnlyList<MarketDataRefreshStatus> _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
 
@@ -35,6 +38,17 @@ namespace Core.MarketAnalyzer.MarketData
         lock (SnapshotLock)
         {
           return _currentUniverse;
+        }
+      }
+    }
+
+    public static MarketAnalysisSnapshot CurrentAnalysis
+    {
+      get
+      {
+        lock (SnapshotLock)
+        {
+          return _currentAnalysis;
         }
       }
     }
@@ -80,6 +94,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         _cachedExchangeSymbols = Array.AsReadOnly(exchangeSymbols);
         _currentUniverse = null;
+        _currentAnalysis = null;
       }
 
       if (exchangeSymbols.Length == 0)
@@ -189,15 +204,19 @@ namespace Core.MarketAnalyzer.MarketData
         ? "Binance Futures exchange population filtered by the active underlying-type policy and ProfitTrailer enabled_pairs"
         : "Binance Futures exchange population filtered by the active underlying-type policy";
 
+      DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
       AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(
-        DateTimeOffset.UtcNow,
+        calculatedAtUtc,
         mainMarket,
         markets,
         selectionReason);
 
+      MarketAnalysisSnapshot analysis = BuildPriceReturnAnalysis(universe, calculatedAtUtc);
+
       lock (SnapshotLock)
       {
         _currentUniverse = universe;
+        _currentAnalysis = analysis;
       }
 
       string typeCounts = String.Join(", ", universe.Markets
@@ -208,6 +227,31 @@ namespace Core.MarketAnalyzer.MarketData
       log.DoLogInfo(
         "BinanceFutures analytics - analyzer universe frozen: " + universe.MarketCount + "/" + cachedSymbols.Count +
         " cached exchange markets eligible" + (String.IsNullOrWhiteSpace(typeCounts) ? "." : " (" + typeCounts + ")."));
+
+      int validAssets = analysis.Assets.Values.Count(asset => asset.IsValid);
+      int valid72hAssets = analysis.Assets.Values.Count(asset => asset.Features.TryGetValue("Return72h", out FeatureValueSnapshot feature) && feature.IsValid);
+      log.DoLogInfo(
+        "BinanceFutures analytics - Phase 1B returns calculated for " + validAssets + "/" + universe.MarketCount +
+        " assets; " + valid72hAssets + " have valid 72h returns.");
+    }
+
+    private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(AnalyzerUniverseSnapshot universe, DateTimeOffset calculatedAtUtc)
+    {
+      Dictionary<string, AssetFeatureSnapshot> assets = new Dictionary<string, AssetFeatureSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+      foreach (AnalyzerUniverseMarket market in universe.Markets)
+      {
+        MarketDataSeriesSnapshot series = DataServiceInstance.Store.GetSnapshot(market.Symbol, BaseInterval, calculatedAtUtc);
+        assets[market.Symbol] = PriceReturnCalculator.Calculate(series);
+      }
+
+      return new MarketAnalysisSnapshot
+      {
+        TimestampUtc = calculatedAtUtc,
+        Universe = universe,
+        MarketFeatures = new ReadOnlyDictionary<string, FeatureValueSnapshot>(new Dictionary<string, FeatureValueSnapshot>()),
+        Assets = new ReadOnlyDictionary<string, AssetFeatureSnapshot>(assets)
+      };
     }
 
     private static string GetPropertyValue(List<string> lines, string propertyName)
