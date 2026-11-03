@@ -58,18 +58,24 @@ namespace Core.MarketAnalyzer.MarketData
         .ToList();
 
       FeatureValueSnapshot meanReturn = CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
-      FeatureValueSnapshot medianReturn = CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
+      FeatureValueSnapshot medianPriceTrend = CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
+      FeatureValueSnapshot meanMedianSpread = CalculateMeanMedianSpread(
+        meanReturn,
+        medianPriceTrend,
+        globalReturns.Count,
+        calculatedAtUtc,
+        marketTrend.TrendMinutes);
       FeatureValueSnapshot breadth = CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
       FeatureValueSnapshot dispersion = CalculateDispersion(globalReturns, meanReturn, calculatedAtUtc, marketTrend.TrendMinutes);
 
       Dictionary<string, FeatureValueSnapshot> marketMetrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-      if (enabledMetrics.Contains(MarketTrendMetrics.MeanReturn, StringComparer.OrdinalIgnoreCase))
+      if (enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase))
       {
-        marketMetrics[MarketTrendMetrics.MeanReturn] = meanReturn;
+        marketMetrics[MarketTrendMetrics.MedianPriceTrend] = medianPriceTrend;
       }
-      if (enabledMetrics.Contains(MarketTrendMetrics.MedianReturn, StringComparer.OrdinalIgnoreCase))
+      if (enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase))
       {
-        marketMetrics[MarketTrendMetrics.MedianReturn] = medianReturn;
+        marketMetrics[MarketTrendMetrics.MeanMedianSpread] = meanMedianSpread;
       }
       if (enabledMetrics.Contains(MarketTrendMetrics.Breadth, StringComparer.OrdinalIgnoreCase))
       {
@@ -108,9 +114,9 @@ namespace Core.MarketAnalyzer.MarketData
         {
           metrics[MarketTrendMetrics.RelativeStrengthMarket] = CalculateDifference(
             assetReturn,
-            medianReturn,
+            medianPriceTrend,
             calculatedAtUtc,
-            "Asset return or market median return is unavailable for MarketTrend '" + marketTrend.Name + "'.");
+            "Asset return or MedianPriceTrend is unavailable for MarketTrend '" + marketTrend.Name + "'.");
         }
 
         if (enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthBTC, StringComparer.OrdinalIgnoreCase))
@@ -211,6 +217,30 @@ namespace Core.MarketAnalyzer.MarketData
         : (values[middle - 1] + values[middle]) / 2.0;
 
       return ValidFeature(median, calculatedAtUtc, GetOldestSourceTimestamp(features), features.Count);
+    }
+
+    private static FeatureValueSnapshot CalculateMeanMedianSpread(
+      FeatureValueSnapshot meanReturn,
+      FeatureValueSnapshot medianPriceTrend,
+      int sampleCount,
+      DateTimeOffset calculatedAtUtc,
+      int trendMinutes)
+    {
+      if (!IsUsable(meanReturn) || !IsUsable(medianPriceTrend))
+      {
+        return InvalidFeature(
+          calculatedAtUtc,
+          sampleCount,
+          "Mean or median market return is unavailable for MeanMedianSpread for the " + trendMinutes + " minute MarketTrend.",
+          meanReturn?.IsStale == true || medianPriceTrend?.IsStale == true,
+          GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanReturn, medianPriceTrend }.Where(feature => feature != null)));
+      }
+
+      return ValidFeature(
+        meanReturn.Value.Value - medianPriceTrend.Value.Value,
+        calculatedAtUtc,
+        GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanReturn, medianPriceTrend }),
+        sampleCount);
     }
 
     private static FeatureValueSnapshot CalculateBreadth(List<FeatureValueSnapshot> features, DateTimeOffset calculatedAtUtc, int trendMinutes)
