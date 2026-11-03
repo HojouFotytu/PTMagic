@@ -14,7 +14,8 @@ namespace Core.MarketAnalyzer.MarketData
 
   /// <summary>
   /// Canonical names and scope rules for metrics exposed through MarketTrend.Metrics
-  /// and Trigger/OffTrigger.Metric. PriceTrend remains implicit and is always enabled.
+  /// and Trigger/OffTrigger.Metric. An empty Metrics value leaves the MarketTrend on
+  /// PTMagic's legacy PriceTrend behavior. Non-empty Metrics values are explicit.
   /// </summary>
   public static class MarketTrendMetrics
   {
@@ -73,10 +74,7 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static IReadOnlyCollection<string> ParseEnabled(MarketTrend marketTrend)
     {
-      HashSet<string> result = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-      {
-        PriceTrend
-      };
+      HashSet<string> result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
       if (marketTrend == null || String.IsNullOrWhiteSpace(marketTrend.Metrics))
       {
@@ -98,11 +96,6 @@ namespace Core.MarketAnalyzer.MarketData
     public static bool IsEnabled(MarketTrend marketTrend, string metric)
     {
       string normalized = Normalize(metric);
-      if (normalized.Equals(PriceTrend, StringComparison.OrdinalIgnoreCase))
-      {
-        return true;
-      }
-
       return ParseEnabled(marketTrend).Contains(normalized, StringComparer.OrdinalIgnoreCase);
     }
   }
