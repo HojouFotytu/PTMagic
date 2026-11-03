@@ -11,6 +11,7 @@ namespace Core.MarketAnalyzer.MarketData
   public sealed class MarketDataStore
   {
     private readonly ConcurrentDictionary<MarketSeriesKey, SeriesBuffer> _series = new ConcurrentDictionary<MarketSeriesKey, SeriesBuffer>();
+    private int _maxCandlesPerSeries;
 
     public MarketDataStore(int maxCandlesPerSeries = 2000)
     {
@@ -19,11 +20,25 @@ namespace Core.MarketAnalyzer.MarketData
         throw new ArgumentOutOfRangeException(nameof(maxCandlesPerSeries), "Maximum candles per series must be greater than zero.");
       }
 
-      MaxCandlesPerSeries = maxCandlesPerSeries;
+      _maxCandlesPerSeries = maxCandlesPerSeries;
     }
 
-    public int MaxCandlesPerSeries { get; }
+    public int MaxCandlesPerSeries => _maxCandlesPerSeries;
     public int SeriesCount => _series.Count;
+
+    public void SetMaxCandlesPerSeries(int maxCandlesPerSeries)
+    {
+      if (maxCandlesPerSeries <= 0)
+      {
+        throw new ArgumentOutOfRangeException(nameof(maxCandlesPerSeries), "Maximum candles per series must be greater than zero.");
+      }
+
+      _maxCandlesPerSeries = maxCandlesPerSeries;
+      foreach (SeriesBuffer buffer in _series.Values)
+      {
+        buffer.Trim(maxCandlesPerSeries);
+      }
+    }
 
     public void UpsertCandle(MarketCandle candle)
     {
@@ -166,12 +181,24 @@ namespace Core.MarketAnalyzer.MarketData
         lock (_sync)
         {
           _candles[key] = candle;
+          TrimUnsafe(maxCandles);
+        }
+      }
 
-          while (_candles.Count > maxCandles)
-          {
-            long oldestKey = _candles.Keys.First();
-            _candles.Remove(oldestKey);
-          }
+      public void Trim(int maxCandles)
+      {
+        lock (_sync)
+        {
+          TrimUnsafe(maxCandles);
+        }
+      }
+
+      private void TrimUnsafe(int maxCandles)
+      {
+        while (_candles.Count > maxCandles)
+        {
+          long oldestKey = _candles.Keys.First();
+          _candles.Remove(oldestKey);
         }
       }
 
