@@ -17,6 +17,7 @@ namespace Monitor.Pages
 
     public IReadOnlyList<string> GlobalMetricNames { get; } = new string[]
     {
+      MarketTrendMetrics.PriceTrend,
       MarketTrendMetrics.MedianPriceTrend,
       MarketTrendMetrics.MeanMedianSpread,
       MarketTrendMetrics.Breadth,
@@ -131,6 +132,7 @@ namespace Monitor.Pages
     {
       return metric switch
       {
+        MarketTrendMetrics.PriceTrend => "Price Trend",
         MarketTrendMetrics.MedianPriceTrend => "Median Price Trend",
         MarketTrendMetrics.MeanMedianSpread => "Mean-Median Spread",
         MarketTrendMetrics.Breadth => "Positive Breadth",
@@ -146,8 +148,9 @@ namespace Monitor.Pages
     {
       return metric switch
       {
-        MarketTrendMetrics.MedianPriceTrend => "Median percentage price change of valid markets over this MarketTrend timeframe. Unlike PTMagic's existing PriceTrend arithmetic mean, the median is resistant to a small number of extreme movers.",
-        MarketTrendMetrics.MeanMedianSpread => "Arithmetic mean market return minus MedianPriceTrend for the same normalized market population and timeframe. Positive values mean upside outliers are pulling the mean above the median; negative values mean downside outliers are pulling it below the median. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns.",
+        MarketTrendMetrics.PriceTrend => "Arithmetic mean percentage price change of valid markets over this MarketTrend timeframe, calculated from normalized closed-candle data. This normalized PriceTrend is exposed only when PriceTrend is explicitly listed in Metrics; an empty Metrics setting retains PTMagic's legacy PriceTrend behavior.",
+        MarketTrendMetrics.MedianPriceTrend => "Median percentage price change of valid markets over this MarketTrend timeframe. The median is resistant to a small number of extreme movers.",
+        MarketTrendMetrics.MeanMedianSpread => "Normalized PriceTrend arithmetic mean minus MedianPriceTrend for the same market population and timeframe. Positive values mean upside outliers are pulling the mean above the median; negative values mean downside outliers are pulling it below the median. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns.",
         MarketTrendMetrics.Breadth => "Percentage of valid markets with a price change greater than 0 over this MarketTrend timeframe.",
         MarketTrendMetrics.Dispersion => "Population standard deviation of valid market price changes over this MarketTrend timeframe. Displayed as a percentage magnitude.",
         MarketTrendMetrics.RelativeStrengthMarket => "Individual market price change minus MedianPriceTrend. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
