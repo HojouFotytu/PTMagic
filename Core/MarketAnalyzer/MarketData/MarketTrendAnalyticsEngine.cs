@@ -7,7 +7,7 @@ using Core.Main.DataObjects.PTMagicData;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Calculates the additional analytics requested by one configured MarketTrend.
+  /// Calculates the normalized analytics explicitly requested by one configured MarketTrend.
   /// TrendMinutes supplies the return horizon. The caller supplies the exact global
   /// and asset universes selected by PTMagic's existing MarketTrend pipeline.
   /// </summary>
@@ -57,18 +57,22 @@ namespace Core.MarketAnalyzer.MarketData
         .Where(IsUsable)
         .ToList();
 
-      FeatureValueSnapshot meanReturn = CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
+      FeatureValueSnapshot meanPriceTrend = CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
       FeatureValueSnapshot medianPriceTrend = CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
       FeatureValueSnapshot meanMedianSpread = CalculateMeanMedianSpread(
-        meanReturn,
+        meanPriceTrend,
         medianPriceTrend,
         globalReturns.Count,
         calculatedAtUtc,
         marketTrend.TrendMinutes);
       FeatureValueSnapshot breadth = CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
-      FeatureValueSnapshot dispersion = CalculateDispersion(globalReturns, meanReturn, calculatedAtUtc, marketTrend.TrendMinutes);
+      FeatureValueSnapshot dispersion = CalculateDispersion(globalReturns, meanPriceTrend, calculatedAtUtc, marketTrend.TrendMinutes);
 
       Dictionary<string, FeatureValueSnapshot> marketMetrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+      if (enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase))
+      {
+        marketMetrics[MarketTrendMetrics.PriceTrend] = meanPriceTrend;
+      }
       if (enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase))
       {
         marketMetrics[MarketTrendMetrics.MedianPriceTrend] = medianPriceTrend;
@@ -220,26 +224,26 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     private static FeatureValueSnapshot CalculateMeanMedianSpread(
-      FeatureValueSnapshot meanReturn,
+      FeatureValueSnapshot meanPriceTrend,
       FeatureValueSnapshot medianPriceTrend,
       int sampleCount,
       DateTimeOffset calculatedAtUtc,
       int trendMinutes)
     {
-      if (!IsUsable(meanReturn) || !IsUsable(medianPriceTrend))
+      if (!IsUsable(meanPriceTrend) || !IsUsable(medianPriceTrend))
       {
         return InvalidFeature(
           calculatedAtUtc,
           sampleCount,
-          "Mean or median market return is unavailable for MeanMedianSpread for the " + trendMinutes + " minute MarketTrend.",
-          meanReturn?.IsStale == true || medianPriceTrend?.IsStale == true,
-          GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanReturn, medianPriceTrend }.Where(feature => feature != null)));
+          "Mean or median PriceTrend is unavailable for MeanMedianSpread for the " + trendMinutes + " minute MarketTrend.",
+          meanPriceTrend?.IsStale == true || medianPriceTrend?.IsStale == true,
+          GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanPriceTrend, medianPriceTrend }.Where(feature => feature != null)));
       }
 
       return ValidFeature(
-        meanReturn.Value.Value - medianPriceTrend.Value.Value,
+        meanPriceTrend.Value.Value - medianPriceTrend.Value.Value,
         calculatedAtUtc,
-        GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanReturn, medianPriceTrend }),
+        GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanPriceTrend, medianPriceTrend }),
         sampleCount);
     }
 
@@ -256,16 +260,16 @@ namespace Core.MarketAnalyzer.MarketData
 
     private static FeatureValueSnapshot CalculateDispersion(
       List<FeatureValueSnapshot> features,
-      FeatureValueSnapshot meanReturn,
+      FeatureValueSnapshot meanPriceTrend,
       DateTimeOffset calculatedAtUtc,
       int trendMinutes)
     {
-      if (features.Count < 2 || !IsUsable(meanReturn))
+      if (features.Count < 2 || !IsUsable(meanPriceTrend))
       {
         return InvalidFeature(calculatedAtUtc, features.Count, "At least two valid asset returns are required for dispersion for the " + trendMinutes + " minute MarketTrend.");
       }
 
-      double mean = meanReturn.Value.Value;
+      double mean = meanPriceTrend.Value.Value;
       double variance = features.Sum(feature =>
       {
         double difference = feature.Value.Value - mean;
