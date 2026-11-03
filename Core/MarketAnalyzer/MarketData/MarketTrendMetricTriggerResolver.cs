@@ -16,6 +16,16 @@ namespace Core.MarketAnalyzer.MarketData
       return MarketTrendMetrics.Normalize(metric).Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Only an explicit metric selects the normalized engine. An omitted Metric,
+    /// or PriceTrend on a legacy-only MarketTrend, preserves the old trigger path.
+    /// </summary>
+    public static bool UsesNormalizedMetric(MarketTrend marketTrend, string metric)
+    {
+      return !String.IsNullOrWhiteSpace(metric)
+        && !(IsPriceTrend(metric) && String.IsNullOrWhiteSpace(marketTrend?.Metrics));
+    }
+
     public static bool TryResolveGlobal(
       PTMagicConfiguration configuration,
       MarketTrend marketTrend,
@@ -54,13 +64,11 @@ namespace Core.MarketAnalyzer.MarketData
       value = 0;
       error = "";
 
-      bool metricOmitted = String.IsNullOrWhiteSpace(metric);
       string normalizedMetric = MarketTrendMetrics.Normalize(metric);
 
       // Omitted Metric preserves the pre-Phase-1 PriceTrend trigger path. An explicitly
       // named PriceTrend also remains legacy when the MarketTrend has no Metrics configured.
-      if (metricOmitted
-        || (IsPriceTrend(normalizedMetric) && String.IsNullOrWhiteSpace(marketTrend?.Metrics)))
+      if (!UsesNormalizedMetric(marketTrend, metric))
       {
         error = "PriceTrend is resolved by PTMagic's legacy trend path.";
         return false;
