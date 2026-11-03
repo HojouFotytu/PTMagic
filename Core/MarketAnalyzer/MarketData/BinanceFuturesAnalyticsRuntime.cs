@@ -235,6 +235,15 @@ namespace Core.MarketAnalyzer.MarketData
       log.DoLogInfo(
         "BinanceFutures analytics - Phase 1B returns calculated for " + validAssets + "/" + universe.MarketCount +
         " assets; " + valid72hAssets + " have valid 72h returns.");
+
+      int validAggregateHorizons = PriceReturnCalculator.Horizons.Count(horizon =>
+        analysis.MarketFeatures.TryGetValue("MeanReturn" + horizon.DisplayName, out FeatureValueSnapshot mean) && mean.IsValid
+        && analysis.MarketFeatures.TryGetValue("MedianReturn" + horizon.DisplayName, out FeatureValueSnapshot median) && median.IsValid
+        && analysis.MarketFeatures.TryGetValue("PositiveBreadth" + horizon.DisplayName, out FeatureValueSnapshot breadth) && breadth.IsValid
+        && analysis.MarketFeatures.TryGetValue("ReturnStdDev" + horizon.DisplayName, out FeatureValueSnapshot dispersion) && dispersion.IsValid);
+      log.DoLogInfo(
+        "BinanceFutures analytics - Phase 1B market mean/median/breadth/dispersion calculated for " +
+        validAggregateHorizons + "/" + PriceReturnCalculator.Horizons.Count + " horizons.");
     }
 
     private static MarketAnalysisSnapshot BuildPriceReturnAnalysis(AnalyzerUniverseSnapshot universe, DateTimeOffset calculatedAtUtc)
@@ -247,11 +256,13 @@ namespace Core.MarketAnalyzer.MarketData
         assets[market.Symbol] = PriceReturnCalculator.Calculate(series);
       }
 
+      IReadOnlyDictionary<string, FeatureValueSnapshot> marketFeatures = MarketReturnAggregator.Calculate(assets, calculatedAtUtc);
+
       return new MarketAnalysisSnapshot
       {
         TimestampUtc = calculatedAtUtc,
         Universe = universe,
-        MarketFeatures = new ReadOnlyDictionary<string, FeatureValueSnapshot>(new Dictionary<string, FeatureValueSnapshot>()),
+        MarketFeatures = marketFeatures,
         Assets = new ReadOnlyDictionary<string, AssetFeatureSnapshot>(assets)
       };
     }
