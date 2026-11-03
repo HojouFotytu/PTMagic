@@ -141,14 +141,14 @@ namespace Core.MarketAnalyzer.MarketData
     {
       if (independentReturns.Count == 0)
       {
-        int aggregateMismatchCount = CountExpectedInvalidAggregateMismatches(horizon, analysis);
+        int invalidAggregateMismatchCount = CountExpectedInvalidAggregateMismatches(horizon, analysis);
         return new MarketReturnValidationSnapshot
         {
           Horizon = horizon.DisplayName,
           HasIndependentData = false,
           SampleCount = 0,
           AssetMismatchCount = assetMismatchCount,
-          AggregateMismatchCount = aggregateMismatchCount
+          AggregateMismatchCount = invalidAggregateMismatchCount
         };
       }
 
