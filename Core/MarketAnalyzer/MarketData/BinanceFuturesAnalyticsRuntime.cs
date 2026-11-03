@@ -13,8 +13,8 @@ namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
   /// Runtime for normalized Binance Futures analytics. Raw 5-minute candles are shared
-  /// across all configured MarketTrends. Additional metrics are calculated only when a
-  /// MarketTrend requests them through MarketTrend.Metrics.
+  /// across all configured MarketTrends. Normalized metrics are calculated only when a
+  /// MarketTrend explicitly requests them through MarketTrend.Metrics.
   /// </summary>
   public static class BinanceFuturesAnalyticsRuntime
   {
@@ -273,9 +273,10 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     /// <summary>
-    /// Calculates additional metrics for configured Exchange MarketTrends after the
-    /// legacy PTMagic trend pipeline has resolved each trend's market population.
-    /// PriceTrend remains owned by the legacy pipeline and is not recalculated here.
+    /// Calculates explicitly configured normalized metrics for Exchange MarketTrends after
+    /// the legacy PTMagic trend pipeline has resolved each trend's market population.
+    /// An empty Metrics value leaves that MarketTrend entirely on legacy PriceTrend behavior.
+    /// An explicitly listed PriceTrend is the normalized arithmetic-mean PriceTrend.
     /// </summary>
     public static void EvaluateConfiguredMarketTrends(
       IReadOnlyDictionary<string, List<MarketTrendChange>> globalMarketTrendChanges,
@@ -325,7 +326,7 @@ namespace Core.MarketAnalyzer.MarketData
 
         IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
         List<string> invalidMetrics = enabledMetrics
-          .Where(metric => !metric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase) && !MarketTrendMetrics.IsKnown(metric))
+          .Where(metric => !MarketTrendMetrics.IsKnown(metric))
           .ToList();
         if (invalidMetrics.Count > 0)
         {
@@ -334,10 +335,8 @@ namespace Core.MarketAnalyzer.MarketData
             String.Join(", ", invalidMetrics) + ". Unknown metrics will be ignored.");
         }
 
-        bool hasKnownAdditionalMetric = enabledMetrics.Any(metric =>
-          !metric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
-          && MarketTrendMetrics.IsKnown(metric));
-        if (!hasKnownAdditionalMetric)
+        bool hasKnownMetric = enabledMetrics.Any(MarketTrendMetrics.IsKnown);
+        if (!hasKnownMetric)
         {
           continue;
         }
@@ -405,12 +404,16 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      if (scope == MarketTrendMetricScope.Global)
+      if (scope == MarketTrendMetricScope.Global || scope == MarketTrendMetricScope.Both)
       {
-        return analysis.MarketMetrics.TryGetValue(normalizedMetric, out feature);
+        if (analysis.MarketMetrics.TryGetValue(normalizedMetric, out feature))
+        {
+          return true;
+        }
       }
 
-      if (scope == MarketTrendMetricScope.Asset && !String.IsNullOrWhiteSpace(marketSymbol))
+      if ((scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both)
+        && !String.IsNullOrWhiteSpace(marketSymbol))
       {
         return analysis.AssetMetrics.TryGetValue(marketSymbol, out IReadOnlyDictionary<string, FeatureValueSnapshot> assetMetrics)
           && assetMetrics.TryGetValue(normalizedMetric, out feature);
@@ -434,15 +437,24 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase))
-      {
-        return true;
-      }
-
       if (marketTrend == null)
       {
+        if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase))
+        {
+          return true;
+        }
+
         error = "The referenced MarketTrend does not exist.";
         return false;
+      }
+
+      // Legacy triggers that omit Metric still resolve to PriceTrend even when the
+      // MarketTrend has no Metrics configured. Once Metrics is non-empty, references
+      // into the normalized analytics system must be explicitly enabled.
+      if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
+        && String.IsNullOrWhiteSpace(marketTrend.Metrics))
+      {
+        return true;
       }
 
       if (!MarketTrendMetrics.IsEnabled(marketTrend, normalizedMetric))
