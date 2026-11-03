@@ -912,6 +912,18 @@ namespace Core.Main
               // Build global market trends configured in settings
               this.BuildGlobalMarketTrends();
 
+              // Evaluate normalized Binance Futures metrics only after Phase 0 has resolved
+              // the exact global and single-market populations for each configured trend.
+              if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
+              {
+                Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
+                  this.GlobalMarketTrendChanges,
+                  this.SingleMarketTrendChanges,
+                  this.PTMagicConfiguration,
+                  this.Log);
+                Core.MarketAnalyzer.MarketData.MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
+              }
+
               // Check for global settings triggers
               GlobalSetting triggeredSetting = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(s => s.SettingName.Equals(this.DefaultSettingName, StringComparison.InvariantCultureIgnoreCase));
               List<string> matchedTriggers = new List<string>();
