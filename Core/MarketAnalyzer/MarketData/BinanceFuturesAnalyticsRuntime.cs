@@ -429,6 +429,7 @@ namespace Core.MarketAnalyzer.MarketData
       out string error)
     {
       error = "";
+      bool metricOmitted = String.IsNullOrWhiteSpace(metric);
       string normalizedMetric = MarketTrendMetrics.Normalize(metric);
 
       if (!MarketTrendMetrics.IsKnown(normalizedMetric))
@@ -439,18 +440,20 @@ namespace Core.MarketAnalyzer.MarketData
 
       if (marketTrend == null)
       {
-        if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase))
-        {
-          return true;
-        }
-
         error = "The referenced MarketTrend does not exist.";
         return false;
       }
 
-      // Legacy triggers that omit Metric still resolve to PriceTrend even when the
-      // MarketTrend has no Metrics configured. Once Metrics is non-empty, references
-      // into the normalized analytics system must be explicitly enabled.
+      // An omitted Trigger/OffTrigger Metric preserves PTMagic's legacy PriceTrend
+      // behavior regardless of which normalized analytics are enabled for the trend.
+      if (metricOmitted)
+      {
+        return true;
+      }
+
+      // An explicitly named PriceTrend remains legacy when no normalized Metrics are
+      // configured. With non-empty Metrics it refers to normalized PriceTrend and must
+      // therefore be explicitly listed just like any other normalized metric.
       if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
         && String.IsNullOrWhiteSpace(marketTrend.Metrics))
       {
