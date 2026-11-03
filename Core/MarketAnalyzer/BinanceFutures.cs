@@ -27,10 +27,29 @@ namespace Core.MarketAnalyzer
       BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
 
       List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken).ConfigureAwait(false);
-      bool hasConfiguredAnalytics = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer?.MarketTrends?.Any(trend =>
+
+      bool hasConfiguredAnalytics = false;
+      IEnumerable<MarketTrend> configuredTrends = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? Enumerable.Empty<MarketTrend>();
+      foreach (MarketTrend marketTrend in configuredTrends.Where(trend =>
         trend != null
-        && trend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)
-        && !String.IsNullOrWhiteSpace(trend.Metrics)) == true;
+        && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
+        && !String.IsNullOrWhiteSpace(trend.Metrics)))
+      {
+        IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
+        string[] unknownMetrics = enabledMetrics.Where(metric => !MarketTrendMetrics.IsKnown(metric)).ToArray();
+        if (unknownMetrics.Length > 0)
+        {
+          log.DoLogError(
+            "BinanceFutures analytics - MarketTrend '" + marketTrend.Name + "' contains unknown Metrics: " +
+            String.Join(", ", unknownMetrics) + ".");
+        }
+
+        if (enabledMetrics.Any(MarketTrendMetrics.IsKnown))
+        {
+          hasConfiguredAnalytics = true;
+        }
+      }
 
       if (markets == null)
       {
