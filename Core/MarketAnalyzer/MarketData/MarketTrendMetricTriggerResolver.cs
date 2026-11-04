@@ -50,7 +50,11 @@ namespace Core.MarketAnalyzer.MarketData
     public static string GetUnit(string metric)
     {
       string metricName = MarketTrendMetrics.Normalize(metric);
-      return metricName == MarketTrendMetrics.VolumeExpansion || metricName == MarketTrendMetrics.MedianVolumeExpansion ? "x" : "%";
+      if (metricName == MarketTrendMetrics.VolumeExpansion || metricName == MarketTrendMetrics.MedianVolumeExpansion)
+      {
+        return "x";
+      }
+      return metricName == MarketTrendMetrics.VolumeConcentration ? " index" : "%";
     }
 
     private static bool TryResolve(

@@ -106,9 +106,8 @@ namespace Monitor.Pages
         || metric.Equals(MarketTrendMetrics.Concentration, StringComparison.OrdinalIgnoreCase);
 
       string format = isReturnDifference ? "+#,#0.00;-#,#0.00;0.00" : "#,#0.00";
-      bool isRatio = metric.Equals(MarketTrendMetrics.VolumeExpansion, StringComparison.OrdinalIgnoreCase)
-        || metric.Equals(MarketTrendMetrics.MedianVolumeExpansion, StringComparison.OrdinalIgnoreCase);
-      return feature.Value.Value.ToString(format, new System.Globalization.CultureInfo("en-US")) + (isRatio ? "x" : "%");
+      string unit = MarketTrendMetricTriggerResolver.GetUnit(metric);
+      return feature.Value.Value.ToString(format, new System.Globalization.CultureInfo("en-US")) + unit;
     }
 
     public string FormatTimeframe(int trendMinutes)
