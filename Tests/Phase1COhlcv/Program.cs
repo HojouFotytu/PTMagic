@@ -68,7 +68,7 @@ internal static class Program
     AddBars(store, "AAAUSDT", 15);
     // The first 5m source candle of the current 10m trend bar is closed,
     // but the current trend bar remains incomplete and cannot affect ATRP.
-    AddSource(store, "AAAUSDT", Start.AddMinutes(150), 50, 70, 100);
+    AddSource(store, "AAAUSDT", Start.AddMinutes(150), 50, 150, 100);
     TrendPeriodFeatures result = Derive(store, "AAAUSDT",
       Start.AddMinutes(155).AddSeconds(1), needATR: true, needExpansion: false);
     Near(result.ATRP, 20.0, "A partially completed trend bar must be excluded");

@@ -24,6 +24,13 @@
           "Platform": "Exchange", // Platform to grab prices from (Allowed values are: CoinMarketCap, Exchange)
           "MaxMarkets": 50,   // Number of markets/pairs to analyze sorted by 24h volume
           "TrendMinutes": 60,  // Number of minutes to build a trend (1440 = 24h, 720 = 12h, 60 = 1h)
+           "Metrics": "", // Optional: "ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare". Empty retains legacy behavior.
+           "ATRPeriod": 14, // ATR uses 15 complete TrendMinutes candles minimum for this period
+           "VolumeExpansionLookback": 20, // Previous 20 complete TrendMinutes periods; needs 21 for the ratio
+           "ATRPBreadthThreshold": 0.5, // Percent ATRP threshold for VolatilityBreadth
+           "VolumeExpansionBreadthThreshold": 1.0, // Ratio threshold, 1.0x = normal
+           "StrongVolumeExpansionThreshold": 1.5, // Ratio threshold, 1.5x
+           "TopNVolumeCount": 10, // TopNVolumeShare ranking count, uses one complete trend period
           "TrendCurrency": "Market",  // Trend Currency to build the trend against. If set to "Fiat", the trend will
 		                                  // take the USD value of your main currency into account to build the trend. 
                                       // "Market" will build a trend against your base currency, such as BTC or USDT.

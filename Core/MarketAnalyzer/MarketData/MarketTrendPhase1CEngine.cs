@@ -62,6 +62,8 @@ namespace Core.MarketAnalyzer.MarketData
       bool assetATR = active.Contains(MarketTrendMetrics.ATRP);
       bool assetExpansion = active.Contains(MarketTrendMetrics.VolumeExpansion);
 
+      HashSet<string> globalSet = new HashSet<string>(global, StringComparer.OrdinalIgnoreCase);
+      HashSet<string> assetSet = new HashSet<string>(asset, StringComparer.OrdinalIgnoreCase);
       HashSet<string> all = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       if (globalATR || globalExpansion || globalVolume)
       {
@@ -75,8 +77,8 @@ namespace Core.MarketAnalyzer.MarketData
       Dictionary<string, TrendPeriodFeatures> features = new Dictionary<string, TrendPeriodFeatures>(StringComparer.OrdinalIgnoreCase);
       foreach (string symbol in all)
       {
-        bool isGlobal = global.Contains(symbol, StringComparer.OrdinalIgnoreCase);
-        bool isAsset = asset.Contains(symbol, StringComparer.OrdinalIgnoreCase);
+        bool isGlobal = globalSet.Contains(symbol);
+        bool isAsset = assetSet.Contains(symbol);
         bool needATR = (isGlobal && globalATR) || (isAsset && assetATR);
         bool needExpansion = (isGlobal && globalExpansion) || (isAsset && assetExpansion);
         bool needVolume = isGlobal && globalVolume;
@@ -182,6 +184,22 @@ namespace Core.MarketAnalyzer.MarketData
         {
           marketResults[MarketTrendMetrics.BTCETHVolumeShare] = ShareForSymbols(
             validVolumes, "BTCUSDT", "ETHUSDT", usableTotal, total, volumeFailure, asOfUtc, sourceTime);
+        }
+        // Preserve the exact eligible denominator and coverage metadata for
+        // every concentration/share result, with a strict 100% requirement.
+        foreach (string metric in new[]
+        {
+          MarketTrendMetrics.VolumeConcentration,
+          MarketTrendMetrics.TopNVolumeShare,
+          MarketTrendMetrics.BTCVolumeShare,
+          MarketTrendMetrics.BTCETHVolumeShare
+        })
+        {
+          if (marketResults.TryGetValue(metric, out FeatureValueSnapshot measurement))
+          {
+            marketResults[metric] = MarketMetricCoverage.Apply(
+              measurement, validVolumes.Count, global.Length, asOfUtc, requireComplete: true);
+          }
         }
       }
 

@@ -1390,7 +1390,9 @@ namespace Core.Main
             {
                 this.Log.DoLogInfo("Checking triggers for '" + globalSetting.SettingName + "'...");
                 Dictionary<string, Core.MarketAnalyzer.MarketData.TriggerTruthValue> triggerResults =
-                  new Dictionary<string, Core.MarketAnalyzer.MarketData.TriggerTruthValue>();
+                  new Dictionary<string, Core.MarketAnalyzer.MarketData.TriggerTruthValue>(StringComparer.OrdinalIgnoreCase);
+                List<Core.MarketAnalyzer.MarketData.TriggerTruthValue> orderedTriggerResults =
+                  new List<Core.MarketAnalyzer.MarketData.TriggerTruthValue>();
                 foreach (Trigger trigger in globalSetting.Triggers)
                 {
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name == trigger.MarketTrendName);
@@ -1408,38 +1410,52 @@ namespace Core.Main
                         {
                             double averageMarketTrendChange = resolvedMetricValue;
                             bool isTriggered = averageMarketTrendChange >= trigger.MinChange && averageMarketTrendChange < trigger.MaxChange;
-                            triggerResults[trigger.Tag] = isTriggered
+                            Core.MarketAnalyzer.MarketData.TriggerTruthValue value = isTriggered
                               ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
                               : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
+                            orderedTriggerResults.Add(value);
+                            if (!String.IsNullOrWhiteSpace(trigger.Tag))
+                            {
+                              triggerResults[trigger.Tag] = value;
+                            }
 
                             if (isTriggered)
                             {
                                 // Trigger met!
-                                this.Log.DoLogInfo("Trigger '" + trigger.MarketTrendName + (useNormalizedMetric ? "' [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "]" : "'") + " triggered! TrendChange = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
+                                this.Log.DoLogInfo("Trigger '" + trigger.MarketTrendName + (useNormalizedMetric ? "' [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "]" : "'") + " triggered! Value = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + (useNormalizedMetric ? Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.GetUnit(trigger.Metric) : "%"));
 
-                                string triggerContent = trigger.MarketTrendName + " - ";
+                                string triggerContent = trigger.MarketTrendName +
+                                  (useNormalizedMetric ? " [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "]" : "") + " - ";
+                                string triggerUnit = useNormalizedMetric
+                                  ? Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.GetUnit(trigger.Metric)
+                                  : "%";
                                 if (trigger.MinChange != Constants.MinTrendChange)
                                 {
-                                    triggerContent += " - Min: " + trigger.MinChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%";
+                                    triggerContent += " - Min: " + trigger.MinChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + triggerUnit;
                                 }
 
                                 if (trigger.MaxChange != Constants.MaxTrendChange)
                                 {
-                                    triggerContent += " - Max: " + trigger.MaxChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%";
+                                    triggerContent += " - Max: " + trigger.MaxChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + triggerUnit;
                                 }
 
                                 matchedTriggers.Add(triggerContent);
                             }
                             else
                             {
-                                this.Log.DoLogDebug("Trigger '" + trigger.MarketTrendName + "' not triggered. TrendChange = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
+                                this.Log.DoLogDebug("Trigger '" + trigger.MarketTrendName + "' not triggered. TrendChange = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + triggerUnit);
                             }
                         }
                         else
                         {
-                            triggerResults[trigger.Tag] = useNormalizedMetric
+                            Core.MarketAnalyzer.MarketData.TriggerTruthValue unavailableValue = useNormalizedMetric
                               ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
                               : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
+                            orderedTriggerResults.Add(unavailableValue);
+                            if (!String.IsNullOrWhiteSpace(trigger.Tag))
+                            {
+                              triggerResults[trigger.Tag] = unavailableValue;
+                            }
                             if (useNormalizedMetric)
                             {
                               this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
@@ -1452,7 +1468,11 @@ namespace Core.Main
                     }
                     else
                     {
-                        triggerResults[trigger.Tag] = Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
+                        orderedTriggerResults.Add(Core.MarketAnalyzer.MarketData.TriggerTruthValue.False);
+                        if (!String.IsNullOrWhiteSpace(trigger.Tag))
+                        {
+                          triggerResults[trigger.Tag] = Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
+                        }
                         this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' not found! Trigger ignored!");
                     }
                 }
@@ -1466,7 +1486,7 @@ namespace Core.Main
                 {
                     settingResult = Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
                         globalSetting.TriggerConnection,
-                        triggerResults.Values.ToList(),
+                        orderedTriggerResults,
                         triggerResults);
                 }
                 catch (Exception ex)
@@ -2017,7 +2037,8 @@ namespace Core.Main
                       relevantTriggers.Add(triggerIndex, metricValue);
                       matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": " + trigger.MarketTrendName +
                         " [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "] - Value: " +
-                        metricValue.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
+                        metricValue.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) +
+                        Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.GetUnit(trigger.Metric));
                     }
                     else if (!validMetric)
                     {
