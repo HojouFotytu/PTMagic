@@ -14,8 +14,8 @@ namespace Core.MarketAnalyzer.MarketData
 
   /// <summary>
   /// Canonical names and scope rules for metrics exposed through MarketTrend.Metrics
-  /// and Trigger/OffTrigger.Metric. An empty Metrics value leaves the MarketTrend on
-  /// PTMagic's legacy PriceTrend behavior. Non-empty Metrics values are explicit.
+  /// and Trigger/OffTrigger.Metric. An empty Metrics value enables the
+  /// normalized PriceTrend by default. Non-empty Metrics values are explicit.
   /// </summary>
   public static class MarketTrendMetrics
   {
@@ -42,7 +42,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
       {
-        [PriceTrend] = MarketTrendMetricScope.Global,
+        [PriceTrend] = MarketTrendMetricScope.Both,
         [MedianPriceTrend] = MarketTrendMetricScope.Global,
         [MeanMedianSpread] = MarketTrendMetricScope.Global,
         [Breadth] = MarketTrendMetricScope.Global,
@@ -98,8 +98,13 @@ namespace Core.MarketAnalyzer.MarketData
     {
       HashSet<string> result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-      if (marketTrend == null || String.IsNullOrWhiteSpace(marketTrend.Metrics))
+      if (marketTrend == null)
       {
+        return result.ToArray();
+      }
+      if (String.IsNullOrWhiteSpace(marketTrend.Metrics))
+      {
+        result.Add(PriceTrend);
         return result.ToArray();
       }
 

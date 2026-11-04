@@ -275,8 +275,8 @@ namespace Core.MarketAnalyzer.MarketData
     /// <summary>
     /// Calculates explicitly configured normalized metrics for Exchange MarketTrends after
     /// the legacy PTMagic trend pipeline has resolved each trend's market population.
-    /// An empty Metrics value leaves that MarketTrend entirely on legacy PriceTrend behavior.
-    /// An explicitly listed PriceTrend is the normalized arithmetic-mean PriceTrend.
+    /// Empty Metrics selects normalized PriceTrend by default; omitted trigger
+    /// Metric adds it implicitly on metrics-only trends when required.
     /// </summary>
     public static void EvaluateConfiguredMarketTrends(
       IReadOnlyDictionary<string, List<MarketTrendChange>> globalMarketTrendChanges,
@@ -317,12 +317,13 @@ namespace Core.MarketAnalyzer.MarketData
       {
         if (marketTrend == null
           || !marketTrend.Platform.Equals("Exchange", StringComparison.OrdinalIgnoreCase)
-          || String.IsNullOrWhiteSpace(marketTrend.Metrics))
+          || String.IsNullOrWhiteSpace(marketTrend.Name))
         {
           continue;
         }
 
-        IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
+        IReadOnlyCollection<string> enabledMetrics = MarketTrendMetricSelection.Select(
+          marketTrend, systemConfiguration.AnalyzerSettings);
         List<string> invalidMetrics = enabledMetrics
           .Where(metric => !MarketTrendMetrics.IsKnown(metric))
           .ToList();
@@ -353,7 +354,9 @@ namespace Core.MarketAnalyzer.MarketData
           assetSymbols,
           DataServiceInstance.Store,
           BaseInterval,
-          calculatedAtUtc);
+          calculatedAtUtc,
+          enabledMetrics,
+          "BTC" + universe.MainMarket);
         analyses[marketTrend.Name] = analysis;
 
         LogTrendAnalysis(marketTrend, analysis, log);

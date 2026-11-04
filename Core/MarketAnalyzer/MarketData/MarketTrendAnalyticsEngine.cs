@@ -21,7 +21,9 @@ namespace Core.MarketAnalyzer.MarketData
       IEnumerable<string> assetSymbols,
       MarketDataStore store,
       TimeSpan interval,
-      DateTimeOffset calculatedAtUtc)
+      DateTimeOffset calculatedAtUtc,
+      IReadOnlyCollection<string> selectedMetrics = null,
+      string benchmarkSymbol = "BTCUSDT")
     {
       if (marketTrend == null)
       {
@@ -38,7 +40,7 @@ namespace Core.MarketAnalyzer.MarketData
 
       string[] globalUniverse = NormalizeSymbols(globalSymbols);
       string[] assetUniverse = NormalizeSymbols(assetSymbols);
-      IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
+      IReadOnlyCollection<string> enabledMetrics = selectedMetrics ?? MarketTrendMetrics.ParseEnabled(marketTrend);
 
       bool needsMeanPriceTrend = enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
@@ -52,7 +54,8 @@ namespace Core.MarketAnalyzer.MarketData
       bool needsRelativeStrengthMarket = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
       bool needsRelativeStrengthBTC = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthBTC, StringComparer.OrdinalIgnoreCase);
       bool needsGlobalReturns = needsMeanPriceTrend || needsMedianPriceTrend || needsBreadth || needsConcentration;
-      bool needsAssetReturns = needsRelativeStrengthMarket || needsRelativeStrengthBTC;
+      bool needsAssetReturns = needsRelativeStrengthMarket || needsRelativeStrengthBTC
+        || enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase);
 
       HashSet<string> symbolsToCalculate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       if (needsGlobalReturns)
@@ -138,10 +141,10 @@ namespace Core.MarketAnalyzer.MarketData
       FeatureValueSnapshot btcReturn = null;
       if (needsRelativeStrengthBTC)
       {
-        if (!returns.TryGetValue("BTCUSDT", out btcReturn))
+        if (!returns.TryGetValue(benchmarkSymbol, out btcReturn))
         {
           btcReturn = CalculateReturn(
-            store.GetSnapshot("BTCUSDT", interval, calculatedAtUtc),
+            store.GetSnapshot(benchmarkSymbol, interval, calculatedAtUtc),
             marketTrend.TrendMinutes,
             calculatedAtUtc);
         }
@@ -155,6 +158,11 @@ namespace Core.MarketAnalyzer.MarketData
           FeatureValueSnapshot assetReturn = returns.TryGetValue(symbol, out FeatureValueSnapshot value)
             ? value
             : InvalidFeature(calculatedAtUtc, 0, "No normalized return data is available for '" + symbol + "'.");
+
+          if (enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase))
+          {
+            metrics[MarketTrendMetrics.PriceTrend] = assetReturn;
+          }
 
           if (needsRelativeStrengthMarket)
           {
@@ -186,7 +194,9 @@ namespace Core.MarketAnalyzer.MarketData
       if (MarketTrendPhase1CEngine.HasMetrics(enabledMetrics))
       {
         Phase1CFeatureResult phase1c = MarketTrendPhase1CEngine.Calculate(
-          marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc);
+          marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc,
+          benchmarkSymbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase)
+            ? "USDT" : benchmarkSymbol.Substring(3));
         foreach (KeyValuePair<string, FeatureValueSnapshot> feature in phase1c.GlobalMetrics)
         {
           marketMetrics[feature.Key] = feature.Value;
