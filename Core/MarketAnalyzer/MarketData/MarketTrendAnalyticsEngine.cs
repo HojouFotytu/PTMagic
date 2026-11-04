@@ -181,6 +181,35 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
+      // Phase 1C runs only for explicitly enabled metrics, sharing the exact
+      // frozen MarketTrend populations and the existing normalized OHLCV store.
+      if (MarketTrendPhase1CEngine.HasMetrics(enabledMetrics))
+      {
+        Phase1CFeatureResult phase1c = MarketTrendPhase1CEngine.Calculate(
+          marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc);
+        foreach (KeyValuePair<string, FeatureValueSnapshot> feature in phase1c.GlobalMetrics)
+        {
+          marketMetrics[feature.Key] = feature.Value;
+        }
+        foreach (KeyValuePair<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> asset in phase1c.AssetMetrics)
+        {
+          if (assetMetrics.TryGetValue(asset.Key, out IReadOnlyDictionary<string, FeatureValueSnapshot> existing))
+          {
+            Dictionary<string, FeatureValueSnapshot> merged =
+              new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, FeatureValueSnapshot> metric in asset.Value)
+            {
+              merged[metric.Key] = metric.Value;
+            }
+            assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+          }
+          else
+          {
+            assetMetrics[asset.Key] = asset.Value;
+          }
+        }
+      }
+
       Dictionary<string, int> globalIssues = needsGlobalReturns
         ? CountInvalidReturnReasons(globalUniverse, returns)
         : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
