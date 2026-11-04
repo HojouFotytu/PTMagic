@@ -20,10 +20,11 @@ namespace Core.MarketAnalyzer.MarketData
     /// Only an explicit metric selects the normalized engine. An omitted Metric,
     /// or PriceTrend on a legacy-only MarketTrend, preserves the old trigger path.
     /// </summary>
-    public static bool UsesNormalizedMetric(MarketTrend marketTrend, string metric)
+    public static bool UsesNormalizedMetric(MarketTrend marketTrend, string metric, string exchange = "BinanceFutures")
     {
-      return !String.IsNullOrWhiteSpace(metric)
-        && !(IsPriceTrend(metric) && String.IsNullOrWhiteSpace(marketTrend?.Metrics));
+      return marketTrend != null
+        && String.Equals(marketTrend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
+        && BinanceFuturesAnalyticsRuntime.IsSupportedExchange(exchange);
     }
 
     public static bool TryResolveGlobal(
@@ -71,9 +72,10 @@ namespace Core.MarketAnalyzer.MarketData
 
       string normalizedMetric = MarketTrendMetrics.Normalize(metric);
 
-      // Omitted Metric preserves the pre-Phase-1 PriceTrend trigger path. An explicitly
-      // named PriceTrend also remains legacy when the MarketTrend has no Metrics configured.
-      if (!UsesNormalizedMetric(marketTrend, metric))
+      // Every supported Binance Exchange trigger resolves normalized metrics.
+      // Omitted Metric maps to PriceTrend, even with a nonempty Metrics list.
+      if (!UsesNormalizedMetric(marketTrend, metric,
+        configuration?.GeneralSettings?.Application?.Exchange))
       {
         error = "PriceTrend is resolved by PTMagic's legacy trend path.";
         return false;
@@ -85,9 +87,9 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      if (!configuration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+      if (!BinanceFuturesAnalyticsRuntime.IsSupportedExchange(configuration.GeneralSettings?.Application?.Exchange))
       {
-        error = "Normalized MarketTrend metrics are currently available only for BinanceFutures.";
+        error = "Normalized MarketTrend metrics require Binance, BinanceUS or BinanceFutures.";
         return false;
       }
 

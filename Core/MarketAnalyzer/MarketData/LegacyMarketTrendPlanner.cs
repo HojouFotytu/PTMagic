@@ -49,9 +49,8 @@ namespace Core.MarketAnalyzer.MarketData
         return required;
       }
 
-      bool isBinanceFutures = String.Equals(
-        general?.Application?.Exchange, "BinanceFutures",
-        StringComparison.OrdinalIgnoreCase);
+      bool supported = BinanceFuturesAnalyticsRuntime.IsSupportedExchange(
+        general?.Application?.Exchange);
 
       foreach (MarketTrend trend in analyzer.MarketAnalyzer.MarketTrends)
       {
@@ -62,11 +61,12 @@ namespace Core.MarketAnalyzer.MarketData
 
         // No migration of legacy/CMC/other-exchange behavior. Only explicit
         // Binance Futures Exchange Metrics are eligible for selective routing.
-        bool legacyOnly = !isBinanceFutures
-          || !String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
-          || String.IsNullOrWhiteSpace(trend.Metrics);
-        bool needsGlobal = legacyOnly || IsNeededByGlobalTrigger(analyzer, trend);
-        bool needsAsset = needsGlobal || IsNeededBySingleMarketTrigger(analyzer, trend);
+        // Supported Binance Exchange trends always use normalized returns.
+        // CMC and unsupported exchanges retain their historical pipeline.
+        bool legacyOnly = !supported
+          || !String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase);
+        bool needsGlobal = legacyOnly;
+        bool needsAsset = legacyOnly;
 
         if (needsGlobal)
         {

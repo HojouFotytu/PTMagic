@@ -6,13 +6,14 @@ using System.Threading.Tasks;
 using Core.Helper;
 using Core.Main;
 using Core.Main.DataObjects.PTMagicData;
+using Core.MarketAnalyzer.MarketData;
 
 namespace Core.MarketAnalyzer
 {
   public class Binance : BaseAnalyzer
   {
     private const string ExchangeName = "Binance";
-    private const string ApiBase = "https://api.binance.com/api/v1";
+    private const string ApiBase = "https://api.binance.com/api/v3";
 
     public static Task<double> GetMainCurrencyPriceAsync(string mainMarket, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
@@ -32,6 +33,12 @@ namespace Core.MarketAnalyzer
     public static Task<DateTime> GetFirstSeenDateAsync(string marketName, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
       return BinanceAnalyzerCommon.GetFirstSeenDateAsync(ExchangeName, ApiBase, marketName, log, cancellationToken);
+    }
+
+    public static Task<List<MarketCandle>> GetFiveMinuteMarketCandlesAsync(
+      string marketName, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
+    {
+      return BinanceKlineClient.GetFiveMinuteCandlesAsync(ExchangeName, ApiBase, marketName, candlesNeeded, log, cancellationToken);
     }
 
     public static Task<List<MarketTick>> GetMarketTicksAsync(string marketName, int ticksNeeded, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)

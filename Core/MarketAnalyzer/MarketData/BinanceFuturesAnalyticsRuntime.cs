@@ -18,6 +18,27 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public static class BinanceFuturesAnalyticsRuntime
   {
+    // Historical class name retained for API compatibility; this is the
+    // shared normalized runtime for Binance Futures, Spot and Binance US.
+    public static bool IsSupportedExchange(string exchange)
+    {
+      return String.Equals(exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+        || String.Equals(exchange, "Binance", StringComparison.OrdinalIgnoreCase)
+        || String.Equals(exchange, "BinanceUS", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Task<List<MarketCandle>> GetFiveMinuteMarketCandlesAsync(
+      string exchange, string symbol, int candles, LogHelper log, CancellationToken ct)
+    {
+      switch (exchange?.ToUpperInvariant())
+      {
+        case "BINANCE": return Binance.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct);
+        case "BINANCEUS": return BinanceUS.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct);
+        case "BINANCEFUTURES": return BinanceFutures.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct);
+        default: throw new ArgumentException("Unsupported normalized Exchange.", nameof(exchange));
+      }
+    }
+
     private const int RefreshConcurrency = 2;
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
@@ -27,6 +48,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> _currentTrendAnalyses =
       new ReadOnlyDictionary<string, MarketTrendAnalysisSnapshot>(new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase));
     private static IReadOnlyList<string> _cachedExchangeSymbols = Array.Empty<string>();
+    private static string _activeExchange = "BinanceFutures";
     private static IReadOnlyList<MarketDataRefreshStatus> _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
 
     public static MarketDataService DataService => DataServiceInstance;
@@ -84,8 +106,13 @@ namespace Core.MarketAnalyzer.MarketData
       string mainMarket,
       PTMagicConfiguration systemConfiguration,
       LogHelper log,
-      CancellationToken cancellationToken = default)
+      CancellationToken cancellationToken = default,
+      string exchangeName = "BinanceFutures")
     {
+      if (!IsSupportedExchange(exchangeName))
+      {
+        throw new ArgumentException("Unsupported normalized Exchange '" + exchangeName + "'.", nameof(exchangeName));
+      }
       if (exchangeMarkets == null)
       {
         throw new ArgumentNullException(nameof(exchangeMarkets));
@@ -108,6 +135,11 @@ namespace Core.MarketAnalyzer.MarketData
 
       lock (SnapshotLock)
       {
+        if (!String.Equals(_activeExchange, exchangeName, StringComparison.OrdinalIgnoreCase))
+        {
+          DataServiceInstance.Store.Clear();
+        }
+        _activeExchange = exchangeName;
         _cachedExchangeSymbols = Array.AsReadOnly(exchangeSymbols);
         _currentUniverse = null;
         _currentAnalysis = null;
@@ -145,7 +177,7 @@ namespace Core.MarketAnalyzer.MarketData
         exchangeSymbols,
         BaseInterval,
         targetHistoryCandles,
-        BinanceFutures.GetFiveMinuteMarketCandlesAsync,
+        (symbol, count, logger, ct) => GetFiveMinuteMarketCandlesAsync(exchangeName, symbol, count, logger, ct),
         log,
         RefreshConcurrency,
         cancellationToken).ConfigureAwait(false);
@@ -199,8 +231,16 @@ namespace Core.MarketAnalyzer.MarketData
         cachedSymbols = _cachedExchangeSymbols;
       }
 
-      List<string> eligibleSymbols = BinanceFuturesMarketUniverse
-        .FilterMarketNames(cachedSymbols, systemConfiguration)
+      string exchangeName;
+      lock (SnapshotLock)
+      {
+        exchangeName = _activeExchange;
+      }
+      bool futures = exchangeName.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase);
+
+      List<string> eligibleSymbols = (futures
+          ? BinanceFuturesMarketUniverse.FilterMarketNames(cachedSymbols, systemConfiguration)
+          : cachedSymbols)
         .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
         .Select(symbol => symbol.Trim().ToUpperInvariant())
         .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -235,24 +275,32 @@ namespace Core.MarketAnalyzer.MarketData
       List<AnalyzerUniverseMarket> markets = new List<AnalyzerUniverseMarket>(eligibleSymbols.Count);
       foreach (string symbol in eligibleSymbols.OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase))
       {
-        BinanceFuturesMarketMetadata metadata = BinanceFuturesMarketUniverse.GetMarketMetadataSnapshot(symbol);
-        if (metadata == null)
+        if (futures)
         {
-          continue;
+          BinanceFuturesMarketMetadata metadata = BinanceFuturesMarketUniverse.GetMarketMetadataSnapshot(symbol);
+          if (metadata == null) continue;
+          markets.Add(new AnalyzerUniverseMarket
+          {
+            Symbol = symbol,
+            ContractType = metadata.ContractType,
+            UnderlyingType = metadata.UnderlyingType,
+            UnderlyingSubTypes = metadata.UnderlyingSubTypes
+          });
         }
-
-        markets.Add(new AnalyzerUniverseMarket
+        else
         {
-          Symbol = symbol,
-          ContractType = metadata.ContractType,
-          UnderlyingType = metadata.UnderlyingType,
-          UnderlyingSubTypes = metadata.UnderlyingSubTypes
-        });
+          // Spot markets have no Futures contract/underlying type metadata.
+          markets.Add(new AnalyzerUniverseMarket { Symbol = symbol });
+        }
       }
 
-      string selectionReason = usePtEnabledPairs
-        ? "Binance Futures exchange population filtered by the active underlying-type policy and ProfitTrailer enabled_pairs/disabled_pairs"
-        : "Binance Futures exchange population filtered by the active underlying-type policy";
+      string selectionReason = futures
+        ? (usePtEnabledPairs
+          ? "Binance Futures active underlying-type policy and enabled/disabled PT pairs"
+          : "Binance Futures active underlying-type policy")
+        : (usePtEnabledPairs
+          ? exchangeName + " exchange market universe filtered by enabled/disabled PT pairs"
+          : exchangeName + " exchange market universe");
 
       AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(DateTimeOffset.UtcNow, mainMarket, markets, selectionReason);
       lock (SnapshotLock)
@@ -553,7 +601,7 @@ namespace Core.MarketAnalyzer.MarketData
         return normalized;
       }
 
-      return SystemHelper.GetFullMarketName(mainMarket, normalized, "BinanceFutures").ToUpperInvariant();
+      return normalized + mainMarket;
     }
 
     private static string GetPropertyValue(List<string> lines, string propertyName)
