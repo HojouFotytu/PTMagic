@@ -2221,15 +2221,9 @@ namespace Core.Main
               {
                 this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' triggered!");
 
-                // Save matched triggers to get displayed in the comment lines
-                if (!matchedMarketTriggers.ContainsKey(marketPair))
-                {
-                  matchedMarketTriggers.Add(marketPair, matchedSingleMarketTriggers);
-                }
-                else
-                {
-                  matchedMarketTriggers[marketPair].AddRange(matchedSingleMarketTriggers);
-                }
+                // Aggregate comment-line triggers without sharing a mutable
+                // list with this setting's persisted trigger snapshot.
+                MatchedMarketTriggerContent.Append(matchedMarketTriggers, marketPair, matchedSingleMarketTriggers);
 
                 if (!this.TriggeredSingleMarketSettings.ContainsKey(marketPair))
                 {
@@ -2275,7 +2269,7 @@ namespace Core.Main
                     smss.TriggerSnapshot.Last24hVolume = 0;
                     smss.TriggerSnapshot.LastPrice = 0;
                     smss.TriggerSnapshot.RelevantTriggers = relevantTriggers;
-                    smss.TriggerSnapshot.MatchedTriggersContent = matchedSingleMarketTriggers;
+                    smss.TriggerSnapshot.MatchedTriggersContent = MatchedMarketTriggerContent.CopyForSnapshot(matchedSingleMarketTriggers);
 
                     List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[this.SingleMarketTrendChanges.Keys.Last()];
                     if (marketTrendChanges.Count > 0)
