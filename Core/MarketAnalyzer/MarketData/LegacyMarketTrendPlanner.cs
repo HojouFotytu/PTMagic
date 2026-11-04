@@ -31,17 +31,29 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public static LegacyMarketTrendRequirements Build(PTMagicConfiguration configuration)
     {
+      if (configuration == null)
+      {
+        throw new ArgumentNullException(nameof(configuration));
+      }
+      return Build(configuration.GeneralSettings, configuration.AnalyzerSettings);
+    }
+
+    // Inputs can also be supplied without file-backed PTMagicConfiguration,
+    // allowing deterministic dependency-planning regression tests.
+    public static LegacyMarketTrendRequirements Build(
+      GeneralSettings general, AnalyzerSettings analyzer)
+    {
       LegacyMarketTrendRequirements required = new LegacyMarketTrendRequirements();
-      if (configuration?.AnalyzerSettings?.MarketAnalyzer?.MarketTrends == null)
+      if (analyzer?.MarketAnalyzer?.MarketTrends == null)
       {
         return required;
       }
 
       bool isBinanceFutures = String.Equals(
-        configuration.GeneralSettings?.Application?.Exchange, "BinanceFutures",
+        general?.Application?.Exchange, "BinanceFutures",
         StringComparison.OrdinalIgnoreCase);
 
-      foreach (MarketTrend trend in configuration.AnalyzerSettings.MarketAnalyzer.MarketTrends)
+      foreach (MarketTrend trend in analyzer.MarketAnalyzer.MarketTrends)
       {
         if (trend == null || String.IsNullOrWhiteSpace(trend.Name))
         {
@@ -53,8 +65,8 @@ namespace Core.MarketAnalyzer.MarketData
         bool legacyOnly = !isBinanceFutures
           || !String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
           || String.IsNullOrWhiteSpace(trend.Metrics);
-        bool needsGlobal = legacyOnly || IsNeededByGlobalTrigger(configuration, trend);
-        bool needsAsset = needsGlobal || IsNeededBySingleMarketTrigger(configuration, trend);
+        bool needsGlobal = legacyOnly || IsNeededByGlobalTrigger(analyzer, trend);
+        bool needsAsset = needsGlobal || IsNeededBySingleMarketTrigger(analyzer, trend);
 
         if (needsGlobal)
         {
@@ -69,9 +81,9 @@ namespace Core.MarketAnalyzer.MarketData
       return required;
     }
 
-    private static bool IsNeededByGlobalTrigger(PTMagicConfiguration configuration, MarketTrend trend)
+    private static bool IsNeededByGlobalTrigger(AnalyzerSettings analyzer, MarketTrend trend)
     {
-      return (configuration.AnalyzerSettings.GlobalSettings ?? new List<GlobalSetting>())
+      return (analyzer.GlobalSettings ?? new List<GlobalSetting>())
         .Where(setting => setting?.Triggers != null)
         .SelectMany(setting => setting.Triggers)
         .Any(trigger => trigger != null
@@ -79,9 +91,9 @@ namespace Core.MarketAnalyzer.MarketData
           && !MarketTrendMetricTriggerResolver.UsesNormalizedMetric(trend, trigger.Metric));
     }
 
-    private static bool IsNeededBySingleMarketTrigger(PTMagicConfiguration configuration, MarketTrend trend)
+    private static bool IsNeededBySingleMarketTrigger(AnalyzerSettings analyzer, MarketTrend trend)
     {
-      foreach (SingleMarketSetting setting in configuration.AnalyzerSettings.SingleMarketSettings
+      foreach (SingleMarketSetting setting in analyzer.SingleMarketSettings
         ?? new List<SingleMarketSetting>())
       {
         if (setting == null)
