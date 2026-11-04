@@ -929,8 +929,14 @@ namespace Core.Main
               List<string> matchedTriggers = new List<string>();
               this.CheckGlobalSettingsTriggers(ref triggeredSetting, ref matchedTriggers);
 
+              // Record the actual setting-name transition separately from forced
+              // reapplication of the same preset.
+              string previousActiveSettingName = this.ActiveSettingName;
+
               // Activate global setting
               this.ActivateSetting(ref triggeredSetting, ref matchedTriggers);
+              bool globalSettingSwitchedThisRaid = !String.Equals(
+                previousActiveSettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase);
 
               // Check for single market trend triggers
               this.ApplySingleMarketSettings();
@@ -982,7 +988,8 @@ namespace Core.Main
               this.Log.DoLogInfo("+ Instance name: " + PTMagicConfiguration.GeneralSettings.Application.InstanceName);
               this.Log.DoLogInfo("+ Time spent: " + SystemHelper.GetProperDurationTime(elapsedSeconds));
               this.Log.DoLogInfo("+ Active setting: " + this.LastRuntimeSummary.CurrentGlobalSetting.SettingName);
-              this.Log.DoLogInfo("+ Global setting changed: " + ((this.LastRuntimeSummary.LastGlobalSettingSwitch == this.LastRuntimeSummary.LastRuntime) ? "Yes" : "No") + " " + ((this.LastRuntimeSummary.FloodProtectedSetting != null) ? "(Flood protection!)" : ""));
+              this.Log.DoLogInfo("+ Global setting switched: " + (globalSettingSwitchedThisRaid ? "Yes" : "No") + ((this.LastRuntimeSummary.FloodProtectedSetting != null) ? " (Flood protection!)" : ""));
+              this.Log.DoLogInfo("+ Global setting reapplied: " + ((this.GlobalSettingWritten && !globalSettingSwitchedThisRaid) ? "Yes" : "No"));
               this.Log.DoLogInfo("+ Single Market Settings changed: " + (this.SingleMarketSettingChanged ? "Yes" : "No"));
               this.Log.DoLogInfo("+ PT Config updated: " + (((this.GlobalSettingWritten || this.SingleMarketSettingChanged) && !this.PTMagicConfiguration.GeneralSettings.Application.TestMode) ? "Yes" : "No") + ((this.PTMagicConfiguration.GeneralSettings.Application.TestMode) ? " - TESTMODE active" : ""));
               this.Log.DoLogInfo("+ Markets with active single market settings: " + this.TriggeredSingleMarketSettings.Count.ToString());
