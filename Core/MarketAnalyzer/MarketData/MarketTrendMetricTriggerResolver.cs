@@ -48,6 +48,44 @@ namespace Core.MarketAnalyzer.MarketData
       return TryResolve(configuration, marketTrend, metric, marketSymbol, false, out value, out error);
     }
 
+    /// <summary>
+    /// Uses normalized returns while preserving the original SMS
+    /// relative-to-market and relative-to-activation price comparisons.
+    /// </summary>
+    public static bool TryResolveSingleWithRelation(
+      PTMagicConfiguration configuration, MarketTrend trend, string metric,
+      string marketSymbol, string relation, double currentPrice, double activationPrice,
+      out double value, out string error)
+    {
+      if (!TryResolveSingle(configuration, trend, metric, marketSymbol, out value, out error))
+      {
+        return false;
+      }
+      if (!IsPriceTrend(metric))
+      {
+        return true;
+      }
+      if (String.Equals(relation, Constants.MarketTrendRelationRelative, StringComparison.OrdinalIgnoreCase))
+      {
+        if (!TryResolveGlobal(configuration, trend, metric, out double global, out error))
+        {
+          return false;
+        }
+        value -= global;
+      }
+      else if (String.Equals(relation, Constants.MarketTrendRelationRelativeTrigger, StringComparison.OrdinalIgnoreCase))
+      {
+        if (!double.IsFinite(currentPrice) || !double.IsFinite(activationPrice)
+          || currentPrice <= 0 || activationPrice <= 0)
+        {
+          error = "Relative-to-trigger PriceTrend requires valid current and saved activation prices.";
+          return false;
+        }
+        value = (currentPrice / activationPrice - 1.0) * 100.0;
+      }
+      return double.IsFinite(value);
+    }
+
     public static string GetUnit(string metric)
     {
       string metricName = MarketTrendMetrics.Normalize(metric);

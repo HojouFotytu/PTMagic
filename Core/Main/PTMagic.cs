@@ -1861,8 +1861,12 @@ namespace Core.Main
                       {
                         double metricValue;
                         string metricError;
-                        bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
-                          this.PTMagicConfiguration, metricTrend, offTrigger.Metric, marketPair, out metricValue, out metricError);
+                        this._recentMarketSnapshots.TryGetValue(marketPair, out Market currentMarket);
+                        bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingleWithRelation(
+                          this.PTMagicConfiguration, metricTrend, offTrigger.Metric, marketPair,
+                          offTrigger.MarketTrendRelation, currentMarket?.Price ?? 0,
+                          smss?.TriggerSnapshot?.LastPrice ?? 0,
+                          out metricValue, out metricError);
                         if (!validMetric)
                         {
                           this._raidMetricWarnings.ReportUnavailable(offTrigger.MarketTrendName, offTrigger.Metric, metricError);
@@ -2090,8 +2094,11 @@ namespace Core.Main
                   {
                     double metricValue;
                     string metricError;
-                    bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
-                      this.PTMagicConfiguration, metricTrend, trigger.Metric, marketPair, out metricValue, out metricError);
+                    this._recentMarketSnapshots.TryGetValue(marketPair, out Market currentMarket);
+                    bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingleWithRelation(
+                      this.PTMagicConfiguration, metricTrend, trigger.Metric, marketPair,
+                      trigger.MarketTrendRelation, currentMarket?.Price ?? 0, 0,
+                      out metricValue, out metricError);
                     bool metricTriggered = validMetric && metricValue >= trigger.MinChange && metricValue < trigger.MaxChange;
                     triggerResults.Add(validMetric ? (bool?)metricTriggered : null);
                     triggerTagsResults[trigger.Tag] = validMetric ? (bool?)metricTriggered : null;
