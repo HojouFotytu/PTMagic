@@ -2422,6 +2422,13 @@ namespace Core.Main
             // Market trend changes history for graph data
             foreach (string key in summary.MarketTrendChanges.Keys)
             {
+              // Do not rehydrate obsolete legacy graph values for Metrics-only
+              // trends whose legacy averages were deliberately not calculated.
+              if (!this.AverageMarketTrendChanges.ContainsKey(key))
+              {
+                continue;
+              }
+
               this.LastRuntimeSummary.MarketTrendChanges.Add(key, summary.MarketTrendChanges[key].FindAll(mtc => mtc.TrendDateTime >= DateTime.UtcNow.AddHours(-PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.StoreDataMaxHours)));
             }
 
