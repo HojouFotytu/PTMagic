@@ -5,12 +5,12 @@ using Core.Helper;
 using Microsoft.Extensions.DependencyInjection;
 
 
-[assembly: AssemblyVersion("2.9.1")]
+[assembly: AssemblyVersion("2.10.0")]
 [assembly: AssemblyProduct("PT Magic")]
 
 namespace PTMagic
 {
-  class Program
+  class ProgramT
   {
     // Create a logger
     private static LogHelper _log = ServiceHelper.BuildLoggerService().GetRequiredService<LogHelper>();
