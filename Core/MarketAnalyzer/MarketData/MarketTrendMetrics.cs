@@ -27,6 +27,17 @@ namespace Core.MarketAnalyzer.MarketData
     public const string RelativeStrengthMarket = "RelativeStrengthMarket";
     public const string RelativeStrengthBTC = "RelativeStrengthBTC";
     public const string Concentration = "Concentration";
+    public const string ATRP = "ATRP";
+    public const string MedianATRP = "MedianATRP";
+    public const string VolatilityBreadth = "VolatilityBreadth";
+    public const string VolumeExpansion = "VolumeExpansion";
+    public const string MedianVolumeExpansion = "MedianVolumeExpansion";
+    public const string VolumeExpansionBreadth = "VolumeExpansionBreadth";
+    public const string StrongVolumeExpansionBreadth = "StrongVolumeExpansionBreadth";
+    public const string VolumeConcentration = "VolumeConcentration";
+    public const string TopNVolumeShare = "TopNVolumeShare";
+    public const string BTCVolumeShare = "BTCVolumeShare";
+    public const string BTCETHVolumeShare = "BTCETHVolumeShare";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -38,7 +49,18 @@ namespace Core.MarketAnalyzer.MarketData
         [Dispersion] = MarketTrendMetricScope.Global,
         [RelativeStrengthMarket] = MarketTrendMetricScope.Asset,
         [RelativeStrengthBTC] = MarketTrendMetricScope.Asset,
-        [Concentration] = MarketTrendMetricScope.Global
+        [Concentration] = MarketTrendMetricScope.Global,
+        [ATRP] = MarketTrendMetricScope.Asset,
+        [MedianATRP] = MarketTrendMetricScope.Global,
+        [VolatilityBreadth] = MarketTrendMetricScope.Global,
+        [VolumeExpansion] = MarketTrendMetricScope.Asset,
+        [MedianVolumeExpansion] = MarketTrendMetricScope.Global,
+        [VolumeExpansionBreadth] = MarketTrendMetricScope.Global,
+        [StrongVolumeExpansionBreadth] = MarketTrendMetricScope.Global,
+        [VolumeConcentration] = MarketTrendMetricScope.Global,
+        [TopNVolumeShare] = MarketTrendMetricScope.Global,
+        [BTCVolumeShare] = MarketTrendMetricScope.Global,
+        [BTCETHVolumeShare] = MarketTrendMetricScope.Global
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();

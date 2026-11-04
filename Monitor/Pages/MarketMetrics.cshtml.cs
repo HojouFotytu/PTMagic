@@ -22,13 +22,24 @@ namespace Monitor.Pages
       MarketTrendMetrics.MeanMedianSpread,
       MarketTrendMetrics.Breadth,
       MarketTrendMetrics.Dispersion,
-      MarketTrendMetrics.Concentration
+      MarketTrendMetrics.Concentration,
+      MarketTrendMetrics.MedianATRP,
+      MarketTrendMetrics.VolatilityBreadth,
+      MarketTrendMetrics.MedianVolumeExpansion,
+      MarketTrendMetrics.VolumeExpansionBreadth,
+      MarketTrendMetrics.StrongVolumeExpansionBreadth,
+      MarketTrendMetrics.VolumeConcentration,
+      MarketTrendMetrics.TopNVolumeShare,
+      MarketTrendMetrics.BTCVolumeShare,
+      MarketTrendMetrics.BTCETHVolumeShare
     };
 
     public IReadOnlyList<string> AssetMetricNames { get; } = new string[]
     {
       MarketTrendMetrics.RelativeStrengthMarket,
-      MarketTrendMetrics.RelativeStrengthBTC
+      MarketTrendMetrics.RelativeStrengthBTC,
+      MarketTrendMetrics.ATRP,
+      MarketTrendMetrics.VolumeExpansion
     };
 
     public void OnGet()
@@ -95,7 +106,9 @@ namespace Monitor.Pages
         || metric.Equals(MarketTrendMetrics.Concentration, StringComparison.OrdinalIgnoreCase);
 
       string format = isReturnDifference ? "+#,#0.00;-#,#0.00;0.00" : "#,#0.00";
-      return feature.Value.Value.ToString(format, new System.Globalization.CultureInfo("en-US")) + "%";
+      bool isRatio = metric.Equals(MarketTrendMetrics.VolumeExpansion, StringComparison.OrdinalIgnoreCase)
+        || metric.Equals(MarketTrendMetrics.MedianVolumeExpansion, StringComparison.OrdinalIgnoreCase);
+      return feature.Value.Value.ToString(format, new System.Globalization.CultureInfo("en-US")) + (isRatio ? "x" : "%");
     }
 
     public string FormatTimeframe(int trendMinutes)
@@ -140,6 +153,17 @@ namespace Monitor.Pages
         MarketTrendMetrics.RelativeStrengthMarket => "RS vs Market",
         MarketTrendMetrics.RelativeStrengthBTC => "RS vs BTC",
         MarketTrendMetrics.Concentration => "Top10 Return Advantage",
+        MarketTrendMetrics.ATRP => "ATRP",
+        MarketTrendMetrics.MedianATRP => "Median ATRP",
+        MarketTrendMetrics.VolatilityBreadth => "Volatility Breadth",
+        MarketTrendMetrics.VolumeExpansion => "Volume Expansion",
+        MarketTrendMetrics.MedianVolumeExpansion => "Median Volume Expansion",
+        MarketTrendMetrics.VolumeExpansionBreadth => "Volume Breadth",
+        MarketTrendMetrics.StrongVolumeExpansionBreadth => "Strong Volume Breadth",
+        MarketTrendMetrics.VolumeConcentration => "Volume HHI",
+        MarketTrendMetrics.TopNVolumeShare => "Top N Volume Share",
+        MarketTrendMetrics.BTCVolumeShare => "BTC Volume Share",
+        MarketTrendMetrics.BTCETHVolumeShare => "BTC+ETH Volume Share",
         _ => metric
       };
     }
@@ -156,6 +180,17 @@ namespace Monitor.Pages
         MarketTrendMetrics.RelativeStrengthMarket => "Individual market price change minus MedianPriceTrend. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
         MarketTrendMetrics.RelativeStrengthBTC => "Individual market price change minus BTC price change over the same timeframe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
         MarketTrendMetrics.Concentration => "Mean return of the Top10 markets by trailing 24-hour quote volume minus the mean return of the remaining MarketTrend universe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
+        MarketTrendMetrics.ATRP => "Wilder ATR over complete MarketTrend-duration candles divided by latest complete trend close, in percent.",
+        MarketTrendMetrics.MedianATRP => "Median ATRP across global eligible markets; 90% coverage.",
+        MarketTrendMetrics.VolatilityBreadth => "Percent of valid markets whose ATRP exceeds configured ATRPBreadthThreshold; 90% coverage.",
+        MarketTrendMetrics.VolumeExpansion => "Latest complete MarketTrend-duration quote volume divided by the previous VolumeExpansionLookback periods average; ratio, 1.0x means normal.",
+        MarketTrendMetrics.MedianVolumeExpansion => "Median VolumeExpansion ratio among valid global markets; 90% coverage.",
+        MarketTrendMetrics.VolumeExpansionBreadth => "Percent of valid markets whose volume expansion exceeds VolumeExpansionBreadthThreshold.",
+        MarketTrendMetrics.StrongVolumeExpansionBreadth => "Percent of valid markets whose volume expansion exceeds StrongVolumeExpansionThreshold.",
+        MarketTrendMetrics.VolumeConcentration => "HHI of quote-volume shares in the latest complete trend period multiplied by 100; complete global population required.",
+        MarketTrendMetrics.TopNVolumeShare => "TopNVolumeCount ranked-market share of latest complete MarketTrend-duration quote volume, percent; complete global population required.",
+        MarketTrendMetrics.BTCVolumeShare => "BTC quote-volume share of the complete eligible global universe in latest complete trend period, percent.",
+        MarketTrendMetrics.BTCETHVolumeShare => "Combined BTC and ETH quote-volume share of complete eligible global universe in latest complete trend period, percent.",
         _ => metric
       };
     }

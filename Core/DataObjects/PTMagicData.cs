@@ -139,6 +139,20 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string Metrics { get; set; } = "";
 
+    // Phase 1C lookbacks count complete MarketTrend.TrendMinutes periods.
+    [DefaultValue(14)]
+    public int ATRPeriod { get; set; } = 14;
+    [DefaultValue(20)]
+    public int VolumeExpansionLookback { get; set; } = 20;
+    [DefaultValue(0.5)]
+    public double ATRPBreadthThreshold { get; set; } = 0.5;
+    [DefaultValue(1.0)]
+    public double VolumeExpansionBreadthThreshold { get; set; } = 1.0;
+    [DefaultValue(1.5)]
+    public double StrongVolumeExpansionThreshold { get; set; } = 1.5;
+    [DefaultValue(10)]
+    public int TopNVolumeCount { get; set; } = 10;
+
     [DefaultValue(true)]
     public bool DisplayGraph { get; set; } = true;
 
