@@ -104,6 +104,13 @@ namespace Core.MarketAnalyzer.MarketData
       {
         Name = analysis.MarketTrendName,
         TrendMinutes = analysis.TrendMinutes,
+        ExpectedClosedCandleTimeUtc = analysis.ExpectedClosedCandleTimeUtc,
+        GlobalReturnsEvaluated = analysis.GlobalReturnsEvaluated,
+        AssetReturnsEvaluated = analysis.AssetReturnsEvaluated,
+        ValidGlobalReturnCount = analysis.ValidGlobalReturnCount,
+        ValidAssetReturnCount = analysis.ValidAssetReturnCount,
+        GlobalInvalidReturnReasons = analysis.GlobalInvalidReturnReasons.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase),
+        AssetInvalidReturnReasons = analysis.AssetInvalidReturnReasons.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase),
         GlobalSymbols = analysis.GlobalSymbols.ToList(),
         AssetSymbols = analysis.AssetSymbols.ToList(),
         MarketMetrics = analysis.MarketMetrics.ToDictionary(

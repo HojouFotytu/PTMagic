@@ -80,10 +80,12 @@ namespace Core.MarketAnalyzer.MarketData
         : new List<FeatureValueSnapshot>();
 
       FeatureValueSnapshot meanPriceTrend = needsMeanPriceTrend
-        ? CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes)
+        ? MarketMetricCoverage.Apply(CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes),
+            globalReturns.Count, globalUniverse.Length, calculatedAtUtc)
         : null;
       FeatureValueSnapshot medianPriceTrend = needsMedianPriceTrend
-        ? CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes)
+        ? MarketMetricCoverage.Apply(CalculateMedian(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes),
+            globalReturns.Count, globalUniverse.Length, calculatedAtUtc)
         : null;
 
       Dictionary<string, FeatureValueSnapshot> marketMetrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -97,29 +99,37 @@ namespace Core.MarketAnalyzer.MarketData
       }
       if (enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase))
       {
-        marketMetrics[MarketTrendMetrics.MeanMedianSpread] = CalculateMeanMedianSpread(
+        marketMetrics[MarketTrendMetrics.MeanMedianSpread] = MarketMetricCoverage.Apply(CalculateMeanMedianSpread(
           meanPriceTrend,
           medianPriceTrend,
           globalReturns.Count,
           calculatedAtUtc,
-          marketTrend.TrendMinutes);
+          marketTrend.TrendMinutes), globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
       }
       if (needsBreadth)
       {
-        marketMetrics[MarketTrendMetrics.Breadth] = CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes);
+        marketMetrics[MarketTrendMetrics.Breadth] = MarketMetricCoverage.Apply(
+          CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes),
+          globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
       }
       if (needsDispersion)
       {
-        marketMetrics[MarketTrendMetrics.Dispersion] = CalculateDispersion(globalReturns, meanPriceTrend, calculatedAtUtc, marketTrend.TrendMinutes);
+        marketMetrics[MarketTrendMetrics.Dispersion] = MarketMetricCoverage.Apply(
+          CalculateDispersion(globalReturns, meanPriceTrend, calculatedAtUtc, marketTrend.TrendMinutes),
+          globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
       }
       if (needsConcentration)
       {
-        marketMetrics[MarketTrendMetrics.Concentration] = CalculateConcentration(
+        FeatureValueSnapshot concentration = CalculateConcentration(
           globalUniverse,
           returns,
           store,
           interval,
           calculatedAtUtc);
+        // Top10 ranking and remaining-population comparison require a complete
+        // trailing-volume sample, unlike the 90% mean/median/breadth policy.
+        marketMetrics[MarketTrendMetrics.Concentration] = MarketMetricCoverage.Apply(
+          concentration, concentration.SampleCount, globalUniverse.Length, calculatedAtUtc, requireComplete: true);
       }
 
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetMetrics =
@@ -171,8 +181,24 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
+      Dictionary<string, int> globalIssues = needsGlobalReturns
+        ? CountInvalidReturnReasons(globalUniverse, returns)
+        : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      Dictionary<string, int> assetIssues = needsAssetReturns
+        ? CountInvalidReturnReasons(assetUniverse, returns)
+        : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
       return new MarketTrendAnalysisSnapshot
       {
+        ExpectedClosedCandleTimeUtc = GetExpectedClosedCandleCloseTime(calculatedAtUtc, interval),
+        GlobalReturnsEvaluated = needsGlobalReturns,
+        AssetReturnsEvaluated = needsAssetReturns,
+        ValidGlobalReturnCount = globalReturns.Count,
+        ValidAssetReturnCount = needsAssetReturns
+          ? assetUniverse.Count(symbol => returns.TryGetValue(symbol, out FeatureValueSnapshot value) && IsUsable(value))
+          : 0,
+        GlobalInvalidReturnReasons = new ReadOnlyDictionary<string, int>(globalIssues),
+        AssetInvalidReturnReasons = new ReadOnlyDictionary<string, int>(assetIssues),
         MarketTrendName = marketTrend.Name ?? "",
         TrendMinutes = marketTrend.TrendMinutes,
         CalculatedAtUtc = calculatedAtUtc,
@@ -509,6 +535,50 @@ namespace Core.MarketAnalyzer.MarketData
       return null;
     }
 
+    private static Dictionary<string, int> CountInvalidReturnReasons(
+      IEnumerable<string> symbols,
+      IReadOnlyDictionary<string, FeatureValueSnapshot> returns)
+    {
+      Dictionary<string, int> reasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      foreach (string symbol in symbols)
+      {
+        if (returns.TryGetValue(symbol, out FeatureValueSnapshot feature) && IsUsable(feature))
+        {
+          continue;
+        }
+
+        string reason;
+        if (feature == null)
+        {
+          reason = "MissingObservation";
+        }
+        else if (feature.InvalidReason.Contains("closed-candle endpoint", StringComparison.OrdinalIgnoreCase))
+        {
+          reason = "MissingEndpoint";
+        }
+        else if (feature.InvalidReason.Contains("closed-candle reference", StringComparison.OrdinalIgnoreCase))
+        {
+          reason = "MissingReference";
+        }
+        else if (feature.InvalidReason.Contains("No closed candle", StringComparison.OrdinalIgnoreCase))
+        {
+          reason = "NoClosedCandles";
+        }
+        else if (feature.IsStale)
+        {
+          reason = "Stale";
+        }
+        else
+        {
+          reason = "InvalidReturn";
+        }
+
+        reasons[reason] = reasons.TryGetValue(reason, out int count) ? count + 1 : 1;
+      }
+
+      return reasons;
+    }
+
     private static string[] NormalizeSymbols(IEnumerable<string> symbols)
     {
       return (symbols ?? Array.Empty<string>())
@@ -593,6 +663,13 @@ namespace Core.MarketAnalyzer.MarketData
   public sealed class MarketTrendAnalysisSnapshot
   {
     public string MarketTrendName { get; init; } = "";
+    public DateTimeOffset ExpectedClosedCandleTimeUtc { get; init; }
+    public bool GlobalReturnsEvaluated { get; init; }
+    public bool AssetReturnsEvaluated { get; init; }
+    public int ValidGlobalReturnCount { get; init; }
+    public int ValidAssetReturnCount { get; init; }
+    public IReadOnlyDictionary<string, int> GlobalInvalidReturnReasons { get; init; } = new Dictionary<string, int>();
+    public IReadOnlyDictionary<string, int> AssetInvalidReturnReasons { get; init; } = new Dictionary<string, int>();
     public int TrendMinutes { get; init; }
     public DateTimeOffset CalculatedAtUtc { get; init; }
     public IReadOnlyList<string> GlobalSymbols { get; init; } = Array.Empty<string>();

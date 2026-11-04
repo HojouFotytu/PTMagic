@@ -14,6 +14,13 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public string Name { get; set; } = "";
     public int TrendMinutes { get; set; }
+    public DateTimeOffset ExpectedClosedCandleTimeUtc { get; set; }
+    public bool GlobalReturnsEvaluated { get; set; }
+    public bool AssetReturnsEvaluated { get; set; }
+    public int ValidGlobalReturnCount { get; set; }
+    public int ValidAssetReturnCount { get; set; }
+    public Dictionary<string, int> GlobalInvalidReturnReasons { get; set; } = new Dictionary<string, int>();
+    public Dictionary<string, int> AssetInvalidReturnReasons { get; set; } = new Dictionary<string, int>();
     public List<string> GlobalSymbols { get; set; } = new List<string>();
     public List<string> AssetSymbols { get; set; } = new List<string>();
     public Dictionary<string, FeatureValueSnapshot> MarketMetrics { get; set; } =

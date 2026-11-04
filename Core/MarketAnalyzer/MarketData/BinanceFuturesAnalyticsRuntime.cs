@@ -511,24 +511,51 @@ namespace Core.MarketAnalyzer.MarketData
         marketValues.Add(FormatMetric(pair.Key, pair.Value));
       }
 
-      int validAssetValues = analysis.AssetMetrics.Values.Sum(metrics => metrics.Values.Count(feature => feature.IsValid));
+      int validAssetValues = analysis.AssetMetrics.Values.Sum(metrics =>
+        metrics.Values.Count(feature => feature.IsValid && !feature.IsStale));
       int totalAssetValues = analysis.AssetMetrics.Values.Sum(metrics => metrics.Count);
+      string globalCoverage = analysis.GlobalReturnsEvaluated
+        ? "global returns=" + analysis.ValidGlobalReturnCount + "/" + analysis.GlobalSymbols.Count +
+          " (" + (analysis.GlobalSymbols.Count > 0
+            ? analysis.ValidGlobalReturnCount * 100.0 / analysis.GlobalSymbols.Count
+            : 0.0).ToString("0.##", CultureInfo.InvariantCulture) + "%)"
+        : "global returns=not requested";
+      string assetCoverage = analysis.AssetReturnsEvaluated
+        ? "asset returns=" + analysis.ValidAssetReturnCount + "/" + analysis.AssetSymbols.Count
+        : "asset returns=not requested";
 
       log.DoLogInfo(
         "BinanceFutures analytics - MarketTrend '" + marketTrend.Name + "' (" + marketTrend.TrendMinutes +
         "m) metrics: " + (marketValues.Count == 0 ? "no global metrics" : String.Join(", ", marketValues)) +
         "; asset metrics valid=" + validAssetValues + "/" + totalAssetValues +
+        "; " + globalCoverage + "; " + assetCoverage +
+        "; expected closed endpoint=" + analysis.ExpectedClosedCandleTimeUtc.ToString("O", CultureInfo.InvariantCulture) +
+        "; global invalid reasons=" + FormatIssueCounts(analysis.GlobalInvalidReturnReasons) +
+        "; asset invalid reasons=" + FormatIssueCounts(analysis.AssetInvalidReturnReasons) +
         "; global universe=" + analysis.GlobalSymbols.Count + ", asset universe=" + analysis.AssetSymbols.Count + ".");
+    }
+
+    private static string FormatIssueCounts(IReadOnlyDictionary<string, int> reasons)
+    {
+      return reasons == null || reasons.Count == 0
+        ? "none"
+        : String.Join(", ", reasons.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+          .Select(pair => pair.Key + "=" + pair.Value));
     }
 
     private static string FormatMetric(string name, FeatureValueSnapshot feature)
     {
-      if (feature == null || !feature.IsValid || !feature.Value.HasValue)
+      string coverage = feature?.EligibleSampleCount is int eligible
+        ? " [" + feature.SampleCount + "/" + eligible + " (" +
+          (feature.CoveragePercent ?? 0.0).ToString("0.##", CultureInfo.InvariantCulture) + "%)]"
+        : "";
+      if (feature == null || !feature.IsValid || feature.IsStale || !feature.Value.HasValue)
       {
-        return name + "=unavailable" + (String.IsNullOrWhiteSpace(feature?.InvalidReason) ? "" : " (" + feature.InvalidReason + ")");
+        return name + "=unavailable" + coverage +
+          (String.IsNullOrWhiteSpace(feature?.InvalidReason) ? "" : " (" + feature.InvalidReason + ")");
       }
 
-      return name + "=" + feature.Value.Value.ToString("0.########", CultureInfo.InvariantCulture);
+      return name + "=" + feature.Value.Value.ToString("0.########", CultureInfo.InvariantCulture) + coverage;
     }
 
     private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> EmptyTrendAnalyses()

@@ -13,6 +13,9 @@ namespace Core.MarketAnalyzer.MarketData
     public DateTimeOffset CalculatedAtUtc { get; init; }
     public DateTimeOffset? SourceDataTimestampUtc { get; init; }
     public int SampleCount { get; init; }
+    // Set for cross-sectional metrics; SampleCount is the valid numerator.
+    public int? EligibleSampleCount { get; init; }
+    public double? CoveragePercent { get; init; }
     public bool IsValid { get; init; }
     public bool IsStale { get; init; }
     public string InvalidReason { get; init; } = "";
