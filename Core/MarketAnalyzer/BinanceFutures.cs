@@ -33,8 +33,7 @@ namespace Core.MarketAnalyzer
         ?? Enumerable.Empty<MarketTrend>();
       foreach (MarketTrend marketTrend in configuredTrends.Where(trend =>
         trend != null
-        && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
-        && !String.IsNullOrWhiteSpace(trend.Metrics)))
+        && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)))
       {
         IReadOnlyCollection<string> enabledMetrics = MarketTrendMetrics.ParseEnabled(marketTrend);
         string[] unknownMetrics = enabledMetrics.Where(metric => !MarketTrendMetrics.IsKnown(metric)).ToArray();
@@ -64,9 +63,9 @@ namespace Core.MarketAnalyzer
         return markets;
       }
 
-      // Only populate normalized observation data here. Metric evaluation is deliberately
-      // deferred until PTMagic's Phase 0 pipeline has finalized the exact per-trend global
-      // and single-market populations.
+      // Blank Metrics defaults to normalized PriceTrend, so eligible Exchange
+      // MarketTrends always require normalized candle observation data.
+      // Evaluate after the Phase 0 exact population has been frozen.
       await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(markets, mainMarket, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
 
       return markets;
