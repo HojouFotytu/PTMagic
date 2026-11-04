@@ -914,20 +914,25 @@ namespace Core.Main
               this.BuildMarketList();
               this.ValidateMarketList();
 
-              // Build global market trends configured in settings
+              bool normalizedExchange = BinanceFuturesAnalyticsRuntime.IsSupportedExchange(
+                this.PTMagicConfiguration.GeneralSettings.Application.Exchange);
+              // Futures freezes its metadata-qualified universe in GetMarketPairs.
+              // Spot and Binance US freeze their exchange-eligible population here.
+              if (normalizedExchange && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange
+                .Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+              {
+                BinanceFuturesAnalyticsRuntime.FreezeAnalyzerUniverse(
+                  this.PairsLines, this.PTMagicConfiguration, this.Log);
+              }
               this.BuildGlobalMarketTrends();
 
-              // Evaluate normalized Binance Futures metrics only after Phase 0 has resolved
-              // the exact global and single-market populations for each configured trend.
-              if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
+              if (normalizedExchange)
               {
-                Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
-                  this.GlobalMarketTrendChanges,
-                  this.SingleMarketTrendChanges,
-                  this.PTMagicConfiguration,
-                  this.Log,
-                  this._recentMarketSnapshots);
-                Core.MarketAnalyzer.MarketData.MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
+                BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
+                  this.GlobalMarketTrendChanges, this.SingleMarketTrendChanges,
+                  this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots);
+                this.ApplyNormalizedPriceTrends();
+                MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
               }
 
               // Check for global settings triggers
@@ -1286,13 +1291,23 @@ namespace Core.Main
       }
       else if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase))
       {
-        // Get most recent market data from Binance
         this.ExchangeMarketList = await Binance.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
+        if (this.ExchangeMarketList != null)
+        {
+          await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(
+            this.ExchangeMarketList, this.LastRuntimeSummary.MainMarket,
+            this.PTMagicConfiguration, this.Log, cancellationToken, "Binance").ConfigureAwait(false);
+        }
       }
       else if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceUS", StringComparison.InvariantCultureIgnoreCase))
       {
-        // Get most recent market data from BinanceUS
         this.ExchangeMarketList = await BinanceUS.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
+        if (this.ExchangeMarketList != null)
+        {
+          await BinanceFuturesAnalyticsRuntime.RefreshObservationDataAsync(
+            this.ExchangeMarketList, this.LastRuntimeSummary.MainMarket,
+            this.PTMagicConfiguration, this.Log, cancellationToken, "BinanceUS").ConfigureAwait(false);
+        }
       }
       else if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
       {
@@ -1381,6 +1396,52 @@ namespace Core.Main
         requirements.AssetPriceTrends.Count + ", legacy averages=" + requirements.GlobalPriceTrends.Count + ".");
     }
 
+    // Bridge the shared normalized PriceTrend to legacy Monitor and summary
+    // fields without recomputing historical exchange price snapshots.
+    private void ApplyNormalizedPriceTrends()
+    {
+      foreach (KeyValuePair<string, MarketTrendAnalysisSnapshot> entry in
+        BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses)
+      {
+        MarketTrendAnalysisSnapshot analysis = entry.Value;
+        List<MarketTrendChange> changes = new List<MarketTrendChange>();
+        foreach (KeyValuePair<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> asset in analysis.AssetMetrics)
+        {
+          if (!asset.Value.TryGetValue(MarketTrendMetrics.PriceTrend, out FeatureValueSnapshot feature)
+            || feature == null || !feature.IsValid || feature.IsStale
+            || !feature.Value.HasValue || !double.IsFinite(feature.Value.Value))
+          {
+            continue;
+          }
+          this._recentMarketSnapshots.TryGetValue(asset.Key, out Market recent);
+          changes.Add(new MarketTrendChange
+          {
+            MarketTrendName = entry.Key,
+            Market = asset.Key,
+            LastPrice = recent?.Price ?? 0,
+            Volume24h = recent?.Volume24h ?? 0,
+            TrendMinutes = analysis.TrendMinutes,
+            TrendChange = feature.Value.Value,
+            TrendDateTime = analysis.CalculatedAtUtc.UtcDateTime
+          });
+        }
+        if (changes.Count > 0)
+        {
+          this.SingleMarketTrendChanges[entry.Key] = changes;
+          HashSet<string> global = new HashSet<string>(
+            analysis.GlobalSymbols, StringComparer.OrdinalIgnoreCase);
+          this.GlobalMarketTrendChanges[entry.Key] =
+            changes.Where(change => global.Contains(change.Market)).ToList();
+        }
+        if (analysis.MarketMetrics.TryGetValue(MarketTrendMetrics.PriceTrend, out FeatureValueSnapshot globalValue)
+          && globalValue != null && globalValue.IsValid && !globalValue.IsStale
+          && globalValue.Value.HasValue && double.IsFinite(globalValue.Value.Value))
+        {
+          this.AverageMarketTrendChanges[entry.Key] = globalValue.Value.Value;
+        }
+      }
+    }
+
     private void CheckGlobalSettingsTriggers(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
     {
         this.Log.DoLogInfo("Checking global settings triggers...");
@@ -1405,7 +1466,7 @@ namespace Core.Main
                     if (marketTrend != null)
                     {
                         // Explicit metrics use the normalized Phase 1 runtime; omitted Metric remains legacy.
-                        bool useNormalizedMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(marketTrend, trigger.Metric);
+                        bool useNormalizedMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(marketTrend, trigger.Metric, this.PTMagicConfiguration.GeneralSettings.Application.Exchange);
                         double resolvedMetricValue;
                         string metricError = "";
                         bool hasMetricValue = useNormalizedMetric
@@ -1796,7 +1857,7 @@ namespace Core.Main
                       // Normalized metrics compare directly; omitted Metric preserves legacy relations.
                       MarketTrend metricTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
                         .Find(mt => mt.Name.Equals(offTrigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
-                      if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, offTrigger.Metric))
+                      if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, offTrigger.Metric, this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
                       {
                         double metricValue;
                         string metricError;
@@ -2025,7 +2086,7 @@ namespace Core.Main
                   #region Check for market trend triggers
                   MarketTrend metricTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
                     .Find(mt => mt.Name.Equals(trigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
-                  if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, trigger.Metric))
+                  if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, trigger.Metric, this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
                   {
                     double metricValue;
                     string metricError;
