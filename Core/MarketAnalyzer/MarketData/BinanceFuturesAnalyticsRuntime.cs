@@ -282,7 +282,8 @@ namespace Core.MarketAnalyzer.MarketData
       IReadOnlyDictionary<string, List<MarketTrendChange>> globalMarketTrendChanges,
       IReadOnlyDictionary<string, List<MarketTrendChange>> singleMarketTrendChanges,
       PTMagicConfiguration systemConfiguration,
-      LogHelper log)
+      LogHelper log,
+      IReadOnlyDictionary<string, Market> recentMarkets = null)
     {
       if (systemConfiguration == null)
       {
@@ -305,9 +306,6 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
 
-      HashSet<string> eligibleSymbols = universe.Markets
-        .Select(market => market.Symbol)
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
       Dictionary<string, MarketTrendAnalysisSnapshot> analyses =
         new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase);
       DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
@@ -341,27 +339,13 @@ namespace Core.MarketAnalyzer.MarketData
           continue;
         }
 
-        List<MarketTrendChange> globalChanges = GetTrendChanges(globalMarketTrendChanges, marketTrend.Name);
-        List<MarketTrendChange> singleChanges = GetTrendChanges(singleMarketTrendChanges, marketTrend.Name);
-
-        IEnumerable<MarketTrendChange> thresholdFilteredGlobalChanges = globalChanges;
-        if (marketTrend.TrendThreshold != 0)
-        {
-          double threshold = Math.Abs(marketTrend.TrendThreshold);
-          thresholdFilteredGlobalChanges = globalChanges.Where(change =>
-            change != null && change.TrendChange <= threshold && change.TrendChange >= -threshold);
-        }
-
-        string[] globalSymbols = thresholdFilteredGlobalChanges
-          .Where(change => change != null && eligibleSymbols.Contains(change.Market))
-          .Select(change => change.Market)
-          .Distinct(StringComparer.OrdinalIgnoreCase)
-          .ToArray();
-        string[] assetSymbols = singleChanges
-          .Where(change => change != null && eligibleSymbols.Contains(change.Market))
-          .Select(change => change.Market)
-          .Distinct(StringComparer.OrdinalIgnoreCase)
-          .ToArray();
+        // Normalized metrics use their own selected population. The legacy
+        // history may be absent when no legacy PriceTrend is required.
+        MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
+          marketTrend, recentMarkets ?? new Dictionary<string, Market>(),
+          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, calculatedAtUtc);
+        string[] globalSymbols = population.GlobalSymbols.ToArray();
+        string[] assetSymbols = population.AssetSymbols.ToArray();
 
         MarketTrendAnalysisSnapshot analysis = MarketTrendAnalyticsEngine.Calculate(
           marketTrend,
