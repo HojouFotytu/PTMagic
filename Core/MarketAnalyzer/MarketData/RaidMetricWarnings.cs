@@ -343,7 +343,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (issue.FailureReasons.Count > 1)
       {
         string first = Classify(issue.FailureReasons[0]);
-        string secondary = issue.FailureReasons.Skip(1).Select(Classify)
+        string[] secondary = issue.FailureReasons.Skip(1).Select(Classify)
           .Where(item => !String.Equals(item, first, StringComparison.OrdinalIgnoreCase))
           .Distinct(StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
         if (secondary.Length > 0)
@@ -408,7 +408,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (retained.Success)
       {
         return "GlobalSetting selection was inconclusive because one or more required metrics were unavailable. " +
-          "The active setting '" + retained.Groups["setting"].Value + "' was retained.";
+          "PTMagic retained '" + retained.Groups["setting"].Value + "' as the active setting.";
       }
       if (Contains(decision, "prior setting absent"))
       {
