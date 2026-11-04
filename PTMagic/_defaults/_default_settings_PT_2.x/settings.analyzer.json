@@ -21,10 +21,10 @@
       "MarketTrends": [
         {
           "Name": "1h",  // UNIQUE market trend name (to be referenced by your triggers below)
-          "Platform": "Exchange", // Platform to grab prices from (Allowed values are: CoinMarketCap, Exchange)
+          "Platform": "Exchange", // Binance Futures, Spot, or Binance US (normalized analytics)
           "MaxMarkets": 50,   // Number of markets/pairs to analyze sorted by 24h volume
           "TrendMinutes": 60,  // Number of minutes to build a trend (1440 = 24h, 720 = 12h, 60 = 1h)
-           "Metrics": "", // Optional: "ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare". Empty retains legacy behavior.
+           "Metrics": "", // Optional: "ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare". Blank or omitted Metrics uses normalized PriceTrend.
            "ATRPeriod": 14, // ATR uses 15 complete TrendMinutes candles minimum for this period
            "VolumeExpansionLookback": 20, // Previous 20 complete TrendMinutes periods; needs 21 for the ratio
            "ATRPBreadthThreshold": 0.5, // Percent ATRP threshold for VolatilityBreadth

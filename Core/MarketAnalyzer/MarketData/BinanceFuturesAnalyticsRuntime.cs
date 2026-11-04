@@ -12,9 +12,9 @@ using Core.Main.DataObjects.PTMagicData;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Runtime for normalized Binance Futures analytics. Raw 5-minute candles are shared
-  /// across all configured MarketTrends. Normalized metrics are calculated only when a
-  /// MarketTrend explicitly requests them through MarketTrend.Metrics.
+  /// Shared normalized analytics for Binance Futures, Binance Spot and Binance US.
+  /// Omitted MarketTrend.Metrics defaults to normalized PriceTrend; other
+  /// metrics are evaluated only when requested or needed by a trigger.
   /// </summary>
   public static class BinanceFuturesAnalyticsRuntime
   {
@@ -388,8 +388,8 @@ namespace Core.MarketAnalyzer.MarketData
           continue;
         }
 
-        // Normalized metrics use their own selected population. The legacy
-        // history may be absent when no legacy PriceTrend is required.
+        // Normalized metrics use the selected market population, with current
+        // exchange snapshot metadata retained for sorting and filtering.
         MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
           marketTrend, recentMarkets ?? new Dictionary<string, Market>(),
           universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, calculatedAtUtc);
@@ -476,14 +476,6 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      // A trigger omitting Metric requests normalized PriceTrend implicitly.
-      // All other named metrics must be explicitly enabled on the MarketTrend.
-      if (metricOmitted && !MarketTrendMetrics.IsEnabled(marketTrend, MarketTrendMetrics.PriceTrend))
-      {
-        // The metric selection layer injects this implicit dependency.
-        return true;
-      }
-
       if (!String.Equals(marketTrend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase))
       {
         error = "Normalized metrics require an Exchange MarketTrend.";
@@ -513,18 +505,6 @@ namespace Core.MarketAnalyzer.MarketData
       // One boundary candle is required to measure a return across the full configured
       // duration, and one additional slot permits Binance's currently forming candle.
       return checked((int)Math.Ceiling(intervals) + 2);
-    }
-
-    private static List<MarketTrendChange> GetTrendChanges(
-      IReadOnlyDictionary<string, List<MarketTrendChange>> source,
-      string marketTrendName)
-    {
-      if (source != null && source.TryGetValue(marketTrendName ?? "", out List<MarketTrendChange> changes) && changes != null)
-      {
-        return changes;
-      }
-
-      return new List<MarketTrendChange>();
     }
 
     private static void LogTrendAnalysis(MarketTrend marketTrend, MarketTrendAnalysisSnapshot analysis, LogHelper log)

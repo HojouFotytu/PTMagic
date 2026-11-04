@@ -65,24 +65,7 @@ namespace Core.ProfitTrailer
       {
         return result;
       }
-
-      if (exchange.Equals("Bittrex", StringComparison.InvariantCultureIgnoreCase))
-      {
-        string prefix = mainMarket + "-";
-        if (result.StartsWith(prefix, StringComparison.InvariantCultureIgnoreCase))
-        {
-          result = result.Substring(prefix.Length);
-        }
-      }
-      else if (exchange.Equals("Poloniex", StringComparison.InvariantCultureIgnoreCase))
-      {
-        string prefix = mainMarket + "_";
-        if (result.StartsWith(prefix, StringComparison.InvariantCultureIgnoreCase))
-        {
-          result = result.Substring(prefix.Length);
-        }
-      }
-      else if (result.EndsWith(mainMarket, StringComparison.InvariantCultureIgnoreCase))
+      if (result.EndsWith(mainMarket, StringComparison.InvariantCultureIgnoreCase))
       {
         result = result.Substring(0, result.Length - mainMarket.Length);
       }

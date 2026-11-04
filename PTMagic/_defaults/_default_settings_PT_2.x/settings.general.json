@@ -14,7 +14,6 @@
                                     // getting switched back and forth every minute
       "InstanceName": "MyBTCbot", // The name of the instance of this bot. This will be used in your monitor and your Telegram messages. 
                                   //In case you are running more than one bot, you may set different names to separate them
-      "CoinMarketCapAPIKey": "", //CoinMarketCap Api
     },
     "Monitor": {
       "IsPasswordProtected": true, // Defines if your monitor will be asking to setup a password on its first start

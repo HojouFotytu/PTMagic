@@ -549,9 +549,6 @@ namespace Core.Helper
       {
         switch (exchange)
         {
-          case "Bittrex":
-            result = "https://bittrex.com/Market/Index?MarketName=" + market;
-            break;
           case "Binance":
             result = "https://www.binance.com/trade.html?symbol=" + market;
             break;
@@ -560,9 +557,6 @@ namespace Core.Helper
             break;
           case "BinanceFutures":
             result = "https://www.binance.com/en/futures/" + market;
-            break;
-          case "Poloniex":
-            result = "https://poloniex.com/exchange#" + market.ToLower();
             break;
         }
       }
@@ -576,9 +570,6 @@ namespace Core.Helper
 
       switch (exchange)
       {
-        case "Bittrex":
-          result = mainMarket + "-" + market;
-          break;
         case "Binance":
           result = market + mainMarket;
           break;
@@ -587,9 +578,6 @@ namespace Core.Helper
           break;
         case "BinanceFutures":
           result = market + mainMarket;
-          break;
-        case "Poloniex":
-          result = mainMarket + "_" + market;
           break;
       }
 
