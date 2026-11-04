@@ -17,7 +17,7 @@ internal static class Program
       TestGroupedAssetWarnings();
       TestUnknownMetric();
       TestGlobalSettingDecision();
-      TestCompactOutput();
+      TestAllWarningsDisplayed();
       Console.WriteLine("Phase 1 metric-warning summary tests passed: " + _passed + ".");
       return 0;
     }
@@ -108,7 +108,7 @@ internal static class Program
     _passed++;
   }
 
-  private static void TestCompactOutput()
+  private static void TestAllWarningsDisplayed()
   {
     RaidMetricWarnings warnings = new RaidMetricWarnings();
     for (int index = 0; index < 9; index++)
@@ -116,8 +116,13 @@ internal static class Program
       warnings.ReportUnavailable("4h", "Metric" + index, "Unavailable");
     }
     IReadOnlyList<string> lines = warnings.BuildLines(null!);
-    Expect(lines.Count == 7 && lines[0] == "+ Metric warnings: 9"
-      && lines.Last() == "+   ... and 4 more", "Summary should show at most five details.");
+    Expect(lines.Count == 10 && lines[0] == "+ Metric warnings: 9",
+      "Summary must include every distinct metric warning.");
+    for (int index = 0; index < 9; index++)
+    {
+      Expect(lines.Any(line => line.Contains("4h / Metric" + index + ": Unavailable")),
+        "Missing warning for Metric" + index + ".");
+    }
     _passed++;
   }
 

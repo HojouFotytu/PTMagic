@@ -10,7 +10,6 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public sealed class RaidMetricWarnings
   {
-    private const int MaxDetails = 5;
     private const int MaxReasonLength = 105;
     private readonly Dictionary<string, string> _resolutionIssues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     private string _globalDecision = "";
@@ -126,11 +125,7 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       List<string> lines = new List<string> { "+ Metric warnings: " + issues.Count };
-      lines.AddRange(issues.Values.Take(MaxDetails).Select(detail => "+   " + detail));
-      if (issues.Count > MaxDetails)
-      {
-        lines.Add("+   ... and " + (issues.Count - MaxDetails) + " more");
-      }
+      lines.AddRange(issues.Values.Select(detail => "+   " + detail));
 
       return lines;
     }
