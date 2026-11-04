@@ -15,6 +15,7 @@ internal static class Program
     try
     {
       TestATRSeedAndWilder();
+      TestAllTrendDurationsAndZeroRange();
       TestVolumeExpansion();
       TestPartialPeriodExcluded();
       TestMissingSourceCandleFailsClosed();
@@ -22,6 +23,7 @@ internal static class Program
       TestZeroVolumeBaseline();
       TestStaleSeries();
       TestMedianAndBreadthCoverage();
+      TestVolumeExpansionBreadthAndCoverage();
       TestVolumeConcentration();
       TestIncompleteVolumePopulation();
       TestRegistryScopesAndSharedIntegration();
@@ -48,6 +50,30 @@ internal static class Program
     asOf = Start.AddMinutes(160).AddSeconds(1);
     TrendPeriodFeatures smoothed = Derive(store, "AAAUSDT", asOf, needATR: true, needExpansion: false);
     Near(smoothed.ATRP, (13 * 20.0 + 40.0) / 14.0, "Wilder ATR(14) recurrence");
+    _passed++;
+  }
+
+  private static void TestAllTrendDurationsAndZeroRange()
+  {
+    foreach (int duration in new[] { 5, 60, 120, 240, 480, 720, 1440 })
+    {
+      MarketDataStore store = NewStore();
+      int samples = 15 * (duration / 5);
+      AddSourceSequence(store, "AAAUSDT", samples);
+      DateTimeOffset asOf = Start.AddMinutes(15 * duration).AddSeconds(1);
+      FeatureValueSnapshot atrp = TrendPeriodMetricsCalculator.Calculate(
+        store.GetSnapshot("AAAUSDT", Interval, asOf), duration, asOf,
+        needATR: true, needVolumeExpansion: false, needLastVolume: false).ATRP;
+      Near(atrp, 20.0, "ATRP must follow MarketTrend duration " + duration + "m");
+      Assert(atrp.SourceDataTimestampUtc == Start.AddMinutes(15 * duration).AddMilliseconds(-1),
+        "ATRP source timestamp must be the latest complete trend-sized endpoint.");
+    }
+
+    MarketDataStore flat = NewStore();
+    AddBars(flat, "AAAUSDT", 15, baseRange: 0);
+    FeatureValueSnapshot zeroATR = Derive(flat, "AAAUSDT",
+      Start.AddMinutes(150).AddSeconds(1), needATR: true, needExpansion: false).ATRP;
+    Near(zeroATR, 0.0, "Zero true range is a valid ATRP value");
     _passed++;
   }
 
@@ -160,6 +186,48 @@ internal static class Program
       trend, MarketTrendMetrics.ParseEnabled(trend), symbols, Array.Empty<string>(), store, Interval, asOf);
     Invalid(result.GlobalMetrics[MarketTrendMetrics.MedianATRP], "Median ATRP below 90% coverage");
     Invalid(result.GlobalMetrics[MarketTrendMetrics.VolatilityBreadth], "Volatility breadth below 90% coverage");
+    _passed++;
+  }
+
+  private static void TestVolumeExpansionBreadthAndCoverage()
+  {
+    MarketDataStore store = NewStore();
+    string[] symbols = Enumerable.Range(0, 10).Select(index => "VOL" + index + "USDT").ToArray();
+    for (int i = 0; i < 9; i++)
+    {
+      AddBars(store, symbols[i], 21, baseSourceQuote: 10, finalSourceQuote: 20);
+    }
+
+    MarketTrend trend = new MarketTrend
+    {
+      Name = "Short", TrendMinutes = 10, VolumeExpansionLookback = 20,
+      Metrics = "MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth",
+      VolumeExpansionBreadthThreshold = 1.0,
+      StrongVolumeExpansionThreshold = 1.5
+    };
+    DateTimeOffset asOf = Start.AddMinutes(210).AddSeconds(1);
+    Phase1CFeatureResult result = MarketTrendPhase1CEngine.Calculate(
+      trend, MarketTrendMetrics.ParseEnabled(trend), symbols, Array.Empty<string>(), store, Interval, asOf);
+    Near(result.GlobalMetrics[MarketTrendMetrics.MedianVolumeExpansion], 2.0,
+      "Median volume expansion at 90% coverage");
+    Near(result.GlobalMetrics[MarketTrendMetrics.VolumeExpansionBreadth], 100.0,
+      "Volume expansion breadth above 1.0x");
+    Near(result.GlobalMetrics[MarketTrendMetrics.StrongVolumeExpansionBreadth], 100.0,
+      "Strong volume expansion breadth above 1.5x");
+
+    store = NewStore();
+    for (int i = 0; i < 8; i++)
+    {
+      AddBars(store, symbols[i], 21, baseSourceQuote: 10, finalSourceQuote: 20);
+    }
+    result = MarketTrendPhase1CEngine.Calculate(
+      trend, MarketTrendMetrics.ParseEnabled(trend), symbols, Array.Empty<string>(), store, Interval, asOf);
+    Invalid(result.GlobalMetrics[MarketTrendMetrics.MedianVolumeExpansion],
+      "Median volume expansion below 90% coverage");
+    Invalid(result.GlobalMetrics[MarketTrendMetrics.VolumeExpansionBreadth],
+      "Volume expansion breadth below 90% coverage");
+    Invalid(result.GlobalMetrics[MarketTrendMetrics.StrongVolumeExpansionBreadth],
+      "Strong volume expansion breadth below 90% coverage");
     _passed++;
   }
 
