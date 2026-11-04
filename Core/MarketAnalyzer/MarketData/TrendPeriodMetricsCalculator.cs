@@ -72,6 +72,10 @@ namespace Core.MarketAnalyzer.MarketData
       {
         configurationError = "VolumeExpansionLookback must be between 1 and 1000.";
       }
+      else if (!series.HasClosedData)
+      {
+        configurationError = "No closed normalized source candles are available.";
+      }
       else if (series.IsStale)
       {
         configurationError = "Normalized source candles are stale.";
