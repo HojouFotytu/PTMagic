@@ -1844,13 +1844,20 @@ namespace Core.Main
 
                   // A conclusive true OffTrigger expression may deactivate SMS.
                   // Unknown cannot deactivate; true OR unknown is still true.
-                  bool settingOffTriggered = Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
-                    marketSetting.OffTriggerConnection,
-                    offTriggerResults.Select(value => !value.HasValue
-                      ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
-                      : value.Value
-                        ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
-                        : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList())
+                  // OffTriggerConnection has historically supported only
+                  // AND/OR. Preserve that contract: unsupported values cannot
+                  // deactivate an active SMS.
+                  bool hasSupportedOffConnection =
+                    String.Equals(marketSetting.OffTriggerConnection, "AND", StringComparison.OrdinalIgnoreCase) ||
+                    String.Equals(marketSetting.OffTriggerConnection, "OR", StringComparison.OrdinalIgnoreCase);
+                  bool settingOffTriggered = hasSupportedOffConnection &&
+                    Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
+                      marketSetting.OffTriggerConnection,
+                      offTriggerResults.Select(value => !value.HasValue
+                        ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
+                        : value.Value
+                          ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
+                          : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList())
                     == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
                   // Setting got off triggered, remove it from the summary
                   if (settingOffTriggered)
