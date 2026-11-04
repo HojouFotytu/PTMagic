@@ -20,7 +20,6 @@ namespace Core.Main
 
     public const string PTMagicPathData = "_data";
     public const string PTMagicPathPresets = "_presets";
-    public const string PTMagicPathCoinMarketCap = "CoinMarketCap";
     public const string PTMagicPathExchange = "Exchange";
     public const string PTMagicPathLogs = "_logs";
 

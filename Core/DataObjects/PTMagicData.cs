@@ -43,7 +43,6 @@ namespace Core.Main.DataObjects.PTMagicData
     public string Exchange { get; set; }
     public string InstanceName { get; set; } = "PT Magic";
     //public string TimezoneOffset { get; set; } = "+0:00";
-    public string CoinMarketCapAPIKey { get; set; }
     //public string FreeCurrencyConverterAPIKey { get; set; }
   }
 

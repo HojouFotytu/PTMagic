@@ -30,7 +30,6 @@
           <label class="col-md-4 col-form-label">Platform <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Platform to grab prices from"></i></label>
           <div class="col-md-8">
             <select name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|Platform" class="form-control">
-              <option selected="@(Model.MarketTrend.Platform.Equals("CoinMarketCap", StringComparison.InvariantCultureIgnoreCase))">CoinMarketCap</option>
               <option selected="@(Model.MarketTrend.Platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase))">Exchange</option>
             </select>
           </div>

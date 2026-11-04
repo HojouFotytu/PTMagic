@@ -55,7 +55,6 @@ namespace Monitor.Pages
       PTMagicConfiguration.GeneralSettings.Application.ProfitTrailerServerAPIToken = HttpContext.Request.Form["Application_ProfitTrailerServerAPIToken"];
       PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes = SystemHelper.TextToInteger(HttpContext.Request.Form["Application_FloodProtectionMinutes"], PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes);
       PTMagicConfiguration.GeneralSettings.Application.InstanceName = HttpContext.Request.Form["Application_InstanceName"];
-      PTMagicConfiguration.GeneralSettings.Application.CoinMarketCapAPIKey = HttpContext.Request.Form["Application_CoinMarketCapAPIKey"];
       PTMagicConfiguration.GeneralSettings.Monitor.IsPasswordProtected = HttpContext.Request.Form["Monitor_IsPasswordProtected"].Equals("on");
       PTMagicConfiguration.GeneralSettings.Monitor.OpenBrowserOnStart = HttpContext.Request.Form["Monitor_OpenBrowserOnStart"].Equals("on");
       PTMagicConfiguration.GeneralSettings.Monitor.AnalyzerChart = HttpContext.Request.Form["Monitor_AnalyzerChart"];

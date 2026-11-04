@@ -26,6 +26,7 @@ internal static class Program
       TestUsdBenchmark();
       TestBothScope();
       TestAllBinanceExchanges();
+      TestImplicitMetricValidation();
       Console.WriteLine("Normalized PriceTrend migration tests passed: " + passed + ".");
       return 0;
     }
@@ -185,8 +186,23 @@ internal static class Program
         && MarketTrendMetricTriggerResolver.UsesNormalizedMetric(Trend(), null, exchange),
         exchange + " must route omitted metric to normalized PriceTrend.");
     }
-    Assert(!MarketTrendMetricTriggerResolver.UsesNormalizedMetric(Trend(), null, "Poloniex"),
-      "Unsupported exchanges retain legacy routing.");
+    Assert(!MarketTrendMetricTriggerResolver.UsesNormalizedMetric(Trend(), null, "Other"),
+      "Only the supported Binance exchanges use normalized routing.");
+    passed++;
+  }
+
+  private static void TestImplicitMetricValidation()
+  {
+    var trend = Trend("MedianATRP");
+    Assert(BinanceFuturesAnalyticsRuntime.ValidateMetricReference(trend, "", true, out var globalError),
+      "An omitted GlobalSetting Metric must resolve normalized PriceTrend: " + globalError);
+    Assert(BinanceFuturesAnalyticsRuntime.ValidateMetricReference(trend, null, false, out var smsError),
+      "An omitted SMS Metric must resolve normalized PriceTrend: " + smsError);
+    Assert(!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(trend, "PriceTrend", true, out _),
+      "Explicit PriceTrend must be enabled on the MarketTrend.");
+    Assert(!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(
+      new MarketTrend { Name = "OldSource", Platform = "Other", Metrics = "" }, "", true, out _),
+      "A non-Exchange MarketTrend must not pass implicit PriceTrend validation.");
     passed++;
   }
 

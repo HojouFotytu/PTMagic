@@ -734,17 +734,6 @@ namespace Core.Main
           {
             this.Log.DoLogWarn("TESTMODE ENABLED - No PT settings will be changed!");
           }
-
-          // Check for CoinMarketCap API Key
-          if (!String.IsNullOrEmpty(this.PTMagicConfiguration.GeneralSettings.Application.CoinMarketCapAPIKey))
-          {
-            this.Log.DoLogInfo("CoinMarketCap API KEY found");
-          }
-          else
-          {
-            this.Log.DoLogInfo("No CoinMarketCap API KEY specified! That's ok, but you can't use CoinMarketCap in your settings.analyzer.json");
-          }
-
         }
         catch (System.NullReferenceException)
         {
@@ -921,7 +910,7 @@ namespace Core.Main
                 BinanceFuturesAnalyticsRuntime.FreezeAnalyzerUniverse(
                   this.PairsLines, this.PTMagicConfiguration, this.Log);
               }
-              this.BuildGlobalMarketTrends();
+              this.InitializeMarketTrendData();
 
               if (normalizedExchange)
               {
@@ -1271,16 +1260,6 @@ namespace Core.Main
     private async Task BuildMarketDataAsync(CancellationToken cancellationToken = default)
     {
 
-      if (!String.IsNullOrEmpty(this.PTMagicConfiguration.GeneralSettings.Application.CoinMarketCapAPIKey))
-      {
-        // Get most recent market data from CMC
-        string cmcMarketDataResult = await CoinMarketCap.GetMarketDataAsync(this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
-      }
-      else
-      {
-        this.Log.DoLogInfo("No CMC API-Key specified. That's OK, but no CMC Data can be pulled.");
-      }
-
       if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase))
       {
         this.ExchangeMarketList = await Binance.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
@@ -1349,23 +1328,15 @@ namespace Core.Main
 
 
 
-    private void BuildGlobalMarketTrends()
+    private void InitializeMarketTrendData()
     {
-      // Exchange historical snapshot PriceTrend calculations have been retired
-      // for all supported exchanges. Keep CMC historical data separate because
-      // it has no equivalent Binance candle source.
+      // Exchange 24-hour snapshots are still used by SMS price/volume checks
+      // and compatibility summaries. No legacy price returns are calculated.
       this._recentMarketSnapshots = BaseAnalyzer.GetMarketDataFromFile(
         this.PTMagicConfiguration, this.Log, "Exchange", DateTime.UtcNow, "Recent");
       this.SingleMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
-      this.GlobalMarketTrendChanges = BaseAnalyzer.BuildMarketTrends(
-        "CoinMarketCap", this.LastRuntimeSummary.MainMarket, new List<string>(), "",
-        true, new Dictionary<string, List<MarketTrendChange>>(), this.PTMagicConfiguration, this.Log);
-      HashSet<string> cmcTrends = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
-        .Where(trend => trend != null && String.Equals(trend.Platform, "CoinMarketCap", StringComparison.OrdinalIgnoreCase))
-        .Select(trend => trend.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-      this.AverageMarketTrendChanges = BaseAnalyzer.BuildGlobalMarketTrends(
-        this.GlobalMarketTrendChanges, this.PTMagicConfiguration, this.Log, cmcTrends);
-      this.Log.DoLogInfo("Historical Exchange PriceTrend skipped. Normalized engine will calculate all Binance Exchange trends.");
+      this.GlobalMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
+      this.AverageMarketTrendChanges = new Dictionary<string, double>();
     }
 
     // Bridge the shared normalized PriceTrend to legacy Monitor and summary
@@ -1437,14 +1408,13 @@ namespace Core.Main
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name == trigger.MarketTrendName);
                     if (marketTrend != null)
                     {
-                        // Explicit metrics use the normalized Phase 1 runtime; omitted Metric remains legacy.
+                        // Omitted Metric uses normalized PriceTrend; named metrics use the same engine.
                         bool useNormalizedMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(marketTrend, trigger.Metric, this.PTMagicConfiguration.GeneralSettings.Application.Exchange);
-                        double resolvedMetricValue;
+                        double resolvedMetricValue = 0;
                         string metricError = "";
-                        bool hasMetricValue = useNormalizedMetric
-                          ? Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveGlobal(
-                              this.PTMagicConfiguration, marketTrend, trigger.Metric, out resolvedMetricValue, out metricError)
-                          : this.AverageMarketTrendChanges.TryGetValue(marketTrend.Name, out resolvedMetricValue);
+                        bool hasMetricValue = useNormalizedMetric &&
+                          Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveGlobal(
+                            this.PTMagicConfiguration, marketTrend, trigger.Metric, out resolvedMetricValue, out metricError);
                         if (hasMetricValue)
                         {
                             double averageMarketTrendChange = resolvedMetricValue;
@@ -1487,22 +1457,13 @@ namespace Core.Main
                         }
                         else
                         {
-                            Core.MarketAnalyzer.MarketData.TriggerTruthValue unavailableValue = useNormalizedMetric
-                              ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
-                              : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
+                            Core.MarketAnalyzer.MarketData.TriggerTruthValue unavailableValue = Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable;
                             orderedTriggerResults.Add(unavailableValue);
                             if (!String.IsNullOrWhiteSpace(trigger.Tag))
                             {
                               triggerResults[trigger.Tag] = unavailableValue;
                             }
-                            if (useNormalizedMetric)
-                            {
-                              this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
-                            }
-                            else
-                            {
-                              this.Log.DoLogError("Trigger '" + trigger.MarketTrendName + "' not found in this.AverageMarketTrendChanges[] (" + SystemHelper.ConvertListToTokenString(this.AverageMarketTrendChanges.Keys.ToList(), ",", true) + "). Unable to load recent trends?");
-                            }
+                            this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
                         }
                     }
                     else
@@ -1677,7 +1638,6 @@ namespace Core.Main
         Dictionary<string, List<string>> matchedMarketTriggers = new Dictionary<string, List<string>>();
         // Metric warnings are aggregated in the raid summary.
         string mainMarket = this.LastRuntimeSummary.MainMarket;
-        string exchange = this.PTMagicConfiguration.GeneralSettings.Application.Exchange.ToLower();
 
         List<(SingleMarketSetting Setting, HashSet<string> IgnoredMarkets, HashSet<string> AllowedMarkets, HashSet<string> IgnoredGlobalSettings, HashSet<string> AllowedGlobalSettings)> marketSettingFilters =
           new List<(SingleMarketSetting Setting, HashSet<string> IgnoredMarkets, HashSet<string> AllowedMarkets, HashSet<string> IgnoredGlobalSettings, HashSet<string> AllowedGlobalSettings)>();
@@ -1686,27 +1646,11 @@ namespace Core.Main
         {
           string ignored = marketSetting.IgnoredMarkets.ToUpper();
           ignored = ignored.Replace(mainMarket, "");
-          switch (exchange)
-          {
-            case "bittrex":
-              ignored = ignored.Replace("-", "");
-              break;
-            case "poloniex":
-              ignored = ignored.Replace("_", "");
-              break;
-          }
+
 
           string allowed = marketSetting.AllowedMarkets.ToUpper();
           allowed = allowed.Replace(mainMarket, "");
-          switch (exchange)
-          {
-            case "bittrex":
-              allowed = allowed.Replace("-", "");
-              break;
-            case "poloniex":
-              allowed = allowed.Replace("_", "");
-              break;
-          }
+
 
           marketSettingFilters.Add((
             marketSetting,
@@ -1721,15 +1665,7 @@ namespace Core.Main
         {
           this.Log.DoLogDebug("'" + marketPair + "' - Checking triggers (" + marketPairProcess.ToString() + "/" + this.MarketList.Count.ToString() + ")...");
           string market = marketPair.Replace(mainMarket, "");
-          switch (exchange)
-          {
-            case "bittrex":
-              market = market.Replace("-", "");
-              break;
-            case "poloniex":
-              market = market.Replace("_", "");
-              break;
-          }
+
           bool stopTriggers = false;
 
           // Loop through single market settings
@@ -1826,7 +1762,7 @@ namespace Core.Main
                     }
                     else
                     {
-                      // Normalized metrics compare directly; omitted Metric preserves legacy relations.
+                      // Missing Metric retains PriceTrend and legacy relation semantics via the normalized resolver.
                       MarketTrend metricTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
                         .Find(mt => mt.Name.Equals(offTrigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
                       if (Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.UsesNormalizedMetric(metricTrend, offTrigger.Metric, this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
@@ -1847,76 +1783,7 @@ namespace Core.Main
                           ? (bool?)(metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange)
                           : null);
                       }
-                      else if (this.SingleMarketTrendChanges.ContainsKey(offTrigger.MarketTrendName))
-                      {
-                        List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[offTrigger.MarketTrendName];
-
-                        if (marketTrendChanges.Count > 0)
-                        {
-                          double averageMarketTrendChange = 0;
-                          var trendThreshold = (from mt in this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
-                                                where mt.Name == offTrigger.MarketTrendName
-                                                select new { mt.TrendThreshold }).Single();
-
-                          // Calculate average market change, skip any that are outside the threshold if enabled
-                          if (trendThreshold.TrendThreshold != 0)
-                          {
-                            averageMarketTrendChange = marketTrendChanges
-                              .Where(m => m.TrendChange <= trendThreshold.TrendThreshold && m.TrendChange >= (trendThreshold.TrendThreshold * -1.0))
-                              .Average(m => m.TrendChange);
-                          }
-                          else
-                          {
-                            // Calculate for whole market
-                            averageMarketTrendChange = marketTrendChanges.Average(m => m.TrendChange);
-                          }
-
-                          MarketTrendChange mtc = marketTrendChanges.Find(m => m.Market.Equals(marketPair, StringComparison.InvariantCultureIgnoreCase));
-                          if (mtc != null)
-                          {
-                            // Get trend change according to configured relation
-                            double trendChange = mtc.TrendChange;
-
-                            if (offTrigger.MarketTrendRelation.Equals(Constants.MarketTrendRelationRelative))
-                            {
-                              // Build pair trend change relative to the global market trend
-                              trendChange = trendChange - averageMarketTrendChange;
-                            }
-                            else if (offTrigger.MarketTrendRelation.Equals(Constants.MarketTrendRelationRelativeTrigger))
-                            {
-
-                              // Build pair trend change relative to the trigger price
-                              double currentPrice = mtc.LastPrice;
-                              double triggerPrice = smss.TriggerSnapshot.LastPrice;
-                              double triggerTrend = (currentPrice - triggerPrice) / triggerPrice * 100;
-                              trendChange = triggerTrend;
-                            }
-
-                            // Get market trend change for trigger
-                            if (trendChange >= offTrigger.MinChange && trendChange < offTrigger.MaxChange)
-                            {
-
-                              // Trigger met!
-                              this.Log.DoLogDebug("'" + marketPair + "' - Off Trigger '" + offTrigger.MarketTrendName + "' triggered! TrendChange (" + offTrigger.MarketTrendRelation + ") = " + trendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
-
-                              offTriggerResults.Add(true);
-                            }
-                            else
-                            {
-                              this.Log.DoLogDebug("'" + marketPair + "' - Off Trigger '" + offTrigger.MarketTrendName + "' not triggered. TrendChange (" + offTrigger.MarketTrendRelation + ") = " + trendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
-                              offTriggerResults.Add(false);
-                            }
-                          }
-                          else
-                          {
-                            offTriggerResults.Add(false);
-                          }
-                        }
-                        else
-                        {
-                          offTriggerResults.Add(false);
-                        }
-                      }
+                      
                     }
                   }
 
@@ -2087,85 +1954,7 @@ namespace Core.Main
                       this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
                     }
                   }
-                  else if (this.SingleMarketTrendChanges.ContainsKey(trigger.MarketTrendName))
-                  {
-
-                    List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[trigger.MarketTrendName];
-                    if (marketTrendChanges.Count > 0)
-                    {
-                      double averageMarketTrendChange = 0;
-                      var trendThreshold = (from mt in this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
-                                            where mt.Name == trigger.MarketTrendName
-                                            select new { mt.TrendThreshold }).Single();
-
-                      // Calculate average market change, skip any that are outside the threshold if enabled
-                      if (trendThreshold.TrendThreshold != 0)
-                      {
-                        averageMarketTrendChange = marketTrendChanges
-                          .Where(m => m.TrendChange <= trendThreshold.TrendThreshold && m.TrendChange >= (trendThreshold.TrendThreshold * -1.0))
-                          .Average(m => m.TrendChange);
-                      }
-                      else
-                      {
-                        // Calculate for whole market
-                        averageMarketTrendChange = marketTrendChanges.Average(m => m.TrendChange);
-                      }
-
-                      MarketTrendChange mtc = marketTrendChanges.Find(m => m.Market.Equals(marketPair, StringComparison.InvariantCultureIgnoreCase));
-                      if (mtc != null)
-                      {
-                        // Get trend change according to configured relation
-                        double trendChange = mtc.TrendChange;
-
-                        if (trigger.MarketTrendRelation.Equals(Constants.MarketTrendRelationRelative))
-                        {
-                          // Build pair trend change relative to the global market trend
-                          trendChange = trendChange - averageMarketTrendChange;
-                        }
-
-                        // Get market trend change for trigger
-                        if (trendChange >= trigger.MinChange && trendChange < trigger.MaxChange)
-                        {
-
-                          // Trigger met!
-                          this.Log.DoLogDebug("'" + marketPair + "' - Trigger '" + trigger.MarketTrendName + "' triggered! TrendChange (" + trigger.MarketTrendRelation + ") = " + trendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
-
-                          relevantTriggers.Add(triggerIndex, trendChange);
-
-                          string triggerContent = trigger.MarketTrendName + " - ";
-                          if (trigger.MinChange != Constants.MinTrendChange)
-                          {
-                            triggerContent += " - Min: " + trigger.MinChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%";
-                          }
-
-                          if (trigger.MaxChange != Constants.MaxTrendChange)
-                          {
-                            triggerContent += " - Max: " + trigger.MaxChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%";
-                          }
-
-                          matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": " + triggerContent + " - TrendChange (" + trigger.MarketTrendRelation + ") = " + trendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
-
-                          triggerResults.Add(true);
-                          triggerTagsResults[trigger.Tag] = true;
-                        }
-                        else
-                        {
-                          this.Log.DoLogDebug("'" + marketPair + "' - Trigger '" + trigger.MarketTrendName + "' not triggered. TrendChange (" + trigger.MarketTrendRelation + ") = " + trendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
-                          triggerResults.Add(false);
-                        }
-                      }
-                      else
-                      {
-                        this.Log.DoLogDebug("'" + marketPair + "' - No market trend change found for '" + trigger.MarketTrendName + "'! Coin just got released? Trigger ignored!");
-                        triggerResults.Add(false);
-                      }
-                    }
-                    else
-                    {
-                      this.Log.DoLogWarn("'" + marketPair + "' - No market trend changes found for '" + trigger.MarketTrendName + "'! Trigger ignored!");
-                      triggerResults.Add(false);
-                    }
-                  }
+                  
                   else
                   {
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name.Equals(trigger.MarketTrendName, StringComparison.InvariantCultureIgnoreCase));
