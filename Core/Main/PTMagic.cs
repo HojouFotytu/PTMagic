@@ -11,6 +11,7 @@ using System.Linq.Expressions;
 using Core.Helper;
 using Core.Main.DataObjects.PTMagicData;
 using Core.MarketAnalyzer;
+using Core.MarketAnalyzer.MarketData;
 using Core.ProfitTrailer;
 using Newtonsoft.Json;
 
@@ -57,6 +58,7 @@ namespace Core.Main
     private List<string> _exchangeMarketList = null;
     private List<string> _marketList = new List<string>();
     private ConcurrentDictionary<string, MarketInfo> _marketInfos = new ConcurrentDictionary<string, MarketInfo>();
+    private Dictionary<string, Market> _recentMarketSnapshots = new Dictionary<string, Market>(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, double> _averageMarketTrendChanges = new Dictionary<string, double>();
     private Dictionary<string, List<MarketTrendChange>> _singleMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
     private Dictionary<string, List<MarketTrendChange>> _globalMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
@@ -923,7 +925,8 @@ namespace Core.Main
                   this.GlobalMarketTrendChanges,
                   this.SingleMarketTrendChanges,
                   this.PTMagicConfiguration,
-                  this.Log);
+                  this.Log,
+                  this._recentMarketSnapshots);
                 Core.MarketAnalyzer.MarketData.MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
               }
 
@@ -1349,30 +1352,33 @@ namespace Core.Main
     private void BuildGlobalMarketTrends()
     {
       this.Log.DoLogInfo("Build global market trends...");
-      this.SingleMarketTrendChanges = BaseAnalyzer.BuildMarketTrends("Exchange", this.LastRuntimeSummary.MainMarket, this.MarketList, "Volume", false, new Dictionary<string, List<MarketTrendChange>>(), this.PTMagicConfiguration, this.Log);
-      this.GlobalMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
+      LegacyMarketTrendRequirements requirements = LegacyMarketTrendPlanner.Build(this.PTMagicConfiguration);
+      this._recentMarketSnapshots = BaseAnalyzer.GetMarketDataFromFile(
+        this.PTMagicConfiguration, this.Log, "Exchange", DateTime.UtcNow, "Recent");
 
-      // CoinMarketCap
-      this.GlobalMarketTrendChanges = BaseAnalyzer.BuildMarketTrends("CoinMarketCap", this.LastRuntimeSummary.MainMarket, new List<string>(), "", true, this.GlobalMarketTrendChanges, this.PTMagicConfiguration, this.Log);
+      this.SingleMarketTrendChanges = BaseAnalyzer.BuildMarketTrends(
+        "Exchange", this.LastRuntimeSummary.MainMarket, this.MarketList, "Volume", false,
+        new Dictionary<string, List<MarketTrendChange>>(), this.PTMagicConfiguration,
+        this.Log, requirements.AssetPriceTrends);
+      this.GlobalMarketTrendChanges = BaseAnalyzer.BuildMarketTrends(
+        "CoinMarketCap", this.LastRuntimeSummary.MainMarket, new List<string>(), "",
+        true, new Dictionary<string, List<MarketTrendChange>>(), this.PTMagicConfiguration, this.Log);
 
-      // Exchange
-      foreach (MarketTrend marketTrend in this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.FindAll(mt => mt.Platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase)))
+      foreach (MarketTrend trend in this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
+        .Where(mt => mt.Platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase)))
       {
-        if (this.SingleMarketTrendChanges.ContainsKey(marketTrend.Name))
+        if (requirements.NeedsGlobalPriceTrend(trend)
+          && this.SingleMarketTrendChanges.TryGetValue(trend.Name, out List<MarketTrendChange> changes))
         {
-          int maxMarkets = this.SingleMarketTrendChanges[marketTrend.Name].Count;
-          if (marketTrend.MaxMarkets > 0 && marketTrend.MaxMarkets <= this.SingleMarketTrendChanges[marketTrend.Name].Count)
-          {
-            maxMarkets = marketTrend.MaxMarkets;
-          }
-
-          this.GlobalMarketTrendChanges.Add(marketTrend.Name, this.SingleMarketTrendChanges[marketTrend.Name].Take(maxMarkets).ToList());
+          int max = trend.MaxMarkets > 0 ? Math.Min(trend.MaxMarkets, changes.Count) : changes.Count;
+          this.GlobalMarketTrendChanges.Add(trend.Name, changes.Take(max).ToList());
         }
       }
 
-      this.AverageMarketTrendChanges = BaseAnalyzer.BuildGlobalMarketTrends(this.GlobalMarketTrendChanges, this.PTMagicConfiguration, this.Log);
-
-      this.Log.DoLogInfo("Global market trends built.");
+      this.AverageMarketTrendChanges = BaseAnalyzer.BuildGlobalMarketTrends(
+        this.GlobalMarketTrendChanges, this.PTMagicConfiguration, this.Log, requirements.GlobalPriceTrends);
+      this.Log.DoLogInfo("Global market trends built; legacy asset trends=" +
+        requirements.AssetPriceTrends.Count + ", legacy averages=" + requirements.GlobalPriceTrends.Count + ".");
     }
 
     private void CheckGlobalSettingsTriggers(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
@@ -2873,6 +2879,7 @@ namespace Core.Main
       this.SingleMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
       this.GlobalMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
       this.AverageMarketTrendChanges = new Dictionary<string, double>();
+      this._recentMarketSnapshots = new Dictionary<string, Market>(StringComparer.OrdinalIgnoreCase);
       this.SingleMarketSettingsCount = new Dictionary<string, int>();
       this.TriggeredSingleMarketSettings = new Dictionary<string, List<SingleMarketSetting>>();
       this.ExchangeMarketList = null;
