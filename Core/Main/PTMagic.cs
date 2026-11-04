@@ -1368,8 +1368,8 @@ namespace Core.Main
             if (globalSetting.Triggers.Count > 0)
             {
                 this.Log.DoLogInfo("Checking triggers for '" + globalSetting.SettingName + "'...");
-                Dictionary<string, bool> triggerResults = new Dictionary<string, bool>();
-                bool settingHasUnavailableNormalizedTrigger = false;
+                Dictionary<string, Core.MarketAnalyzer.MarketData.TriggerTruthValue> triggerResults =
+                  new Dictionary<string, Core.MarketAnalyzer.MarketData.TriggerTruthValue>();
                 foreach (Trigger trigger in globalSetting.Triggers)
                 {
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name == trigger.MarketTrendName);
@@ -1387,7 +1387,9 @@ namespace Core.Main
                         {
                             double averageMarketTrendChange = resolvedMetricValue;
                             bool isTriggered = averageMarketTrendChange >= trigger.MinChange && averageMarketTrendChange < trigger.MaxChange;
-                            triggerResults[trigger.Tag] = isTriggered;
+                            triggerResults[trigger.Tag] = isTriggered
+                              ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
+                              : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
 
                             if (isTriggered)
                             {
@@ -1414,13 +1416,11 @@ namespace Core.Main
                         }
                         else
                         {
-                            triggerResults[trigger.Tag] = false;
+                            triggerResults[trigger.Tag] = useNormalizedMetric
+                              ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
+                              : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
                             if (useNormalizedMetric)
                             {
-                              // Unavailable is NOT the same as false. In custom
-                              // TriggerConnection expressions, NOT(false) could
-                              // otherwise activate a setting from missing data.
-                              settingHasUnavailableNormalizedTrigger = true;
                               this.Log.DoLogWarn("Trigger '" + trigger.MarketTrendName + "' metric '" + trigger.Metric + "' unavailable: " + metricError);
                             }
                             else
@@ -1431,87 +1431,42 @@ namespace Core.Main
                     }
                     else
                     {
-                        triggerResults[trigger.Tag] = false;
+                        triggerResults[trigger.Tag] = Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
                         this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' not found! Trigger ignored!");
                     }
                 }
 
-                // Do not evaluate a setting whose normalized trigger result is
-                // unknown. Independent, fully evaluable settings remain eligible.
-                if (settingHasUnavailableNormalizedTrigger)
+                // Evaluate the complete Boolean expression using three-valued
+                // logic. An unavailable metric is unknown, but a conclusive
+                // true OR unknown remains true (and false AND unknown is false).
+                // A negated unknown never becomes true.
+                Core.MarketAnalyzer.MarketData.TriggerTruthValue settingResult;
+                try
+                {
+                    settingResult = Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
+                        globalSetting.TriggerConnection,
+                        triggerResults.Values.ToList(),
+                        triggerResults);
+                }
+                catch (Exception ex)
+                {
+                    this.Log.DoLogError("ERROR: Trigger Connection for global setting " +
+                      globalSetting.SettingName + " is invalid or missing. Program halted. " + ex.Message);
+                    Environment.Exit(1);
+                    return;
+                }
+
+                if (settingResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True)
+                {
+                    triggeredSetting = globalSetting;
+                    foundMatchingSetting = true;
+                    break;
+                }
+                if (settingResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable)
                 {
                     unavailableNormalizedTriggerFound = true;
                     this.Log.DoLogWarn("GlobalSetting '" + globalSetting.SettingName +
-                      "' skipped because a normalized metric is unavailable.");
-                    continue;
-                }
-
-                // Check if the TriggerConnection field exists
-                if (!string.IsNullOrEmpty(globalSetting.TriggerConnection))
-                {
-                    // Check if TriggerConnection is using the old logic
-                    if (globalSetting.TriggerConnection.ToLower() == "and" || globalSetting.TriggerConnection.ToLower() == "or")
-                    {
-                        // Old logic
-                        bool settingTriggered = false;
-                        switch (globalSetting.TriggerConnection.ToLower())
-                        {
-                            case "and":
-                                settingTriggered = triggerResults.Values.All(tr => tr);
-                                break;
-                            case "or":
-                                settingTriggered = triggerResults.Values.Any(tr => tr);
-                                break;
-                        }
-
-                        // Setting got triggered -> Activate it!
-                        if (settingTriggered)
-                        {
-                            triggeredSetting = globalSetting;
-                            foundMatchingSetting = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        // New logic
-                        string triggerConnection = globalSetting.TriggerConnection;
-                        foreach (var triggerResult in triggerResults)
-                        {
-                          if (!string.IsNullOrEmpty(triggerResult.Key))
-                          {
-                              triggerConnection = triggerConnection.Replace(triggerResult.Key, triggerResult.Value.ToString().ToLower());
-                          }
-                          else
-                          {
-                              this.Log.DoLogError($"ERROR: A required trigger Tag is missing for global setting {globalSetting.SettingName}. Program halted.");
-                              Environment.Exit(1); // Stop the program
-                          }
-                        }
-
-                        try
-                        {
-                            bool settingTriggered = (bool)System.Linq.Dynamic.Core.DynamicExpressionParser.ParseLambda(System.Linq.Dynamic.Core.ParsingConfig.Default, new ParameterExpression[0], typeof(bool), triggerConnection).Compile().DynamicInvoke();
-
-                            // Setting got triggered -> Activate it!
-                            if (settingTriggered)
-                            {
-                                triggeredSetting = globalSetting;
-                                foundMatchingSetting = true;
-                                break;
-                            }
-                        }
-                        catch (Exception)
-                        {
-                            this.Log.DoLogError($"ERROR: Trigger Connection for global setting {globalSetting.SettingName} is invalid or missing. Program halted.");
-                            Environment.Exit(1); // Stop the program
-                        }
-                    }
-                }
-                else
-                {
-                    this.Log.DoLogError($"ERROR: Trigger Connection for global setting {globalSetting.SettingName} is missing. Program halted.");
-                    Environment.Exit(1); // Stop the program
+                      "' could not be evaluated conclusively because a required normalized metric is unavailable.");
                 }
             }
         }
@@ -1745,7 +1700,7 @@ namespace Core.Main
 
                   this.Log.DoLogDebug("'" + marketPair + "' - Checking off triggers '" + marketSetting.SettingName + "'...");
 
-                  List<bool> offTriggerResults = new List<bool>();
+                  List<bool?> offTriggerResults = new List<bool?>();
                   foreach (OffTrigger offTrigger in marketSetting.OffTriggers)
                   {
                     if (offTrigger.HoursSinceTriggered > 0)
@@ -1810,7 +1765,9 @@ namespace Core.Main
                           this.Log.DoLogWarn("SMS '" + marketSetting.SettingName + "' off-trigger metric '" + offTrigger.Metric +
                             "' unavailable for '" + marketPair + "': " + metricError);
                         }
-                        offTriggerResults.Add(validMetric && metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange);
+                        offTriggerResults.Add(validMetric
+                          ? (bool?)(metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange)
+                          : null);
                       }
                       else if (this.SingleMarketTrendChanges.ContainsKey(offTrigger.MarketTrendName))
                       {
@@ -1885,18 +1842,16 @@ namespace Core.Main
                     }
                   }
 
-                  // Check if all off triggers have to get triggered or just one
-                  bool settingOffTriggered = false;
-                  switch (marketSetting.OffTriggerConnection.ToLower())
-                  {
-                    case "and":
-                      settingOffTriggered = offTriggerResults.All(tr => tr);
-                      break;
-                    case "or":
-                      settingOffTriggered = offTriggerResults.Any(tr => tr);
-                      break;
-                  }
-
+                  // A conclusive true OffTrigger expression may deactivate SMS.
+                  // Unknown cannot deactivate; true OR unknown is still true.
+                  bool settingOffTriggered = Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
+                    marketSetting.OffTriggerConnection,
+                    offTriggerResults.Select(value => !value.HasValue
+                      ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
+                      : value.Value
+                        ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
+                        : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList())
+                    == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
                   // Setting got off triggered, remove it from the summary
                   if (settingOffTriggered)
                   {
@@ -1924,13 +1879,12 @@ namespace Core.Main
               #region Checking Triggers
               this.Log.DoLogDebug("'" + marketPair + "' - Checking triggers for '" + marketSetting.SettingName + "'...");
 
-              List<bool> triggerResults = new List<bool>();
-              bool unavailableNormalizedSmsTrigger = false;
+              List<bool?> triggerResults = new List<bool?>();
               Dictionary<int, double> relevantTriggers = new Dictionary<int, double>();
               int triggerIndex = 0;
 
               // Create a dictionary to store the tag and its corresponding result
-              Dictionary<string, bool> triggerTagsResults = new Dictionary<string, bool>();
+              Dictionary<string, bool?> triggerTagsResults = new Dictionary<string, bool?>();
               // Initialize all tags with a value of false
               foreach (Trigger trigger in marketSetting.Triggers)
               {
@@ -2031,13 +1985,9 @@ namespace Core.Main
                     string metricError;
                     bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
                       this.PTMagicConfiguration, metricTrend, trigger.Metric, marketPair, out metricValue, out metricError);
-                    if (!validMetric)
-                    {
-                      unavailableNormalizedSmsTrigger = true;
-                    }
                     bool metricTriggered = validMetric && metricValue >= trigger.MinChange && metricValue < trigger.MaxChange;
-                    triggerResults.Add(metricTriggered);
-                    triggerTagsResults[trigger.Tag] = metricTriggered;
+                    triggerResults.Add(validMetric ? (bool?)metricTriggered : null);
+                    triggerTagsResults[trigger.Tag] = validMetric ? (bool?)metricTriggered : null;
                     if (metricTriggered)
                     {
                       relevantTriggers.Add(triggerIndex, metricValue);
@@ -2153,60 +2103,36 @@ namespace Core.Main
               } // End loop SMS triggers
 
 
-              // Check if all triggers have to get triggered or just one
-              bool settingTriggered = false;
-              if (marketSetting.TriggerConnection.ToLower() == "and" || marketSetting.TriggerConnection.ToLower() == "or")
+              // The complete condition, not any single trigger, determines
+              // eligibility. Unknown branches can be masked by true OR /
+              // false AND, but a final unknown cannot freshly activate SMS.
+              bool settingTriggered;
+              try
               {
-                  switch (marketSetting.TriggerConnection.ToLower())
-                  {
-                      case "and":
-                          settingTriggered = triggerResults.All(tr => tr);
-                          break;
-                      case "or":
-                          settingTriggered = triggerResults.Any(tr => tr);
-                          break;
-                  }
+                Core.MarketAnalyzer.MarketData.TriggerTruthValue smsResult =
+                  Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
+                    marketSetting.TriggerConnection,
+                    triggerResults.Select(value => !value.HasValue
+                      ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
+                      : value.Value
+                        ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
+                        : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList(),
+                    triggerTagsResults.ToDictionary(pair => pair.Key,
+                      pair => !pair.Value.HasValue
+                        ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
+                        : pair.Value.Value
+                          ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
+                          : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False));
+                settingTriggered = smsResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
               }
-              else
+              catch (Exception ex)
               {
-                
-                // Parse the TriggerConnection string into a logical expression
-                string triggerConnection = marketSetting.TriggerConnection;
-                foreach (var triggerResult in triggerTagsResults)
-                {
-                    // Replace the tag in the expression with its corresponding value from triggerTagsResults
-                    if (!string.IsNullOrEmpty(triggerResult.Key))
-                    {
-                        triggerConnection = triggerConnection.Replace(triggerResult.Key, triggerResult.Value.ToString().ToLower());
-                    }
-                    else
-                    {
-                        this.Log.DoLogError($"ERROR: A required trigger Tag is missing for global setting {marketSetting.SettingName}. Program halted.");
-                        Environment.Exit(1); // Stop the program
-                    }
-                }
-                try
-                  {
-
-                    // Evaluate the expression using ParseLambda
-                    settingTriggered = (bool)DynamicExpressionParser.ParseLambda(ParsingConfig.Default, new ParameterExpression[0], typeof(bool), triggerConnection).Compile().DynamicInvoke();
-                  }
-                  catch (Exception)
-                  {
-                      this.Log.DoLogError($"ERROR: Trigger Connection for global setting {marketSetting.SettingName} is invalid or missing. Program halted.");
-                      Environment.Exit(1); // Stop the program
-                  }
+                this.Log.DoLogError("ERROR: Trigger Connection for single market setting " +
+                  marketSetting.SettingName + " is invalid or missing. Program halted. " + ex.Message);
+                Environment.Exit(1);
+                return;
               }
               #endregion
-
-              // An unavailable normalized SMS metric cannot be treated as a
-              // definite false in a negated/custom TriggerConnection either.
-              // Preserve the existing long-term OffTrigger path below.
-              if (unavailableNormalizedSmsTrigger)
-              {
-                settingTriggered = false;
-                matchedSingleMarketTriggers.Clear();
-              }
 
               bool isFreshTrigger = true;
 
