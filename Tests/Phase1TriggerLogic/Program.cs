@@ -26,31 +26,31 @@ internal static class Program
       Check("single true", T, "AND", T);
       Check("single unknown", U, "AND", U);
       Check("empty cannot match", F, "OR");
-      Check("not unavailable", U, "!A", new() { ["A"] = U });
-      Check("not false", T, "!A", new() { ["A"] = F });
+      Check("not unavailable", U, "!A", new Dictionary<string, TriggerTruthValue> { ["A"] = U });
+      Check("not false", T, "!A", new Dictionary<string, TriggerTruthValue> { ["A"] = F });
       Check("nested OR with unavailable", T, "(A && B) || C",
-        new() { ["A"] = T, ["B"] = U, ["C"] = T });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = T, ["B"] = U, ["C"] = T });
       Check("nested AND indeterminate", U, "(A || B) && C",
-        new() { ["A"] = F, ["B"] = U, ["C"] = T });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = F, ["B"] = U, ["C"] = T });
       Check("nested AND definitively false", F, "(A || B) && C",
-        new() { ["A"] = F, ["B"] = U, ["C"] = F });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = F, ["B"] = U, ["C"] = F });
       Check("negated unknown cannot activate", U, "A && !B",
-        new() { ["A"] = T, ["B"] = U });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = T, ["B"] = U });
       Check("true branch independent of negated unknown", T, "A || !B",
-        new() { ["A"] = T, ["B"] = U });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = T, ["B"] = U });
       Check("not OR unknown", U, "!(A || B)",
-        new() { ["A"] = F, ["B"] = U });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = F, ["B"] = U });
       Check("false branch dominates unknown", F, "A && (!B || C)",
-        new() { ["A"] = F, ["B"] = U, ["C"] = U });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = F, ["B"] = U, ["C"] = U });
       Check("exact tag names do not overlap", T, "A || AA",
-        new() { ["A"] = F, ["AA"] = T });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = F, ["AA"] = T });
       Check("off trigger OR true despite unknown", T, "OR", U, T);
       Check("off trigger OR unknown cannot deactivate", U, "OR", U, F);
       Check("off trigger AND false despite unknown", F, "AND", U, F);
-      Check("equality unknown remains unknown", U, "A == B", new() { ["A"] = U, ["B"] = T });
-      Check("valid equality", T, "A == B", new() { ["A"] = T, ["B"] = T });
+      Check("equality unknown remains unknown", U, "A == B", new Dictionary<string, TriggerTruthValue> { ["A"] = U, ["B"] = T });
+      Check("valid equality", T, "A == B", new Dictionary<string, TriggerTruthValue> { ["A"] = T, ["B"] = T });
       Check("legacy false-only custom path", F, "(A && B) || C",
-        new() { ["A"] = T, ["B"] = F, ["C"] = F });
+        new Dictionary<string, TriggerTruthValue> { ["A"] = T, ["B"] = F, ["C"] = F });
 
       Console.WriteLine("Phase 1 tri-state trigger tests passed: " + _passed + ".");
       return 0;
