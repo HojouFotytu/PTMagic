@@ -1770,23 +1770,21 @@ namespace Core.Main
                     else if (offTrigger.Min24hVolume > 0 || offTrigger.Max24hVolume < Constants.Max24hVolume)
                     {
                       // Check for 24h volume trigger
-                      List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[this.SingleMarketTrendChanges.Keys.Last()];
-                      if (marketTrendChanges.Count > 0)
+                      if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket))
                       {
-                        MarketTrendChange mtc = marketTrendChanges.Find(m => m.Market.Equals(marketPair, StringComparison.InvariantCultureIgnoreCase));
-                        if (mtc != null)
+                        double volume24h = recentMarket.Volume24h;
                         {
-                          if (mtc.Volume24h >= offTrigger.Min24hVolume && mtc.Volume24h <= offTrigger.Max24hVolume)
+                          if (volume24h >= offTrigger.Min24hVolume && volume24h <= offTrigger.Max24hVolume)
                           {
                             // Trigger met!
-                            this.Log.DoLogDebug("'" + marketPair + "' - 24h volume off trigger matched! 24h volume = " + mtc.Volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
+                            this.Log.DoLogDebug("'" + marketPair + "' - 24h volume off trigger matched! 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
                             offTriggerResults.Add(true);
                           }
                           else
                           {
                             // Trigger not met!
-                            this.Log.DoLogDebug("'" + marketPair + "' - 24h volume off trigger not matched! 24h volume = " + mtc.Volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
+                            this.Log.DoLogDebug("'" + marketPair + "' - 24h volume off trigger not matched! 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
                             offTriggerResults.Add(false);
                           }
@@ -1948,19 +1946,17 @@ namespace Core.Main
                 if (trigger.Min24hVolume > 0 || trigger.Max24hVolume < Constants.Max24hVolume)
                 {
                   #region Check for 24h volume trigger
-                  List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[this.SingleMarketTrendChanges.Keys.Last()];
-                  if (marketTrendChanges.Count > 0)
+                  if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket))
                   {
-                    MarketTrendChange mtc = marketTrendChanges.Find(m => m.Market.Equals(marketPair, StringComparison.InvariantCultureIgnoreCase));
-                    if (mtc != null)
+                    double volume24h = recentMarket.Volume24h;
                     {
 
-                      if (mtc.Volume24h >= trigger.Min24hVolume && mtc.Volume24h <= trigger.Max24hVolume)
+                      if (volume24h >= trigger.Min24hVolume && volume24h <= trigger.Max24hVolume)
                       {
                         // Trigger met!
-                        this.Log.DoLogDebug("'" + marketPair + "' - 24h volume trigger matched! 24h volume = " + mtc.Volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
+                        this.Log.DoLogDebug("'" + marketPair + "' - 24h volume trigger matched! 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
-                        relevantTriggers.Add(triggerIndex, mtc.Volume24h);
+                        relevantTriggers.Add(triggerIndex, volume24h);
 
                         string triggerContent = "24h Volume";
                         if (trigger.Min24hVolume > 0)
@@ -1973,14 +1969,14 @@ namespace Core.Main
                           triggerContent += " - Max: " + trigger.Max24hVolume.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket;
                         }
 
-                        matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": " + triggerContent + " - 24h volume = " + mtc.Volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
+                        matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": " + triggerContent + " - 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
                         triggerResults.Add(true);
                         triggerTagsResults[trigger.Tag] = true;
                       }
                       else
                       {
-                        this.Log.DoLogDebug("'" + marketPair + "' - 24h volume trigger not matched. 24h volume = " + mtc.Volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
+                        this.Log.DoLogDebug("'" + marketPair + "' - 24h volume trigger not matched. 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
                         triggerResults.Add(false);
                       }
                     }
@@ -2277,15 +2273,10 @@ namespace Core.Main
                     smss.TriggerSnapshot.RelevantTriggers = relevantTriggers;
                     smss.TriggerSnapshot.MatchedTriggersContent = MatchedMarketTriggerContent.CopyForSnapshot(matchedSingleMarketTriggers);
 
-                    List<MarketTrendChange> marketTrendChanges = this.SingleMarketTrendChanges[this.SingleMarketTrendChanges.Keys.Last()];
-                    if (marketTrendChanges.Count > 0)
+                    if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket))
                     {
-                      MarketTrendChange mtc = marketTrendChanges.Find(m => m.Market.Equals(marketPair, StringComparison.InvariantCultureIgnoreCase));
-                      if (mtc != null)
-                      {
-                        smss.TriggerSnapshot.Last24hVolume = mtc.Volume24h;
-                        smss.TriggerSnapshot.LastPrice = mtc.LastPrice;
-                      }
+                      smss.TriggerSnapshot.Last24hVolume = recentMarket.Volume24h;
+                      smss.TriggerSnapshot.LastPrice = recentMarket.Price;
                     }
 
                     this.SingleMarketSettingSummaries.Add(smss);
@@ -2833,6 +2824,11 @@ namespace Core.Main
           }
         }
 
+        if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket))
+        {
+          mpSummary.LatestPrice = recentMarket.Price;
+          mpSummary.Latest24hVolume = recentMarket.Volume24h;
+        }
         this.LastRuntimeSummary.MarketSummary.TryAdd(marketPair, mpSummary);
       }
 
