@@ -1443,7 +1443,7 @@ namespace Core.Main
                             }
                             else
                             {
-                                this.Log.DoLogDebug("Trigger '" + trigger.MarketTrendName + "' not triggered. TrendChange = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + triggerUnit);
+                                this.Log.DoLogDebug("Trigger '" + trigger.MarketTrendName + "' not triggered. Value = " + averageMarketTrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + (useNormalizedMetric ? Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.GetUnit(trigger.Metric) : "%"));
                             }
                         }
                         else
