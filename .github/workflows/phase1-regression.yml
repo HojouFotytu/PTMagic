@@ -26,6 +26,10 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Prepare non-secret build settings
+        run: |
+          cp PTMagic/_defaults/_default_settings_PT_2.x/settings.general.json PTMagic/settings.general.json
+          cp PTMagic/_defaults/_default_settings_PT_2.x/settings.analyzer.json PTMagic/settings.analyzer.json
       - name: Build application
         run: dotnet build PTMagic.sln --configuration Release
       - name: Phase1AReadiness
