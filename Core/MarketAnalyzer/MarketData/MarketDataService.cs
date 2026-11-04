@@ -27,7 +27,7 @@ namespace Core.MarketAnalyzer.MarketData
 
     public MarketDataStore Store => _store;
 
-    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, MarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, MarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null)
     {
       if (symbols == null)
       {
@@ -60,7 +60,10 @@ namespace Core.MarketAnalyzer.MarketData
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
-      DateTimeOffset refreshStartedUtc = DateTimeOffset.UtcNow;
+      // All refresh requests and the consuming MarketTrend evaluation must use
+      // one raid-wide as-of time. Fetching hundreds of symbols can cross a
+      // five-minute candle boundary during cold startup.
+      DateTimeOffset refreshStartedUtc = (refreshAsOfUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
       MarketDataRefreshStatus[] statuses = new MarketDataRefreshStatus[distinctSymbols.Length];
 
       await Parallel.ForEachAsync(Enumerable.Range(0, distinctSymbols.Length), new ParallelOptions

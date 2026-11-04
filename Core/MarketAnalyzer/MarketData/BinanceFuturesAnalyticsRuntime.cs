@@ -50,6 +50,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static IReadOnlyList<string> _cachedExchangeSymbols = Array.Empty<string>();
     private static string _activeExchange = "BinanceFutures";
     private static IReadOnlyList<MarketDataRefreshStatus> _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
+    private static DateTimeOffset? _currentRaidAsOfUtc;
 
     public static MarketDataService DataService => DataServiceInstance;
 
@@ -144,6 +145,7 @@ namespace Core.MarketAnalyzer.MarketData
         _currentUniverse = null;
         _currentAnalysis = null;
         _currentTrendAnalyses = EmptyTrendAnalyses();
+        _currentRaidAsOfUtc = null;
       }
 
       if (exchangeSymbols.Length == 0)
@@ -173,6 +175,10 @@ namespace Core.MarketAnalyzer.MarketData
       int targetHistoryCandles = GetTargetHistoryCandles(storeDataMaxHours);
       DataServiceInstance.Store.SetMaxCandlesPerSeries(targetHistoryCandles);
 
+      // Pin the last fully closed candle as of the beginning of this refresh.
+      // A long cold fetch may span another close; the evaluation must not
+      // demand a candle unavailable to symbols fetched before that boundary.
+      DateTimeOffset refreshAsOfUtc = DateTimeOffset.UtcNow;
       IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAsync(
         exchangeSymbols,
         BaseInterval,
@@ -180,12 +186,14 @@ namespace Core.MarketAnalyzer.MarketData
         (symbol, count, logger, ct) => GetFiveMinuteMarketCandlesAsync(exchangeName, symbol, count, logger, ct),
         log,
         RefreshConcurrency,
-        cancellationToken).ConfigureAwait(false);
+        cancellationToken,
+        refreshAsOfUtc).ConfigureAwait(false);
 
       MarketDataRefreshStatus[] statusSnapshot = statuses.ToArray();
       lock (SnapshotLock)
       {
         _lastRefreshStatuses = Array.AsReadOnly(statusSnapshot);
+        _currentRaidAsOfUtc = refreshAsOfUtc;
       }
 
       int skipped = statusSnapshot.Count(status => status != null && status.Skipped);
@@ -343,9 +351,11 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       AnalyzerUniverseSnapshot universe;
+      DateTimeOffset? refreshAsOfUtc;
       lock (SnapshotLock)
       {
         universe = _currentUniverse;
+        refreshAsOfUtc = _currentRaidAsOfUtc;
       }
 
       if (universe == null)
@@ -356,7 +366,11 @@ namespace Core.MarketAnalyzer.MarketData
 
       Dictionary<string, MarketTrendAnalysisSnapshot> analyses =
         new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase);
-      DateTimeOffset calculatedAtUtc = DateTimeOffset.UtcNow;
+      DateTimeOffset evaluationStartedUtc = DateTimeOffset.UtcNow;
+      DateTimeOffset analysisAsOfUtc = refreshAsOfUtc ?? evaluationStartedUtc;
+      log.DoLogInfo("BinanceFutures analytics - normalized MarketTrends evaluate as of " +
+        analysisAsOfUtc.ToString("O", CultureInfo.InvariantCulture) +
+        (refreshAsOfUtc.HasValue ? " (pinned to kline refresh start)." : " (no refresh timestamp available)."));
 
       IEnumerable<MarketTrend> configuredTrends = systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
         ?? Enumerable.Empty<MarketTrend>();
@@ -392,7 +406,7 @@ namespace Core.MarketAnalyzer.MarketData
         // exchange snapshot metadata retained for sorting and filtering.
         MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
           marketTrend, recentMarkets ?? new Dictionary<string, Market>(),
-          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, calculatedAtUtc);
+          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, analysisAsOfUtc);
         string[] globalSymbols = population.GlobalSymbols.ToArray();
         string[] assetSymbols = population.AssetSymbols.ToArray();
 
@@ -402,7 +416,7 @@ namespace Core.MarketAnalyzer.MarketData
           assetSymbols,
           DataServiceInstance.Store,
           BaseInterval,
-          calculatedAtUtc,
+          analysisAsOfUtc,
           enabledMetrics,
           "BTC" + universe.MainMarket);
         analyses[marketTrend.Name] = analysis;

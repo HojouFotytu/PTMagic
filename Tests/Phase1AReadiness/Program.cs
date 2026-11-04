@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Core.Helper;
 using Core.Main.DataObjects.PTMagicData;
 using Core.MarketAnalyzer.MarketData;
+using Microsoft.Extensions.Logging.Abstractions;
 
 internal static class Program
 {
@@ -13,7 +15,7 @@ internal static class Program
   private static readonly string[] GlobalSymbols = Enumerable.Range(1, 10).Select(i => "TEST" + i + "USDT").ToArray();
   private static int _passed;
 
-  private static int Main()
+  private static async System.Threading.Tasks.Task<int> Main()
   {
     try
     {
@@ -21,6 +23,7 @@ internal static class Program
       TestIncompleteAndCleanupRaids();
       TestMissingReferenceReason();
       TestConcentrationRequiresCompleteRanking();
+      await TestCrossBoundaryRefreshUsesPinnedAnalysisTime();
       Console.WriteLine("Phase 1A readiness tests passed: " + _passed + ".");
       return 0;
     }
@@ -143,6 +146,89 @@ internal static class Program
     MarketTrendAnalysisSnapshot complete = MarketTrendAnalyticsEngine.Calculate(
       trend, symbols, Array.Empty<string>(), store, Interval, AsOf);
     Expect(Get(complete, MarketTrendMetrics.Concentration).IsValid, "Full ranking must recover when gap is filled.");
+    _passed++;
+  }
+
+
+  /// <summary>
+  /// Simulates a refresh started at 10:09:45, with one symbol fetched before
+  /// the 10:10 close and the other after. Both had the same fully closed 10:05
+  /// endpoint at refresh start. Evaluating against the later wall clock would
+  /// incorrectly reject the earlier symbol as MissingEndpoint.
+  /// </summary>
+  private static async System.Threading.Tasks.Task TestCrossBoundaryRefreshUsesPinnedAnalysisTime()
+  {
+    DateTimeOffset beforeBoundary = new DateTimeOffset(2026, 11, 4, 10, 9, 45, TimeSpan.Zero);
+    DateTimeOffset afterBoundary = new DateTimeOffset(2026, 11, 4, 10, 10, 30, TimeSpan.Zero);
+    DateTimeOffset firstOpen = new DateTimeOffset(2026, 11, 4, 9, 55, 0, TimeSpan.Zero);
+    DateTimeOffset pinnedClose = new DateTimeOffset(2026, 11, 4, 10, 4, 59, 999, TimeSpan.Zero);
+    string[] symbols = { "EARLYUSDT", "LATEUSDT" };
+    MarketDataService service = new MarketDataService(new MarketDataStore(20));
+    LogHelper logger = new LogHelper(NullLogger<LogHelper>.Instance);
+
+    System.Threading.Tasks.Task<List<MarketCandle>> InitialLoad(
+      string symbol, int requested, LogHelper log, System.Threading.CancellationToken ct)
+    {
+      List<MarketCandle> candles = new List<MarketCandle>
+      {
+        Candle(symbol, firstOpen, 0),
+        Candle(symbol, firstOpen.AddMinutes(5), 1)
+      };
+      if (symbol == "LATEUSDT")
+      {
+        // A late exchange response includes the candle closed after refresh started.
+        candles.Add(Candle(symbol, firstOpen.AddMinutes(10), 2));
+      }
+      return System.Threading.Tasks.Task.FromResult(candles);
+    }
+
+    IReadOnlyList<MarketDataRefreshStatus> firstStatuses = await service.RefreshAsync(
+      symbols, Interval, 4, InitialLoad, logger,
+      maxConcurrency: 1, refreshAsOfUtc: beforeBoundary);
+    Expect(firstStatuses.Count == 2 && firstStatuses.All(status => status.Succeeded),
+      "Both exchange refresh requests must succeed across the candle boundary.");
+
+    MarketTrend trend = NewTrend("PriceTrend");
+    MarketTrendAnalysisSnapshot pinned = MarketTrendAnalyticsEngine.Calculate(
+      trend, symbols, symbols, service.Store, Interval, beforeBoundary);
+    Expect(pinned.ExpectedClosedCandleTimeUtc == pinnedClose,
+      "The raid must use the close known when refresh began, not the later wall-clock endpoint.");
+    Expect(pinned.ValidGlobalReturnCount == 2 &&
+      pinned.MarketMetrics[MarketTrendMetrics.PriceTrend].IsValid &&
+      pinned.ValidAssetReturnCount == 2,
+      "Both early and late refreshed symbols must have valid returns at the pinned close.");
+
+    MarketTrendAnalysisSnapshot unpinned = MarketTrendAnalyticsEngine.Calculate(
+      trend, symbols, symbols, service.Store, Interval, afterBoundary);
+    Expect(unpinned.ValidGlobalReturnCount == 1 &&
+      !unpinned.MarketMetrics[MarketTrendMetrics.PriceTrend].IsValid &&
+      unpinned.GlobalInvalidReturnReasons.ContainsKey("MissingEndpoint"),
+      "Advancing the evaluation clock too soon must reproduce the old missing-endpoint failure.");
+
+    // A second raid may safely advance after loading the newer endpoint for all symbols.
+    System.Threading.Tasks.Task<List<MarketCandle>> NextLoad(
+      string symbol, int requested, LogHelper log, System.Threading.CancellationToken ct)
+    {
+      return System.Threading.Tasks.Task.FromResult(new List<MarketCandle>
+      {
+        Candle(symbol, firstOpen, 0),
+        Candle(symbol, firstOpen.AddMinutes(5), 1),
+        Candle(symbol, firstOpen.AddMinutes(10), 2)
+      });
+    }
+
+    IReadOnlyList<MarketDataRefreshStatus> secondStatuses = await service.RefreshAsync(
+      symbols, Interval, 4, NextLoad, logger,
+      maxConcurrency: 1, refreshAsOfUtc: afterBoundary);
+    Expect(secondStatuses.Count == 2 && secondStatuses.All(status => status.Succeeded),
+      "The next refresh must load the newly closed endpoint for both symbols.");
+
+    MarketTrendAnalysisSnapshot later = MarketTrendAnalyticsEngine.Calculate(
+      trend, symbols, symbols, service.Store, Interval, afterBoundary);
+    Expect(later.ValidGlobalReturnCount == 2 &&
+      later.MarketMetrics[MarketTrendMetrics.PriceTrend].IsValid &&
+      later.ExpectedClosedCandleTimeUtc == firstOpen.AddMinutes(15) - TimeSpan.FromMilliseconds(1),
+      "The next raid should advance to a newer aligned endpoint with full coverage.");
     _passed++;
   }
 
