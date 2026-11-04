@@ -63,6 +63,8 @@ namespace Core.Main
     private Dictionary<string, int> _singleMarketSettingsCount = new Dictionary<string, int>();
     Dictionary<string, List<SingleMarketSetting>> _triggeredSingleMarketSettings = new Dictionary<string, List<SingleMarketSetting>>();
     private readonly SemaphoreSlim _raidSemaphore = new SemaphoreSlim(1, 1);
+    private readonly Core.MarketAnalyzer.MarketData.RaidMetricWarnings _raidMetricWarnings =
+      new Core.MarketAnalyzer.MarketData.RaidMetricWarnings();
     private Mutex mutex = new Mutex(false, "analyzerStateMutex");
 
     public LogHelper Log
@@ -887,6 +889,7 @@ namespace Core.Main
 
               // Initialise the last runtime summary              
               this.LastRuntimeSummary = new Summary();
+              this._raidMetricWarnings.Reset();
               this.LastRuntimeSummary.LastRuntime = this.LastRuntime;
               this.LastRuntimeSummary.Version = this.CurrentVersion.Major.ToString() + "." + this.CurrentVersion.Minor.ToString() + "." + this.CurrentVersion.Build.ToString();
 
@@ -996,6 +999,24 @@ namespace Core.Main
               foreach (string activeSMS in this.SingleMarketSettingsCount.Keys)
               {
                 this.Log.DoLogInfo("+   " + activeSMS + ": " + this.SingleMarketSettingsCount[activeSMS].ToString());
+              }
+              // Group metric problems here instead of repeating per-pair trigger warnings.
+              if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+              {
+                IReadOnlyDictionary<string, Core.MarketAnalyzer.MarketData.MarketTrendAnalysisSnapshot> analyses =
+                  Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses;
+                IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses);
+                if (warnings.Count > 0)
+                {
+                  foreach (string warning in warnings)
+                  {
+                    this.Log.DoLogWarn(warning);
+                  }
+                }
+                else if (analyses.Count > 0)
+                {
+                  this.Log.DoLogInfo("+ Metric warnings: none");
+                }
               }
               this.Log.DoLogInfo("+ " + this.TotalElapsedSeconds.ToString() + " Magicbots killed in " + this.RunCount.ToString() + " raids on Cryptodragon's Lair " + this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.IntervalMinutes.ToString() + ".");
               this.Log.DoLogInfo("");
@@ -1421,7 +1442,7 @@ namespace Core.Main
                               : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
                             if (useNormalizedMetric)
                             {
-                              this.Log.DoLogWarn("Trigger '" + trigger.MarketTrendName + "' metric '" + trigger.Metric + "' unavailable: " + metricError);
+                              this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
                             }
                             else
                             {
@@ -1465,8 +1486,7 @@ namespace Core.Main
                 if (settingResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable)
                 {
                     unavailableNormalizedTriggerFound = true;
-                    this.Log.DoLogWarn("GlobalSetting '" + globalSetting.SettingName +
-                      "' could not be evaluated conclusively because a required normalized metric is unavailable.");
+                    // Each unavailable metric is already collected for the raid summary.
                 }
             }
         }
@@ -1482,13 +1502,11 @@ namespace Core.Main
             {
                 triggeredSetting = active;
                 matchedTriggers = new List<string>();
-                this.Log.DoLogWarn("GlobalSetting selection is indeterminate due to unavailable normalized metrics. " +
-                  "Retaining active setting '" + active.SettingName + "'; no automatic fallback to default.");
+                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate; retained '" + active.SettingName + "'.");
             }
             else
             {
-                this.Log.DoLogWarn("GlobalSetting selection is indeterminate; the previously active setting no longer " +
-                  "exists in configuration, so the configured default remains the fallback.");
+                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate; prior setting absent, using default.");
             }
         }
     }
@@ -1598,7 +1616,7 @@ namespace Core.Main
 
         int marketPairProcess = 1;
         Dictionary<string, List<string>> matchedMarketTriggers = new Dictionary<string, List<string>>();
-        HashSet<string> metricWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Metric warnings are aggregated in the raid summary.
         string mainMarket = this.LastRuntimeSummary.MainMarket;
         string exchange = this.PTMagicConfiguration.GeneralSettings.Application.Exchange.ToLower();
 
@@ -1760,10 +1778,9 @@ namespace Core.Main
                         string metricError;
                         bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
                           this.PTMagicConfiguration, metricTrend, offTrigger.Metric, marketPair, out metricValue, out metricError);
-                        if (!validMetric && metricWarnings.Add("off|" + marketSetting.SettingName + "|" + offTrigger.MarketTrendName + "|" + offTrigger.Metric + "|" + metricError))
+                        if (!validMetric)
                         {
-                          this.Log.DoLogWarn("SMS '" + marketSetting.SettingName + "' off-trigger metric '" + offTrigger.Metric +
-                            "' unavailable for '" + marketPair + "': " + metricError);
+                          this._raidMetricWarnings.ReportUnavailable(offTrigger.MarketTrendName, offTrigger.Metric, metricError);
                         }
                         offTriggerResults.Add(validMetric
                           ? (bool?)(metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange)
@@ -2002,10 +2019,9 @@ namespace Core.Main
                         " [" + Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric) + "] - Value: " +
                         metricValue.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%");
                     }
-                    else if (!validMetric && metricWarnings.Add("on|" + marketSetting.SettingName + "|" + trigger.MarketTrendName + "|" + trigger.Metric + "|" + metricError))
+                    else if (!validMetric)
                     {
-                      this.Log.DoLogWarn("SMS '" + marketSetting.SettingName + "' trigger metric '" + trigger.Metric +
-                        "' unavailable for '" + marketPair + "': " + metricError);
+                      this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
                     }
                   }
                   else if (this.SingleMarketTrendChanges.ContainsKey(trigger.MarketTrendName))
