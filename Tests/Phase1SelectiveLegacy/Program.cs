@@ -12,13 +12,17 @@ internal static class Program
   {
     try
     {
-      CheckBlankMetricsKeepLegacy();
+      CheckBlankMetricsUseNormalized();
+      CheckImplicitMetricSelection();
+      CheckSpotAndBinanceUsCompatibility();
+      CheckPriceTrendScopeAndSelection();
+      CheckNoImplicitPriceTrendForOtherMetrics();
       CheckExplicitNormalizedMetricsSkipLegacy();
       CheckExplicitPriceTrendOnlyUsesNormalized();
-      CheckLegacyGlobalTriggerKeepsBoth();
+      CheckLegacyGlobalTriggerUsesNormalized();
       CheckNormalizedGlobalTriggerSkipsLegacy();
-      CheckLegacySmsActivationKeepsAssetOnly();
-      CheckLegacyOffTriggerKeepsAssetOnly();
+      CheckLegacySmsActivationUsesNormalized();
+      CheckLegacyOffTriggerUsesNormalized();
       CheckNormalizedSmsActivationSkipsLegacy();
       CheckVolumeAndAgeTriggersDoNotNeedLegacy();
       CheckOtherExchangesRemainLegacy();
@@ -26,7 +30,7 @@ internal static class Program
       CheckIndependentPopulationAndMaxMarkets();
       CheckPopulationAllowedAndIgnored();
       CheckZeroPopulationDoesNotInventLegacyValues();
-      Console.WriteLine("Selective legacy market-trend tests passed: " + _passed + ".");
+      Console.WriteLine("Normalized PriceTrend compatibility tests passed: " + _passed + ".");
       return 0;
     }
     catch (Exception e)
@@ -55,12 +59,13 @@ internal static class Program
       trend);
   }
 
-  private static void CheckBlankMetricsKeepLegacy()
+  private static void CheckBlankMetricsUseNormalized()
   {
     var x = Setup(metrics: "");
     LegacyMarketTrendRequirements r = LegacyMarketTrendPlanner.Build(x.general, x.analyzer);
-    Assert(r.NeedsAssetPriceTrend(x.trend) && r.NeedsGlobalPriceTrend(x.trend),
-      "Blank Metrics preserves old per-market and average PriceTrend.");
+    Assert(!r.NeedsAssetPriceTrend(x.trend) && !r.NeedsGlobalPriceTrend(x.trend)
+      && MarketTrendMetrics.ParseEnabled(x.trend).Contains(MarketTrendMetrics.PriceTrend),
+      "Blank Metrics must default to normalized per-asset and global PriceTrend, without legacy calculations.");
     _passed++;
   }
 
@@ -82,7 +87,7 @@ internal static class Program
     _passed++;
   }
 
-  private static void CheckLegacyGlobalTriggerKeepsBoth()
+  private static void CheckLegacyGlobalTriggerUsesNormalized()
   {
     var x = Setup();
     x.analyzer.GlobalSettings.Add(new GlobalSetting
@@ -93,8 +98,9 @@ internal static class Program
       }
     });
     LegacyMarketTrendRequirements r = LegacyMarketTrendPlanner.Build(x.general, x.analyzer);
-    Assert(r.NeedsGlobalPriceTrend(x.trend) && r.NeedsAssetPriceTrend(x.trend),
-      "Omitted GlobalSetting trigger Metric retains legacy mean and asset returns.");
+    Assert(!r.NeedsGlobalPriceTrend(x.trend) && !r.NeedsAssetPriceTrend(x.trend)
+      && MarketTrendMetricSelection.Select(x.trend, x.analyzer).Contains(MarketTrendMetrics.PriceTrend),
+      "Omitted GlobalSetting Metric must implicitly enable normalized PriceTrend.");
     _passed++;
   }
 
@@ -114,7 +120,7 @@ internal static class Program
     _passed++;
   }
 
-  private static void CheckLegacySmsActivationKeepsAssetOnly()
+  private static void CheckLegacySmsActivationUsesNormalized()
   {
     var x = Setup();
     x.analyzer.SingleMarketSettings.Add(new SingleMarketSetting
@@ -125,12 +131,13 @@ internal static class Program
       }
     });
     LegacyMarketTrendRequirements r = LegacyMarketTrendPlanner.Build(x.general, x.analyzer);
-    Assert(r.NeedsAssetPriceTrend(x.trend) && !r.NeedsGlobalPriceTrend(x.trend),
-      "Legacy SMS needs per-market returns, not a legacy global average.");
+    Assert(!r.NeedsAssetPriceTrend(x.trend) && !r.NeedsGlobalPriceTrend(x.trend)
+      && MarketTrendMetricSelection.Select(x.trend, x.analyzer).Contains(MarketTrendMetrics.PriceTrend),
+      "Omitted SMS trigger Metric must use normalized returns.");
     _passed++;
   }
 
-  private static void CheckLegacyOffTriggerKeepsAssetOnly()
+  private static void CheckLegacyOffTriggerUsesNormalized()
   {
     var x = Setup();
     x.analyzer.SingleMarketSettings.Add(new SingleMarketSetting
@@ -141,8 +148,9 @@ internal static class Program
       }
     });
     LegacyMarketTrendRequirements r = LegacyMarketTrendPlanner.Build(x.general, x.analyzer);
-    Assert(r.NeedsAssetPriceTrend(x.trend) && !r.NeedsGlobalPriceTrend(x.trend),
-      "Legacy OffTrigger needs per-market returns.");
+    Assert(!r.NeedsAssetPriceTrend(x.trend) && !r.NeedsGlobalPriceTrend(x.trend)
+      && MarketTrendMetricSelection.Select(x.trend, x.analyzer).Contains(MarketTrendMetrics.PriceTrend),
+      "Omitted OffTrigger Metric must use normalized returns.");
     _passed++;
   }
 
@@ -186,10 +194,10 @@ internal static class Program
 
   private static void CheckOtherExchangesRemainLegacy()
   {
-    var x = Setup(exchange: "Binance", metrics: "MedianATRP");
+    var x = Setup(exchange: "Poloniex", metrics: "MedianATRP");
     LegacyMarketTrendRequirements r = LegacyMarketTrendPlanner.Build(x.general, x.analyzer);
     Assert(r.NeedsAssetPriceTrend(x.trend) && r.NeedsGlobalPriceTrend(x.trend),
-      "Non-Futures exchanges must retain original behavior.");
+      "Non-Binance exchanges must retain original behavior.");
     _passed++;
   }
 
@@ -244,6 +252,68 @@ internal static class Program
       "USDT", null, TimeSpan.FromMinutes(5), DateTimeOffset.UtcNow);
     Assert(result.GlobalSymbols.Count == 0 && result.AssetSymbols.Count == 0,
       "Do not synthesize a fake price trend when the eligible universe is empty.");
+    _passed++;
+  }
+
+
+  private static void CheckSpotAndBinanceUsCompatibility()
+  {
+    foreach (string exchange in new[] { "Binance", "BinanceUS", "BinanceFutures" })
+    {
+      var x = Setup(exchange: exchange, metrics: "");
+      LegacyMarketTrendRequirements legacy = LegacyMarketTrendPlanner.Build(x.general, x.analyzer);
+      Assert(!legacy.NeedsAssetPriceTrend(x.trend) && !legacy.NeedsGlobalPriceTrend(x.trend),
+        exchange + " must use normalized PriceTrend by default");
+      Assert(BinanceFuturesAnalyticsRuntime.IsSupportedExchange(exchange)
+        && MarketTrendMetricTriggerResolver.UsesNormalizedMetric(x.trend, null, exchange),
+        exchange + " must accept an omitted Metric trigger");
+    }
+    _passed++;
+  }
+
+  private static void CheckPriceTrendScopeAndSelection()
+  {
+    var x = Setup(metrics: "PriceTrend");
+    Assert(MarketTrendMetrics.TryGetScope(MarketTrendMetrics.PriceTrend, out MarketTrendMetricScope scope)
+      && scope == MarketTrendMetricScope.Both,
+      "PriceTrend must provide both global average and per-asset returns");
+    Assert(MarketTrendMetrics.ParseEnabled(x.trend).SequenceEqual(new[] { MarketTrendMetrics.PriceTrend }),
+      "Explicit PriceTrend must remain selectable");
+    _passed++;
+  }
+
+  private static void CheckImplicitMetricSelection()
+  {
+    var x = Setup(metrics: "MedianATRP");
+    x.analyzer.GlobalSettings.Add(new GlobalSetting
+    {
+      SettingName = "DefaultPriceTrigger",
+      Triggers = new List<Trigger> { new Trigger { MarketTrendName = "2h" } }
+    });
+    string[] enabled = MarketTrendMetricSelection.Select(x.trend, x.analyzer).ToArray();
+    Assert(enabled.Contains(MarketTrendMetrics.PriceTrend)
+      && enabled.Contains(MarketTrendMetrics.MedianATRP)
+      && enabled.Length == 2,
+      "Omitted GlobalSetting Metric must add PriceTrend without removing explicitly enabled metrics");
+    _passed++;
+  }
+
+  private static void CheckNoImplicitPriceTrendForOtherMetrics()
+  {
+    var x = Setup(metrics: "MedianATRP,VolumeExpansionBreadth");
+    x.analyzer.GlobalSettings.Add(new GlobalSetting
+    {
+      SettingName = "ATRPOnly",
+      Triggers = new List<Trigger> { new Trigger { MarketTrendName = "2h", Metric = "MedianATRP" } }
+    });
+    x.analyzer.SingleMarketSettings.Add(new SingleMarketSetting
+    {
+      SettingName = "VolumeOnly",
+      Triggers = new List<Trigger> { new Trigger { MarketTrendName = "2h", Min24hVolume = 10 } }
+    });
+    string[] enabled = MarketTrendMetricSelection.Select(x.trend, x.analyzer).ToArray();
+    Assert(!enabled.Contains(MarketTrendMetrics.PriceTrend),
+      "Explicit non-PriceTrend metrics and volume-only triggers must not force PriceTrend");
     _passed++;
   }
 
