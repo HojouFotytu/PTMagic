@@ -391,19 +391,16 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      if (scope == MarketTrendMetricScope.Global || scope == MarketTrendMetricScope.Both)
-      {
-        if (analysis.MarketMetrics.TryGetValue(normalizedMetric, out feature))
-        {
-          return true;
-        }
-      }
-
       if ((scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both)
         && !String.IsNullOrWhiteSpace(marketSymbol))
       {
         return analysis.AssetMetrics.TryGetValue(marketSymbol, out IReadOnlyDictionary<string, FeatureValueSnapshot> assetMetrics)
           && assetMetrics.TryGetValue(normalizedMetric, out feature);
+      }
+
+      if (scope == MarketTrendMetricScope.Global || scope == MarketTrendMetricScope.Both)
+      {
+        return analysis.MarketMetrics.TryGetValue(normalizedMetric, out feature);
       }
 
       return false;
@@ -431,19 +428,11 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      // An omitted Trigger/OffTrigger Metric preserves PTMagic's legacy PriceTrend
-      // behavior regardless of which normalized analytics are enabled for the trend.
-      if (metricOmitted)
+      // A trigger omitting Metric requests normalized PriceTrend implicitly.
+      // All other named metrics must be explicitly enabled on the MarketTrend.
+      if (metricOmitted && !MarketTrendMetrics.IsEnabled(marketTrend, MarketTrendMetrics.PriceTrend))
       {
-        return true;
-      }
-
-      // An explicitly named PriceTrend remains legacy when no normalized Metrics are
-      // configured. With non-empty Metrics it refers to normalized PriceTrend and must
-      // therefore be explicitly listed just like any other normalized metric.
-      if (normalizedMetric.Equals(MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
-        && String.IsNullOrWhiteSpace(marketTrend.Metrics))
-      {
+        // The metric selection layer injects this implicit dependency.
         return true;
       }
 
@@ -453,7 +442,7 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      if (!MarketTrendMetrics.IsEnabled(marketTrend, normalizedMetric))
+      if (!metricOmitted && !MarketTrendMetrics.IsEnabled(marketTrend, normalizedMetric))
       {
         error = "MarketTrend '" + marketTrend.Name + "' does not enable metric '" + normalizedMetric + "'.";
         return false;

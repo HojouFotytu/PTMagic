@@ -195,8 +195,8 @@ namespace Core.MarketAnalyzer.MarketData
       {
         Phase1CFeatureResult phase1c = MarketTrendPhase1CEngine.Calculate(
           marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc,
-          benchmarkSymbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase)
-            ? "USDT" : benchmarkSymbol.Substring(3));
+          benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase)
+            ? benchmarkSymbol.Substring(3) : "USDT");
         foreach (KeyValuePair<string, FeatureValueSnapshot> feature in phase1c.GlobalMetrics)
         {
           marketMetrics[feature.Key] = feature.Value;

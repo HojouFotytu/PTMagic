@@ -42,7 +42,8 @@ namespace Core.MarketAnalyzer.MarketData
       IEnumerable<string> assetSymbols,
       MarketDataStore store,
       TimeSpan interval,
-      DateTimeOffset asOfUtc)
+      DateTimeOffset asOfUtc,
+      string mainMarket = "USDT")
     {
       HashSet<string> active = new HashSet<string>(enabled ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
       string[] global = Normalize(globalSymbols);
@@ -178,12 +179,12 @@ namespace Core.MarketAnalyzer.MarketData
         if (btcShare)
         {
           marketResults[MarketTrendMetrics.BTCVolumeShare] = ShareForSymbols(
-            validVolumes, "BTCUSDT", null, usableTotal, total, volumeFailure, asOfUtc, sourceTime);
+            validVolumes, "BTC" + mainMarket, null, usableTotal, total, volumeFailure, asOfUtc, sourceTime);
         }
         if (btcEthShare)
         {
           marketResults[MarketTrendMetrics.BTCETHVolumeShare] = ShareForSymbols(
-            validVolumes, "BTCUSDT", "ETHUSDT", usableTotal, total, volumeFailure, asOfUtc, sourceTime);
+            validVolumes, "BTC" + mainMarket, "ETH" + mainMarket, usableTotal, total, volumeFailure, asOfUtc, sourceTime);
         }
         // Preserve the exact eligible denominator and coverage metadata for
         // every concentration/share result, with a strict 100% requirement.
