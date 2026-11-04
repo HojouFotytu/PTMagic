@@ -274,7 +274,7 @@ else
             if (market.EndsWith(Model.Summary.MainMarket))
             {
             Core.Main.DataObjects.PTMagicData.MarketPairSummary mps = Model.Summary.MarketSummary[market];
-            int marketTrendsDisplayed = 0;
+
             <tr>
               <th>
                 @if (mps.IsTradingEnabled) {
@@ -302,7 +302,7 @@ else
               @foreach (Core.Main.DataObjects.PTMagicData.MarketTrend marketTrend in marketTrends) {
                 if (mps.MarketTrendChanges.ContainsKey(marketTrend.Name)) 
                 {
-                  marketTrendsDisplayed++;
+
                   string trendChangeOutput = mps.MarketTrendChanges[marketTrend.Name].ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
                   if  (marketTrend.TrendThreshold != 0 && Math.Abs(mps.MarketTrendChanges[marketTrend.Name]) > marketTrend.TrendThreshold)
                     {
@@ -313,9 +313,13 @@ else
                       <td class="text-right text-autocolor-saw">@trendChangeOutput%</td>
                     }
                 }
-              }
-              @for (int i = 0; i < marketTrends.Count - marketTrendsDisplayed; i++) {
+
+                else
+
+                {
                 <td></td>
+
+                }
               }
             </tr>
             }
@@ -341,7 +345,7 @@ else
         <tbody>
           @foreach (string market in Model.Summary.MarketSummary.Keys.OrderBy(m => m)) {
             Core.Main.DataObjects.PTMagicData.MarketPairSummary mps = Model.Summary.MarketSummary[market];
-            int marketTrendsDisplayed = 0;
+
             <tr>
               <th>
                 @if (Model.Summary.MarketSummary[market].IsTradingEnabled) {
@@ -367,15 +371,21 @@ else
               <td class="text-right">@mps.LatestPrice.ToString("#,#0.00000000", new System.Globalization.CultureInfo("en-US"))</td>
               <td class="text-right">@Math.Round(mps.Latest24hVolume, 0).ToString("#,#0", new System.Globalization.CultureInfo("en-US"))</td>
               @foreach (Core.Main.DataObjects.PTMagicData.MarketTrend marketTrend in marketTrends) {
-                if (mps.MarketTrendChanges.ContainsKey(marketTrend.Name)) {
-                  marketTrendsDisplayed++;
-                  double relativeTrend = Model.Summary.MarketSummary[market].MarketTrendChanges[marketTrend.Name] - Model.Summary.MarketTrendChanges[marketTrend.Name].OrderByDescending(mtc => mtc.TrendDateTime).First().TrendChange;
+                if (mps.MarketTrendChanges.ContainsKey(marketTrend.Name)
+                  && Model.Summary.MarketTrendChanges.TryGetValue(marketTrend.Name, out var history)
+                  && history != null && history.Count > 0) {
+
+                  double relativeTrend = mps.MarketTrendChanges[marketTrend.Name] - history.OrderByDescending(mtc => mtc.TrendDateTime).First().TrendChange;
                   string trendChangeOutput = relativeTrend.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
                   <td class="text-right text-autocolor-saw">@trendChangeOutput%</td>
                 }
-              }
-              @for (int i = 0; i < marketTrends.Count - marketTrendsDisplayed; i++) {
+
+                else
+
+                {
                 <td></td>
+
+                }
               }
             </tr>
           }
