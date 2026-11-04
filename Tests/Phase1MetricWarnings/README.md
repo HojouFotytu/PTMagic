@@ -1,4 +1,4 @@
-# Raid metric-warning summary regression tests
+# Raid metric-warning natural-language regression tests
 
 Run locally:
 
@@ -6,25 +6,26 @@ Run locally:
 dotnet run --project Tests/Phase1MetricWarnings/Phase1MetricWarnings.csproj
 ```
 
-Twelve deterministic checks cover healthy output; per-raid reset and deduplication;
-global coverage and detailed invalid feature metadata; grouped, mixed-reason
-asset failures; unknown metrics; GlobalSetting indeterminate decisions;
-all distinct warnings; full GlobalSetting/SMS activation/SMS OffTrigger caller
-context; bounded examples; reason/source counts; and implicit PriceTrend labels.
+Eighteen deterministic cases test normal output, reset, grouped warnings, global
+coverage, unavailable asset metrics, unknown metrics, GlobalSetting hold behavior,
+bounded caller examples, multiple sources, mixed failure causes, implicit
+PriceTrend, and Option C natural-language explanations:
 
-The tests do not make exchange calls. The user runs .NET build, all harnesses
-and Binance Futures/Spot/US TestMode locally (D-021).
+- Excluded or filtered markets, identifying SMS setting and recommended fix.
+- Asset-only metrics incorrectly used by GlobalSettings, with possible alternatives.
+- Explicit metrics not enabled on the referenced MarketTrend.
+- Insufficient candle/volume history, with period counts.
+- Invalid global coverage, explaining valid versus required market counts.
+- Multiple affected activation/OffTrigger callers summarized in one warning.
 
-TestMode acceptance:
-- For FILTERED_1h, verify warning names the failing SMS setting, symbol and
-  trigger and identifies IgnoredMarkets/AllowedMarkets/universe exclusion.
-- Verify no per-pair log flood: metric groups count requests, preserve several
-  examples, and report the number omitted beyond the example cap.
-- Verify incomplete 8h metric warnings give validity, sample coverage,
-  endpoint, missing-history reason, and example affected markets.
-- Verify global asset-only metric references give GlobalSetting name and tag.
-- Verify SMS OffTrigger warnings include market and activation/exit context.
-- Verify existing trigger truth values and no PT writes in TestMode.
+Each warning group now produces one actionable sentence in the RAID SUMMARY.
+The collector retains grouping and never changes metric calculations, trigger
+truth values, or PT property updates.
 
-Prior verified baseline: 70/70 tests before this change. New target: 75/75
-across the six existing harnesses, **not yet executed**.
+Expected totals: **18/18** in this harness; **81/81** across all six
+regression harnesses, pending local execution. Prior 75/75 is not evidence for
+this change.
+
+Under D-021, the user runs builds, regression tests and TestMode locally.
+Check the new warning sentences on Binance Futures, Spot and Binance US, and
+confirm existing settings/OffTrigger behavior remains unchanged.
