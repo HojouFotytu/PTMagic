@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using Core.Main;
 using Core.Main.DataObjects.PTMagicData;
 
@@ -77,12 +80,20 @@ namespace Core.MarketAnalyzer.MarketData
         if (!double.IsFinite(currentPrice) || !double.IsFinite(activationPrice)
           || currentPrice <= 0 || activationPrice <= 0)
         {
-          error = "Relative-to-trigger PriceTrend requires valid current and saved activation prices.";
+          error = "Relative-to-trigger PriceTrend requires positive finite prices (market=" + marketSymbol +
+            ", currentPrice=" + currentPrice.ToString("G", CultureInfo.InvariantCulture) +
+            ", activationPrice=" + activationPrice.ToString("G", CultureInfo.InvariantCulture) + ").";
           return false;
         }
         value = (currentPrice / activationPrice - 1.0) * 100.0;
       }
-      return double.IsFinite(value);
+      if (!double.IsFinite(value))
+      {
+        error = "PriceTrend relation '" + relation + "' produced a nonfinite result for market '" +
+          marketSymbol + "'.";
+        return false;
+      }
+      return true;
     }
 
     public static string GetUnit(string metric)
@@ -132,6 +143,11 @@ namespace Core.MarketAnalyzer.MarketData
 
       if (!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(marketTrend, metric, globalSettingContext, out error))
       {
+        error += " (MarketTrend='" + marketTrend.Name + "', requested metric='" + normalizedMetric +
+          "', context=" + (globalSettingContext ? "GlobalSetting" : "SMS") +
+          ", requested market='" + (marketSymbol ?? "(global)") +
+          "', configured Metrics='" + (marketTrend.Metrics ?? "") +
+          "', TrendMinutes=" + marketTrend.TrendMinutes + ").";
         return false;
       }
 
@@ -141,19 +157,102 @@ namespace Core.MarketAnalyzer.MarketData
         marketSymbol,
         out FeatureValueSnapshot feature))
       {
-        error = "Metric '" + normalizedMetric + "' has no calculated value for MarketTrend '" + marketTrend.Name + "'.";
+        error = ExplainMissingMetric(configuration, marketTrend, normalizedMetric, marketSymbol);
         return false;
       }
 
       if (feature == null || !feature.IsValid || feature.IsStale || !feature.Value.HasValue || !double.IsFinite(feature.Value.Value))
       {
-        error = "Metric '" + normalizedMetric + "' is unavailable for MarketTrend '" + marketTrend.Name + "'"
-          + (String.IsNullOrWhiteSpace(feature?.InvalidReason) ? "." : ": " + feature.InvalidReason);
+        error = "Metric '" + normalizedMetric + "' is unavailable for MarketTrend '" + marketTrend.Name +
+          "'" + (String.IsNullOrWhiteSpace(marketSymbol) ? " (global)" : " market='" + marketSymbol + "'") +
+          ": valid=" + (feature?.IsValid.ToString() ?? "null") +
+          ", stale=" + (feature?.IsStale.ToString() ?? "null") +
+          ", value=" + (feature?.Value.HasValue == true ? feature.Value.Value.ToString("G", CultureInfo.InvariantCulture) : "null") +
+          ", samples=" + (feature?.SampleCount.ToString(CultureInfo.InvariantCulture) ?? "null") +
+          (feature?.EligibleSampleCount.HasValue == true ? "/" + feature.EligibleSampleCount.Value : "") +
+          (feature?.CoveragePercent.HasValue == true ? ", coverage=" +
+            feature.CoveragePercent.Value.ToString("0.##", CultureInfo.InvariantCulture) + "%" : "") +
+          (feature?.SourceDataTimestampUtc.HasValue == true ? ", endpoint=" +
+            feature.SourceDataTimestampUtc.Value.ToString("O", CultureInfo.InvariantCulture) : "") +
+          (String.IsNullOrWhiteSpace(feature?.InvalidReason) ? "." : "; reason=" + feature.InvalidReason);
         return false;
       }
 
       value = feature.Value.Value;
       return true;
+    }
+
+    /// <summary>
+    /// Distinguishes a missing MarketTrend evaluation from a request for an
+    /// intentionally excluded asset. MaxMarkets affects global aggregation only.
+    /// </summary>
+    private static string ExplainMissingMetric(
+      PTMagicConfiguration configuration, MarketTrend trend,
+      string metric, string marketSymbol)
+    {
+      IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> analyses =
+        BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses;
+      if (analyses == null || !analyses.TryGetValue(trend.Name, out MarketTrendAnalysisSnapshot analysis))
+      {
+        return "No normalized analysis snapshot for MarketTrend '" + trend.Name + "'; metric='" + metric +
+          "', requested market='" + (marketSymbol ?? "(global)") +
+          "', available trends=" + (analyses == null ? 0 : analyses.Count) + ".";
+      }
+
+      string population = "global population=" + analysis.GlobalSymbols.Count +
+        ", asset population=" + analysis.AssetSymbols.Count +
+        ", MaxMarkets=" + trend.MaxMarkets +
+        ", TrendThreshold=" + trend.TrendThreshold +
+        ", AllowedMarkets='" + (trend.AllowedMarkets ?? "") +
+        "', IgnoredMarkets='" + (trend.IgnoredMarkets ?? "") + "'";
+
+      if (!String.IsNullOrWhiteSpace(marketSymbol) &&
+        MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope) &&
+        (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both))
+      {
+        if (!analysis.AssetSymbols.Contains(marketSymbol, StringComparer.OrdinalIgnoreCase))
+        {
+          string quote = BinanceFuturesAnalyticsRuntime.CurrentUniverse?.MainMarket ?? "";
+          string shortSymbol = marketSymbol;
+          if (quote.Length > 0 && shortSymbol.EndsWith(quote, StringComparison.OrdinalIgnoreCase))
+          {
+            shortSymbol = shortSymbol.Substring(0, shortSymbol.Length - quote.Length);
+          }
+          string excludedBy = MatchesFilter(trend.IgnoredMarkets, shortSymbol, marketSymbol)
+            ? "excluded by IgnoredMarkets"
+            : !String.IsNullOrWhiteSpace(trend.AllowedMarkets) &&
+              !MatchesFilter(trend.AllowedMarkets, shortSymbol, marketSymbol)
+              ? "not in AllowedMarkets"
+              : "not in the current eligible/selected exchange population";
+
+          return "Market '" + marketSymbol + "' is outside the selected asset population for MarketTrend '" +
+            trend.Name + "' (" + excludedBy + "; " + population +
+            "). MaxMarkets limits global aggregation only; no per-asset metric is available for this symbol.";
+        }
+
+        string available = analysis.AssetMetrics.TryGetValue(marketSymbol,
+          out IReadOnlyDictionary<string, FeatureValueSnapshot> assetFeatures)
+          ? String.Join(",", assetFeatures.Keys) : "(no asset snapshot)";
+        return "Market '" + marketSymbol + "' is eligible for MarketTrend '" + trend.Name +
+          "' but metric '" + metric + "' was not published; available asset metrics=" + available +
+          "; " + population + ".";
+      }
+
+      return "Metric '" + metric + "' has no calculated global value for MarketTrend '" + trend.Name +
+        "'; published global metrics=" + String.Join(",", analysis.MarketMetrics.Keys) +
+        "; evaluated metrics=" + String.Join(",", analysis.EnabledMetrics) +
+        "; " + population + ".";
+    }
+
+    private static bool MatchesFilter(string filter, string shortSymbol, string fullSymbol)
+    {
+      return !String.IsNullOrWhiteSpace(filter) && filter.Split(',', StringSplitOptions.RemoveEmptyEntries)
+        .Any(token =>
+        {
+          string candidate = token.Trim();
+          return candidate.Equals(shortSymbol, StringComparison.OrdinalIgnoreCase)
+            || candidate.Equals(fullSymbol, StringComparison.OrdinalIgnoreCase);
+        });
     }
   }
 }

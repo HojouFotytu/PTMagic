@@ -995,7 +995,7 @@ namespace Core.Main
                 this.Log.DoLogInfo("+   " + activeSMS + ": " + this.SingleMarketSettingsCount[activeSMS].ToString());
               }
               // Group metric problems here instead of repeating per-pair trigger warnings.
-              if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+              if (BinanceFuturesAnalyticsRuntime.IsSupportedExchange(this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
               {
                 IReadOnlyDictionary<string, Core.MarketAnalyzer.MarketData.MarketTrendAnalysisSnapshot> analyses =
                   Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses;
@@ -1463,7 +1463,10 @@ namespace Core.Main
                             {
                               triggerResults[trigger.Tag] = unavailableValue;
                             }
-                            this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
+                            this._raidMetricWarnings.ReportUnavailable(
+                              trigger.MarketTrendName, trigger.Metric, metricError,
+                              "GlobalSetting", globalSetting.SettingName, null, trigger.MarketTrendRelation,
+                              String.IsNullOrWhiteSpace(trigger.Tag) ? "(untagged)" : "tag=" + trigger.Tag);
                         }
                     }
                     else
@@ -1714,8 +1717,10 @@ namespace Core.Main
                   this.Log.DoLogDebug("'" + marketPair + "' - Checking off triggers '" + marketSetting.SettingName + "'...");
 
                   List<bool?> offTriggerResults = new List<bool?>();
+                  int offTriggerIndex = 0;
                   foreach (OffTrigger offTrigger in marketSetting.OffTriggers)
                   {
+                    offTriggerIndex++;
                     if (offTrigger.HoursSinceTriggered > 0)
                     {
                       // Check for Activation time period trigger
@@ -1777,7 +1782,10 @@ namespace Core.Main
                           out metricValue, out metricError);
                         if (!validMetric)
                         {
-                          this._raidMetricWarnings.ReportUnavailable(offTrigger.MarketTrendName, offTrigger.Metric, metricError);
+                          this._raidMetricWarnings.ReportUnavailable(
+                            offTrigger.MarketTrendName, offTrigger.Metric, metricError,
+                            "SMS OffTrigger", marketSetting.SettingName, marketPair,
+                            offTrigger.MarketTrendRelation, "#" + offTriggerIndex);
                         }
                         offTriggerResults.Add(validMetric
                           ? (bool?)(metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange)
@@ -1951,7 +1959,11 @@ namespace Core.Main
                     }
                     else if (!validMetric)
                     {
-                      this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric, metricError);
+                      this._raidMetricWarnings.ReportUnavailable(
+                        trigger.MarketTrendName, trigger.Metric, metricError,
+                        "SMS activation", marketSetting.SettingName, marketPair,
+                        trigger.MarketTrendRelation,
+                        String.IsNullOrWhiteSpace(trigger.Tag) ? "#" + (triggerIndex + 1) : "tag=" + trigger.Tag);
                     }
                   }
                   
