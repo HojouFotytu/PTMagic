@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Core.Main.DataObjects.PTMagicData;
+using Core.Main;
 
 namespace Core.MarketAnalyzer.MarketData
 {

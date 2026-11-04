@@ -549,7 +549,7 @@ namespace Core.MarketAnalyzer
       return result;
     }
 
-    public static Dictionary<string, List<MarketTrendChange>> BuildMarketTrends(string platform, string mainMarket, List<string> marketList, string sortBy, bool isGlobal, Dictionary<string, List<MarketTrendChange>> output, PTMagicConfiguration systemConfiguration, LogHelper log)
+    public static Dictionary<string, List<MarketTrendChange>> BuildMarketTrends(string platform, string mainMarket, List<string> marketList, string sortBy, bool isGlobal, Dictionary<string, List<MarketTrendChange>> output, PTMagicConfiguration systemConfiguration, LogHelper log, ISet<string> requiredTrends = null)
     {
 
       try
@@ -561,6 +561,10 @@ namespace Core.MarketAnalyzer
 
           foreach (MarketTrend marketTrend in marketTrends)
           {
+            if (requiredTrends != null && !requiredTrends.Contains(marketTrend.Name))
+            {
+              continue;
+            }
             if (platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase))
             {
               log.DoLogInfo(platform + " - Building market trend changes for '" + marketTrend.Name + "' on main market '" + mainMarket + "' with " + marketList.Count.ToString() + " markets...");
@@ -752,7 +756,7 @@ namespace Core.MarketAnalyzer
       return result;
     }
 
-    public static Dictionary<string, double> BuildGlobalMarketTrends(Dictionary<string, List<MarketTrendChange>> globalMarketTrendChanges, PTMagicConfiguration systemConfiguration, LogHelper log)
+    public static Dictionary<string, double> BuildGlobalMarketTrends(Dictionary<string, List<MarketTrendChange>> globalMarketTrendChanges, PTMagicConfiguration systemConfiguration, LogHelper log, ISet<string> requiredTrends = null)
     {
       Dictionary<string, double> result = new Dictionary<string, double>();
 
@@ -761,6 +765,10 @@ namespace Core.MarketAnalyzer
       {
         foreach (MarketTrend marketTrend in marketTrends)
         {
+          if (requiredTrends != null && !requiredTrends.Contains(marketTrend.Name))
+          {
+            continue;
+          }
           log.DoLogInfo("Building market trend average for '" + marketTrend.Name + "'");
           if (globalMarketTrendChanges.ContainsKey(marketTrend.Name))
           {
