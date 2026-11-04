@@ -280,6 +280,27 @@ namespace Core.MarketAnalyzer.MarketData
         FeatureValueSnapshot feature = issue.GlobalFeature;
         int available = feature.SampleCount;
         int? eligible = feature.EligibleSampleCount;
+
+        // Runtime snapshots provide structured coverage counts. Some callers and
+        // older snapshots provide only the equivalent InvalidReason text. Use
+        // that detail only when the structured eligible count is unavailable.
+        if (!eligible.HasValue || eligible.Value <= 0)
+        {
+          Match coverage = Regex.Match(feature.InvalidReason ?? "",
+            @"Insufficient market coverage:\s*(?<available>\d+)\s*/\s*(?<eligible>\d+)\s+valid\b",
+            RegexOptions.IgnoreCase);
+          if (coverage.Success
+            && Int32.TryParse(coverage.Groups["available"].Value, NumberStyles.None,
+              CultureInfo.InvariantCulture, out int parsedAvailable)
+            && Int32.TryParse(coverage.Groups["eligible"].Value, NumberStyles.None,
+              CultureInfo.InvariantCulture, out int parsedEligible)
+            && parsedEligible > 0 && parsedAvailable <= parsedEligible)
+          {
+            available = parsedAvailable;
+            eligible = parsedEligible;
+          }
+        }
+
         Match required = Regex.Match(feature.InvalidReason ?? "",
           @"(?:at least \d+% \((?<minimum>\d+) markets\)|(?<minimum2>\d+) required)",
           RegexOptions.IgnoreCase);
