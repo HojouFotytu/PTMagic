@@ -5,9 +5,8 @@ using Core.Main.DataObjects.PTMagicData;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Resolves explicitly configured normalized trigger metrics while preserving the
-  /// legacy PriceTrend path when Trigger/OffTrigger.Metric is omitted or the referenced
-  /// MarketTrend has no normalized Metrics configured.
+  /// Resolves normalized metrics for all supported Binance exchanges.
+  /// Omitted Trigger/OffTrigger Metric defaults to normalized PriceTrend.
   /// </summary>
   public static class MarketTrendMetricTriggerResolver
   {
@@ -17,8 +16,8 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     /// <summary>
-    /// Only an explicit metric selects the normalized engine. An omitted Metric,
-    /// or PriceTrend on a legacy-only MarketTrend, preserves the old trigger path.
+    /// All supported Binance Exchange trends use the normalized engine, including
+    /// omitted Metric values that default to PriceTrend.
     /// </summary>
     public static bool UsesNormalizedMetric(MarketTrend marketTrend, string metric, string exchange = "BinanceFutures")
     {
@@ -115,7 +114,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (!UsesNormalizedMetric(marketTrend, metric,
         configuration?.GeneralSettings?.Application?.Exchange))
       {
-        error = "PriceTrend is resolved by PTMagic's legacy trend path.";
+        error = "Metric must reference a supported Binance Exchange MarketTrend.";
         return false;
       }
 

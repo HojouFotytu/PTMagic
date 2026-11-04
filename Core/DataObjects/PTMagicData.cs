@@ -223,8 +223,8 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string MarketTrendName { get; set; } = "";
 
-    // Blank/omitted preserves PTMagic's legacy PriceTrend trigger behavior. An explicit
-    // "PriceTrend" can therefore be distinguished later from the backward-compatible default.
+    // Blank/omitted selects normalized PriceTrend for Binance Exchange trends.
+    // Explicit Metric names select their enabled normalized metric.
     [DefaultValue("")]
     public string Metric { get; set; } = "";
 
@@ -255,7 +255,7 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string MarketTrendName { get; set; } = "";
 
-    // Blank/omitted preserves PTMagic's legacy PriceTrend off-trigger behavior.
+    // Blank/omitted selects normalized PriceTrend for Binance Exchange trends.
     [DefaultValue("")]
     public string Metric { get; set; } = "";
 

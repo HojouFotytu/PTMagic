@@ -717,11 +717,8 @@ namespace Core.Main
       }
 
       // Check if exchange is valid
-      if (!this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase)
-        && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Bittrex", StringComparison.InvariantCultureIgnoreCase)
-        && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceUS", StringComparison.InvariantCultureIgnoreCase)
-        && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase)
-        && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Poloniex", StringComparison.InvariantCultureIgnoreCase))
+      if (!BinanceFuturesAnalyticsRuntime.IsSupportedExchange(
+        this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
       {
         this.Log.DoLogError("Exchange '" + this.PTMagicConfiguration.GeneralSettings.Application.Exchange + "' specified in settings.general.json is invalid! Terminating process...");
         result = false;
@@ -1176,7 +1173,8 @@ namespace Core.Main
         }
         else
         {
-          if (!this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase) && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceUS", StringComparison.InvariantCultureIgnoreCase) && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase) && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Bittrex", StringComparison.InvariantCultureIgnoreCase) && !this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Poloniex", StringComparison.InvariantCultureIgnoreCase))
+          if (!BinanceFuturesAnalyticsRuntime.IsSupportedExchange(
+             this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
           {
             Log.DoLogError("Your setting for Application.Exchange in settings.general.json is invalid (" + this.PTMagicConfiguration.GeneralSettings.Application.Exchange + ")! Terminating process.");
             this.Timer.Stop();
@@ -1283,13 +1281,7 @@ namespace Core.Main
         this.Log.DoLogInfo("No CMC API-Key specified. That's OK, but no CMC Data can be pulled.");
       }
 
-      if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Bittrex", StringComparison.InvariantCultureIgnoreCase))
-      {
-
-        // Get most recent market data from Bittrex
-        this.ExchangeMarketList = Bittrex.GetMarketData(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log);
-      }
-      else if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase))
+      if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase))
       {
         this.ExchangeMarketList = await Binance.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
         if (this.ExchangeMarketList != null)
@@ -1314,13 +1306,6 @@ namespace Core.Main
         // Get most recent market data from BinanceFutures
         this.ExchangeMarketList = await BinanceFutures.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
       }
-      else if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Poloniex", StringComparison.InvariantCultureIgnoreCase))
-      {
-
-        // Get most recent market data from Poloniex
-        this.ExchangeMarketList = Poloniex.GetMarketData(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log);
-      }
-
       // Check if problems occured during the Exchange contact
       if (this.ExchangeMarketList == null)
       {
@@ -1366,34 +1351,21 @@ namespace Core.Main
 
     private void BuildGlobalMarketTrends()
     {
-      this.Log.DoLogInfo("Build global market trends...");
-      LegacyMarketTrendRequirements requirements = LegacyMarketTrendPlanner.Build(this.PTMagicConfiguration);
+      // Exchange historical snapshot PriceTrend calculations have been retired
+      // for all supported exchanges. Keep CMC historical data separate because
+      // it has no equivalent Binance candle source.
       this._recentMarketSnapshots = BaseAnalyzer.GetMarketDataFromFile(
         this.PTMagicConfiguration, this.Log, "Exchange", DateTime.UtcNow, "Recent");
-
-      this.SingleMarketTrendChanges = BaseAnalyzer.BuildMarketTrends(
-        "Exchange", this.LastRuntimeSummary.MainMarket, this.MarketList, "Volume", false,
-        new Dictionary<string, List<MarketTrendChange>>(), this.PTMagicConfiguration,
-        this.Log, requirements.AssetPriceTrends);
+      this.SingleMarketTrendChanges = new Dictionary<string, List<MarketTrendChange>>();
       this.GlobalMarketTrendChanges = BaseAnalyzer.BuildMarketTrends(
         "CoinMarketCap", this.LastRuntimeSummary.MainMarket, new List<string>(), "",
         true, new Dictionary<string, List<MarketTrendChange>>(), this.PTMagicConfiguration, this.Log);
-
-      foreach (MarketTrend trend in this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
-        .Where(mt => mt.Platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase)))
-      {
-        if (requirements.NeedsGlobalPriceTrend(trend)
-          && this.SingleMarketTrendChanges.TryGetValue(trend.Name, out List<MarketTrendChange> changes))
-        {
-          int max = trend.MaxMarkets > 0 ? Math.Min(trend.MaxMarkets, changes.Count) : changes.Count;
-          this.GlobalMarketTrendChanges.Add(trend.Name, changes.Take(max).ToList());
-        }
-      }
-
+      HashSet<string> cmcTrends = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
+        .Where(trend => trend != null && String.Equals(trend.Platform, "CoinMarketCap", StringComparison.OrdinalIgnoreCase))
+        .Select(trend => trend.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
       this.AverageMarketTrendChanges = BaseAnalyzer.BuildGlobalMarketTrends(
-        this.GlobalMarketTrendChanges, this.PTMagicConfiguration, this.Log, requirements.GlobalPriceTrends);
-      this.Log.DoLogInfo("Global market trends built; legacy asset trends=" +
-        requirements.AssetPriceTrends.Count + ", legacy averages=" + requirements.GlobalPriceTrends.Count + ".");
+        this.GlobalMarketTrendChanges, this.PTMagicConfiguration, this.Log, cmcTrends);
+      this.Log.DoLogInfo("Historical Exchange PriceTrend skipped. Normalized engine will calculate all Binance Exchange trends.");
     }
 
     // Bridge the shared normalized PriceTrend to legacy Monitor and summary
