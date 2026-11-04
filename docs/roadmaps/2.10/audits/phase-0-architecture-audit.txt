@@ -1,0 +1,570 @@
+# Phase 0 — Architecture Audit
+
+I incorporated **Parts 1–3 of the roadmap**, with **Part 3: Target Data Layers** as the primary audit framework.
+
+## 1. Current PTMagic data path
+
+For Binance Futures, the current path is effectively:
+
+**Binance**
+→ `exchangeInfo` metadata  
+→ `ticker/24hr` current-market data  
+→ optional `klines` reconstruction  
+→ `MarketData_*.json` snapshots  
+→ `BaseAnalyzer.BuildMarketTrends()`  
+→ `MarketTrendChange`  
+→ global trend average / Single Market Settings  
+→ `LastRuntimeSummary.json`  
+→ Monitor / Market Analyzer
+
+`BinanceFutures.GetMarketDataAsync()` first refreshes Binance Futures market metadata, then delegates the actual market retrieval and historical handling to `BinanceAnalyzerCommon`. 
+
+`BinanceAnalyzerCommon` gets all current markets from `/ticker/24hr`, builds `Market` objects, maintains first-seen metadata, reconstructs historical data when needed, and finally writes the current snapshot. 
+
+That means the current Binance layer is doing considerably more than raw ingestion. It currently combines:
+
+**transport + parsing + some normalization + historical reconstruction + persistence.**
+
+That is acceptable for the legacy system, but it does **not** match the Part 2 target separation for the new analysis architecture.
+
+---
+
+# 2. Audit against the Target Data Layers
+
+| Layer | Intended responsibility | Current PTMagic state | Verdict |
+|---|---|---|---|
+| **A — Raw market data** | Timestamped OHLCV, ticker data, metadata; later derivatives/liquidity observations | Partial | **Insufficient foundation** |
+| **B — Per-asset features** | Returns, volatility, participation, relative strength, futures metrics, liquidity | Primarily configured price return | **Mostly absent** |
+| **C — Market-wide aggregates** | Direction, breadth, dispersion, volatility, participation, leadership, concentration, correlation | Average configured trend change | **Mostly absent** |
+
+The gap is therefore architectural, not merely a matter of adding more formulas.
+
+---
+
+## 3. Layer A — Raw market data
+
+### Current ticker data
+
+The current `/ticker/24hr` path creates a `Market` containing:
+
+| Field | Available |
+|---|---:|
+| Symbol | Yes |
+| Current/last price | Yes |
+| 24h quote volume | Yes |
+| Main-market USD conversion | Yes |
+| OHLC history | No |
+| Observation timestamp in `Market` | No |
+
+The model is currently:
+
+```text
+Market
+    Position
+    Name
+    Symbol
+    Volume24h
+    Price
+    TrendChange24h
+    MainCurrencyPriceUSD
+```
+
+
+
+This is a **market snapshot object**, not a canonical raw-data object.
+
+---
+
+## 4. The important kline finding
+
+PTMagic already downloads Binance 1-minute klines during historical reconstruction.
+
+However, it reduces each Binance candle to:
+
+```text
+MarketTick
+    Time
+    Price
+    Volume24h
+```
+
+
+
+More specifically:
+
+```csharp
+Price = (double)marketTick[4]
+Volume24h = (double)marketTick[7]
+Time = ...
+```
+
+So:
+
+- `[4]` = candle **close**
+- `[7]` = candle **quote-asset volume**
+
+
+
+This exposes an important semantic problem:
+
+### `MarketTick.Volume24h` is not 24-hour volume.
+
+In this context it is **quote volume for one 1-minute Binance candle**.
+
+The same general field name is therefore being used for two different concepts:
+
+| Location | Meaning |
+|---|---|
+| Current `Market.Volume24h` | Binance 24h ticker quote volume |
+| Historical `MarketTick.Volume24h` | One candle's quote volume |
+
+The new architecture must not perpetuate that ambiguity.
+
+---
+
+# 5. OHLCV is available but discarded
+
+The existing historical process downloads Binance klines but retains only:
+
+**close + quote volume + timestamp**
+
+It discards:
+
+**open + high + low + base volume + other available candle fields.**
+
+More importantly, even the retained quote volume is discarded again when PTMagic converts `MarketTick` into its historical `MarketData_*.json` files.
+
+`CreateHistoricalMarket()` stores only:
+
+```text
+Name
+Symbol
+Price
+MainCurrencyPriceUSD
+```
+
+
+
+So the final persisted history is effectively:
+
+> **timestamped cross-sectional close-price snapshots**
+
+It is **not** an OHLCV historical store.
+
+This is the most consequential Phase 0 finding.
+
+---
+
+# 6. Existing historical storage
+
+PTMagic currently stores market-wide snapshots such as:
+
+```text
+MarketData_2026-11-02_10.30.json
+MarketData_2026-11-02_10.31.json
+MarketData_2026-11-02_10.32.json
+...
+```
+
+When PTMagic detects that the latest stored market data is more than 20 minutes old, it retrieves enough 1-minute Binance data to reconstruct the missing period, up to `StoreDataMaxHours`. 
+
+It then reconstructs one **entire-market snapshot per minute**.
+
+That system works well for the existing question:
+
+> What was each market's price approximately X minutes ago?
+
+It is poorly shaped for questions such as:
+
+> What was BTC's 1h realized volatility?
+
+> How much quote volume traded over the previous 15 minutes?
+
+> What was ETH's high/low range?
+
+> Is current volume accelerating relative to its previous rolling window?
+
+Those require a **time series per asset**, not merely market-wide point-in-time dictionaries.
+
+---
+
+# 7. Existing cache behavior
+
+There is already useful infrastructure worth preserving.
+
+`BaseAnalyzer` caches:
+
+- the `MarketData` file index,
+- deserialized market snapshots,
+- and invalidates those caches when the exchange data directory changes.
+
+ 
+
+This is a good optimization for the **legacy snapshot architecture**.
+
+It is not, however, a rolling candle cache.
+
+There is currently no equivalent of:
+
+```text
+BTCUSDT
+    10:00 OHLCV
+    10:01 OHLCV
+    10:02 OHLCV
+    ...
+```
+
+available as a normalized PTMagic data service.
+
+That is the missing Layer-A foundation.
+
+---
+
+# 8. Networking is already suitable for expansion
+
+The recent networking work provides a good foundation for the new ingestion layer.
+
+`BaseAnalyzer` now has:
+
+- shared `HttpClient`
+- connection pooling
+- async requests
+- cancellation support
+- retry handling
+- `Retry-After` handling
+- transient HTTP retry handling
+- Binance rate-limit integration
+
+ 
+
+The Binance limiter also tracks `X-MBX-USED-WEIGHT-1M`, uses an 80% soft ceiling, distinguishes the Futures limit, and handles Binance 429/418 cooldown behavior. 
+
+### Phase 0 conclusion
+
+**The HTTP infrastructure does not need another redesign before Phase 1.**
+
+The missing architecture is above it: normalized data objects, storage, feature calculation and aggregation.
+
+---
+
+# 9. Analyzer universe audit
+
+The current Binance Futures universe implementation is substantially ahead of the old PTMagic architecture.
+
+`exchangeInfo` is used to retain:
+
+```text
+Symbol
+ContractType
+UnderlyingType
+UnderlyingSubTypes
+```
+
+and metadata is cached for 15 minutes and persisted locally. 
+
+The effective analyzer universe can then be restricted using:
+
+- `IncludedUnderlyingTypes`, or
+- ProfitTrailer `allowed_underlying_type` when configured.
+
+Unknown/unclassified Binance Futures markets fail closed. 
+
+This is appropriate for the future architecture.
+
+### `UseProfitTrailerEnabledPairs`
+
+My earlier concern about this switch was resolved.
+
+`BuildMarketList()` itself still builds the traditional PT-oriented `MarketList`. 
+
+However, the analyzer logic separately adds eligible Binance Futures markets when:
+
+```text
+UseProfitTrailerEnabledPairs == false
+```
+
+through:
+
+```text
+isTradingMarket
+OR
+isAnalyzerMarket
+```
+
+where `isAnalyzerMarket` requires the Binance Futures analyzer universe. 
+
+So the setting **is wired correctly**, just at the analysis stage rather than inside `BuildMarketList()`.
+
+That distinction should remain intentional.
+
+---
+
+# 10. Recommended future universe architecture
+
+The current universe logic should evolve into the roadmap's explicit:
+
+### `AnalyzerUniverseSnapshot`
+
+Rather than feature calculators independently asking:
+
+```text
+IsMarketIncluded(symbol)
+```
+
+throughout a raid, Phase 1 should create one immutable universe at analysis start:
+
+```text
+AnalyzerUniverseSnapshot
+    Timestamp
+    MainMarket
+    Markets
+        BTCUSDT
+        ETHUSDT
+        ...
+    UnderlyingType metadata
+    Eligibility metadata
+```
+
+Every Phase 1 calculation should consume the **same snapshot**.
+
+This guarantees that breadth, dispersion, volatility, participation and correlation are all calculated over the same population.
+
+---
+
+# 11. Layer B — Per-asset derived features
+
+The current real Layer-B feature is essentially:
+
+```text
+Return(symbol, configured TrendMinutes)
+```
+
+PTMagic obtains:
+
+```text
+recentPrice
+historicalPrice
+```
+
+and calculates:
+
+```text
+(recent - historical) / historical * 100
+```
+
+producing `MarketTrendChange`. 
+
+It also carries current:
+
+```text
+LastPrice
+Volume24h
+TrendDateTime
+```
+
+But these are primarily observations or metadata rather than a general feature layer.
+
+There is currently no reusable per-asset calculation layer for:
+
+| Planned feature family | Current implementation |
+|---|---|
+| Returns across standardized horizons | Partial |
+| Realized volatility | No |
+| Price range | No |
+| Participation / rolling volume | No |
+| Volume acceleration | No |
+| Relative volume | No |
+| Relative strength | No |
+| Correlation features | No |
+| Open-interest features | No |
+| Funding features | No |
+| Long/short positioning | No |
+| Taker-flow features | No |
+| Liquidity features | No |
+
+That matches the roadmap assumption that Phase 1 creates a new analytics system rather than merely exposing calculations that already exist.
+
+---
+
+# 12. Layer C — Market-wide aggregates
+
+PTMagic currently has one significant Layer-C calculation:
+
+### average market trend
+
+`BuildGlobalMarketTrends()` takes the selected `MarketTrendChange` values and calculates their arithmetic average after applying configured `TrendThreshold` exclusions. 
+
+This is effectively:
+
+```text
+Direction = mean(asset returns)
+```
+
+It is the conceptual ancestor of the new market-wide layer.
+
+But currently there is no general market aggregate structure containing:
+
+| Target aggregate | Present |
+|---|---:|
+| Direction | **Yes, basic version** |
+| Breadth | No |
+| Dispersion | No |
+| Market volatility | No |
+| Participation | No |
+| Leadership | No |
+| Concentration | No |
+| Correlation | No |
+| Futures positioning | No |
+| Futures flow | No |
+| Liquidity / stress | No |
+
+So Layer C currently exists only in a narrow, trend-specific form.
+
+---
+
+# 13. Monitor / UI data-source audit
+
+The Monitor is already architecturally separated from Binance.
+
+It does **not** retrieve Binance market data itself.
+
+`BasePageModel` loads and timestamp-caches:
+
+```text
+LastRuntimeSummary.json
+```
+
+
+
+The Market Analyzer page then reads:
+
+```text
+Summary.MarketSummary
+Summary.MarketTrendChanges
+```
+
+and applies the Binance Futures universe filter before rendering. 
+
+This is desirable.
+
+### Therefore
+
+Future Monitor pages should **not become feature calculators**.
+
+The Analyzer should produce the new analytics snapshot, and the Monitor should display it.
+
+That preserves the Part 2 separation:
+
+**ingestion → normalized data → calculations → snapshots → UI**
+
+rather than:
+
+**UI → raw data → calculations.**
+
+---
+
+# 14. Phase 0 architectural conclusion
+
+The current architecture should **not be replaced wholesale**.
+
+The right approach is to preserve the existing PTMagic trend/settings system and introduce the new analysis architecture alongside it.
+
+The target should therefore become:
+
+```text
+                         EXISTING PIPELINE
+Binance
+   │
+   ├── ticker / klines
+   │
+   └──> MarketData_*.json
+          │
+          └──> MarketTrendChange
+                 │
+                 ├──> GlobalSettings
+                 └──> SingleMarketSettings
+
+
+                         NEW ANALYTICS PIPELINE
+Binance raw/semi-raw data
+   │
+   ▼
+Normalized Market Data
+   │
+   ├── MarketCandle history
+   ├── current ticker observations
+   ├── market metadata
+   └── later derivatives/liquidity observations
+   │
+   ▼
+MarketDataStore / MarketDataService
+   │
+   ▼
+Per-Asset Feature Calculators
+   │
+   ▼
+AssetFeatureSnapshot
+   │
+   ▼
+Cross-Sectional Calculators
+   │
+   ▼
+MarketAnalysisSnapshot
+   │
+   ├──> Market Analyzer / inspection
+   │
+   └──> later GlobalSettings integration
+```
+
+The legacy mechanism remains functional while the new Layer A/B/C system develops independently.
+
+This is consistent with Parts 1–3: PTMagic's existing settings-control mechanism remains intact; the expansion changes the **quality and breadth of the measurements feeding it**, not the fundamental role of PTMagic. 
+
+---
+
+# 15. What Phase 1A must establish
+
+Phase 0 indicates that **Phase 1A should be treated as an actual data-foundation phase**, not merely the first set of indicators.
+
+| Component | Requirement |
+|---|---|
+| `MarketCandle` | Full timestamped OHLCV model |
+| Quote volume | Explicit `QuoteVolume`; never overloaded as `Volume24h` |
+| Base volume | Retained separately |
+| Candle timestamps | Explicit and normalized |
+| `MarketDataStore` | Rolling per-symbol time-series storage |
+| `MarketDataService` | Centralized access to normalized observations |
+| Incremental refresh | Fetch only missing/new candles after initialization |
+| `AnalyzerUniverseSnapshot` | Freeze analysis population for each raid |
+| Validity metadata | Missing/stale/incomplete data explicitly represented |
+| `AssetFeatureSnapshot` | Standard output boundary for Layer B |
+| `MarketAnalysisSnapshot` | Standard output boundary for Layer C |
+| Legacy isolation | Existing `MarketData_*.json` and trend calculations remain operational |
+
+### Important design decision
+
+I do **not** recommend expanding the existing `Market` class or `MarketData_*.json` files into the canonical Layer-A storage format.
+
+Those objects are optimized around:
+
+> market-wide snapshots at a moment in time.
+
+The new system requires:
+
+> time-series observations for an individual asset.
+
+Trying to make one data model serve both purposes would recreate the coupling the roadmap is specifically intended to eliminate.
+
+---
+
+# Phase 0 verdict
+
+**Phase 0 is now sufficiently complete to establish the architecture before implementation.**
+
+The main conclusion is:
+
+> **The existing networking, Binance metadata/universe logic, PT integration, runtime summary and Monitor architecture can largely be reused. The existing historical market-data representation cannot serve as the canonical foundation for the new analytics system.**
+
+The critical Phase 1A work is therefore the introduction of a **parallel normalized Layer-A market-data foundation containing complete OHLCV**, followed by explicit Layer-B feature snapshots and Layer-C market-analysis snapshots.
+
+Only after that foundation exists should Phase 1B begin implementing **Direction, Breadth and Dispersion**.
