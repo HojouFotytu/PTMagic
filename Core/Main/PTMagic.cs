@@ -1350,6 +1350,8 @@ namespace Core.Main
     private void CheckGlobalSettingsTriggers(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
     {
         this.Log.DoLogInfo("Checking global settings triggers...");
+        bool unavailableNormalizedTriggerFound = false;
+        bool foundMatchingSetting = false;
 
         foreach (GlobalSetting globalSetting in this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings)
         {
@@ -1360,6 +1362,7 @@ namespace Core.Main
             {
                 this.Log.DoLogInfo("Checking triggers for '" + globalSetting.SettingName + "'...");
                 Dictionary<string, bool> triggerResults = new Dictionary<string, bool>();
+                bool settingHasUnavailableNormalizedTrigger = false;
                 foreach (Trigger trigger in globalSetting.Triggers)
                 {
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name == trigger.MarketTrendName);
@@ -1407,6 +1410,10 @@ namespace Core.Main
                             triggerResults[trigger.Tag] = false;
                             if (useNormalizedMetric)
                             {
+                              // Unavailable is NOT the same as false. In custom
+                              // TriggerConnection expressions, NOT(false) could
+                              // otherwise activate a setting from missing data.
+                              settingHasUnavailableNormalizedTrigger = true;
                               this.Log.DoLogWarn("Trigger '" + trigger.MarketTrendName + "' metric '" + trigger.Metric + "' unavailable: " + metricError);
                             }
                             else
@@ -1420,6 +1427,16 @@ namespace Core.Main
                         triggerResults[trigger.Tag] = false;
                         this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' not found! Trigger ignored!");
                     }
+                }
+
+                // Do not evaluate a setting whose normalized trigger result is
+                // unknown. Independent, fully evaluable settings remain eligible.
+                if (settingHasUnavailableNormalizedTrigger)
+                {
+                    unavailableNormalizedTriggerFound = true;
+                    this.Log.DoLogWarn("GlobalSetting '" + globalSetting.SettingName +
+                      "' skipped because a normalized metric is unavailable.");
+                    continue;
                 }
 
                 // Check if the TriggerConnection field exists
@@ -1444,6 +1461,7 @@ namespace Core.Main
                         if (settingTriggered)
                         {
                             triggeredSetting = globalSetting;
+                            foundMatchingSetting = true;
                             break;
                         }
                     }
@@ -1472,6 +1490,7 @@ namespace Core.Main
                             if (settingTriggered)
                             {
                                 triggeredSetting = globalSetting;
+                                foundMatchingSetting = true;
                                 break;
                             }
                         }
@@ -1487,6 +1506,27 @@ namespace Core.Main
                     this.Log.DoLogError($"ERROR: Trigger Connection for global setting {globalSetting.SettingName} is missing. Program halted.");
                     Environment.Exit(1); // Stop the program
                 }
+            }
+        }
+
+        // A missing normalized measurement is not evidence that the active
+        // regime ended. Hold the existing setting when no fully evaluated
+        // setting matched, instead of falling back to default by accident.
+        if (!foundMatchingSetting && unavailableNormalizedTriggerFound)
+        {
+            GlobalSetting active = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
+              .Find(setting => setting.SettingName.Equals(this.ActiveSettingName, StringComparison.OrdinalIgnoreCase));
+            if (active != null)
+            {
+                triggeredSetting = active;
+                matchedTriggers = new List<string>();
+                this.Log.DoLogWarn("GlobalSetting selection is indeterminate due to unavailable normalized metrics. " +
+                  "Retaining active setting '" + active.SettingName + "'; no automatic fallback to default.");
+            }
+            else
+            {
+                this.Log.DoLogWarn("GlobalSetting selection is indeterminate; the previously active setting no longer " +
+                  "exists in configuration, so the configured default remains the fallback.");
             }
         }
     }
@@ -1878,6 +1918,7 @@ namespace Core.Main
               this.Log.DoLogDebug("'" + marketPair + "' - Checking triggers for '" + marketSetting.SettingName + "'...");
 
               List<bool> triggerResults = new List<bool>();
+              bool unavailableNormalizedSmsTrigger = false;
               Dictionary<int, double> relevantTriggers = new Dictionary<int, double>();
               int triggerIndex = 0;
 
@@ -1983,6 +2024,10 @@ namespace Core.Main
                     string metricError;
                     bool validMetric = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveSingle(
                       this.PTMagicConfiguration, metricTrend, trigger.Metric, marketPair, out metricValue, out metricError);
+                    if (!validMetric)
+                    {
+                      unavailableNormalizedSmsTrigger = true;
+                    }
                     bool metricTriggered = validMetric && metricValue >= trigger.MinChange && metricValue < trigger.MaxChange;
                     triggerResults.Add(metricTriggered);
                     triggerTagsResults[trigger.Tag] = metricTriggered;
@@ -2146,7 +2191,16 @@ namespace Core.Main
                   }
               }
               #endregion
-              
+
+              // An unavailable normalized SMS metric cannot be treated as a
+              // definite false in a negated/custom TriggerConnection either.
+              // Preserve the existing long-term OffTrigger path below.
+              if (unavailableNormalizedSmsTrigger)
+              {
+                settingTriggered = false;
+                matchedSingleMarketTriggers.Clear();
+              }
+
               bool isFreshTrigger = true;
 
               // Setting not triggered -> Check if it is already active as a long term SMS using Off Triggers
