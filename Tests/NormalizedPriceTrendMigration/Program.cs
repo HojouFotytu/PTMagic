@@ -27,6 +27,12 @@ internal static class Program
       TestBothScope();
       TestAllBinanceExchanges();
       TestImplicitMetricValidation();
+      TestThresholdOnlyAffectsPriceTrend();
+      TestTrendThresholdDoesNotFilterPopulation();
+      TestSmsRelativeUncappedMean();
+      TestFiatPriceTrend();
+      TestFiatMissingConversionFailsClosed();
+      TestTrendMinutesMustBeDivisibleByFive();
       Console.WriteLine("Normalized PriceTrend migration tests passed: " + passed + ".");
       return 0;
     }
@@ -203,6 +209,127 @@ internal static class Program
     Assert(!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(
       new MarketTrend { Name = "OldSource", Platform = "Other", Metrics = "" }, "", true, out _),
       "A non-Exchange MarketTrend must not pass implicit PriceTrend validation.");
+    passed++;
+  }
+
+
+  private static void TestThresholdOnlyAffectsPriceTrend()
+  {
+    MarketDataStore store = Store();
+    var threshold = Trend("PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion");
+    threshold.TrendThreshold = 11;
+    MarketTrendAnalysisSnapshot analysis = Calc(threshold, store);
+    Near(analysis.MarketMetrics["PriceTrend"], 10, "PriceTrend threshold mean");
+    Near(analysis.MarketMetrics["MedianPriceTrend"], 15, "threshold cannot exclude median asset");
+    Near(analysis.MarketMetrics["Breadth"], 100, "threshold cannot exclude breadth asset");
+    Near(analysis.MarketMetrics["MeanMedianSpread"], 0, "spread uses full population");
+    Assert(analysis.MarketMetrics["Dispersion"].Value.HasValue &&
+      Math.Abs(analysis.MarketMetrics["Dispersion"].Value.Value - 5) < 1e-7,
+      "Dispersion must retain returns excluded from PriceTrend average.");
+    Assert(analysis.GlobalSymbols.Count == 2 && analysis.ValidGlobalReturnCount == 2,
+      "Threshold must not remove symbols from the shared eligible population.");
+    passed++;
+  }
+
+
+  private static void TestTrendThresholdDoesNotFilterPopulation()
+  {
+    MarketTrend trend = Trend("PriceTrend,Breadth");
+    trend.TrendThreshold = 11;
+    Dictionary<string, Core.Main.DataObjects.PTMagicData.Market> markets =
+      new Dictionary<string, Core.Main.DataObjects.PTMagicData.Market>
+      {
+        ["BTCUSDT"] = new Core.Main.DataObjects.PTMagicData.Market
+          { Name = "BTCUSDT", Volume24h = 200 },
+        ["ETHUSDT"] = new Core.Main.DataObjects.PTMagicData.Market
+          { Name = "ETHUSDT", Volume24h = 100 }
+      };
+    AnalyzerUniverseSnapshot universe = new AnalyzerUniverseSnapshot(AsOf, "USDT",
+      new[] { new AnalyzerUniverseMarket { Symbol = "BTCUSDT" },
+              new AnalyzerUniverseMarket { Symbol = "ETHUSDT" } });
+    MarketTrendSelectedPopulation selected = MarketTrendPopulationSelector.Select(
+      trend, markets, universe, "USDT", Store(), Interval, AsOf);
+    Assert(selected.GlobalSymbols.Count == 2 && selected.AssetSymbols.Count == 2,
+      "TrendThreshold must not filter shared global/asset populations.");
+    MarketTrendAnalysisSnapshot calculated = Calc(trend, Store(),
+      selected.GlobalSymbols.ToArray(), selected.AssetSymbols.ToArray());
+    Near(calculated.MarketMetrics["PriceTrend"], 10, "thresholded mean");
+    Near(calculated.MarketMetrics["Breadth"], 100, "complete-market breadth");
+    passed++;
+  }
+
+  private static void TestSmsRelativeUncappedMean()
+  {
+    MarketTrend trend = Trend("PriceTrend"); trend.MaxMarkets = 1;
+    MarketTrendAnalysisSnapshot result = Calc(trend, Store(),
+      new[] { "BTCUSDT" }, new[] { "BTCUSDT", "ETHUSDT" });
+    Near(result.MarketMetrics["PriceTrend"], 10, "GlobalSetting capped mean");
+    Near(result.SmsRelativePriceTrend, 15, "SMS uncapped mean");
+    Assert(MarketTrendMetricTriggerResolver.TryResolveSmsRelative(result, 20,
+      out double relative, out string error) && Math.Abs(relative - 5) < 1e-7,
+      "SMS Relative must subtract uncapped mean rather than global cap: " + error);
+
+    trend.TrendThreshold = 11;
+    MarketTrendAnalysisSnapshot filtered = Calc(trend, Store(),
+      new[] { "BTCUSDT" }, new[] { "BTCUSDT", "ETHUSDT" });
+    Near(filtered.SmsRelativePriceTrend, 10, "thresholded SMS reference");
+    Assert(MarketTrendMetricTriggerResolver.TryResolveSmsRelative(filtered, 20,
+      out double adjusted, out error) && Math.Abs(adjusted - 10) < 1e-7,
+      "SMS Relative must use thresholded uncapped mean for OffTriggers as well: " + error);
+    passed++;
+  }
+
+  private static void TestFiatPriceTrend()
+  {
+    MarketDataStore store = new MarketDataStore(100);
+    for (int i = 0; i <= 12; i++)
+    {
+      Add(store, "ETHBTC", i, 0.05, true);
+      Add(store, "BTCUSDT", i, 100 + 10.0 * i / 12, true);
+    }
+    MarketTrend trend = Trend("PriceTrend"); trend.TrendCurrency = "Fiat";
+    MarketTrendAnalysisSnapshot fiat = Calc(trend, store,
+      new[] { "ETHBTC" }, new[] { "ETHBTC" }, benchmark: "BTCBTC");
+    Near(fiat.MarketMetrics["PriceTrend"], 10, "Fiat global via BTCUSDT");
+    Near(fiat.AssetMetrics["ETHBTC"]["PriceTrend"], 10, "Fiat asset via BTCUSDT");
+
+    trend.TrendCurrency = "Market";
+    MarketTrendAnalysisSnapshot market = Calc(trend, store,
+      new[] { "ETHBTC" }, new[] { "ETHBTC" }, benchmark: "BTCBTC");
+    Near(market.MarketMetrics["PriceTrend"], 0, "market quote return unchanged");
+    passed++;
+  }
+
+  private static void TestFiatMissingConversionFailsClosed()
+  {
+    MarketDataStore store = new MarketDataStore(100);
+    for (int i = 0; i <= 12; i++) Add(store, "ETHBTC", i, 0.05, true);
+    MarketTrend trend = Trend("PriceTrend"); trend.TrendCurrency = "Fiat";
+    MarketTrendAnalysisSnapshot result = Calc(trend, store,
+      new[] { "ETHBTC" }, new[] { "ETHBTC" }, benchmark: "BTCBTC");
+    Assert(!result.AssetMetrics["ETHBTC"]["PriceTrend"].IsValid &&
+      result.AssetMetrics["ETHBTC"]["PriceTrend"].InvalidReason.Contains("conversion", StringComparison.OrdinalIgnoreCase),
+      "Missing conversion candles must fail closed, never fall back to raw market return.");
+    Assert(!result.MarketMetrics["PriceTrend"].IsValid,
+      "Global fiat PriceTrend must also be unavailable without conversion.");
+    passed++;
+  }
+
+  private static void TestTrendMinutesMustBeDivisibleByFive()
+  {
+    foreach (int invalid in new[] { 0, 1, 3, 61 })
+    {
+      bool rejected = false;
+      try { Calc(new MarketTrend { Name = "BadPeriod", Platform = "Exchange",
+        TrendMinutes = invalid, Metrics = "PriceTrend" }, Store()); }
+      catch (InvalidOperationException error)
+      {
+        rejected = error.Message.Contains("divisible by") && error.Message.Contains("BadPeriod");
+      }
+      Assert(rejected, "TrendMinutes=" + invalid + " must be rejected explicitly.");
+    }
+    MarketTrendTimeframe.Validate(new MarketTrend { Name = "FiveMinutes",
+      TrendMinutes = 5, Platform = "Exchange" }, Interval);
     passed++;
   }
 

@@ -168,19 +168,33 @@ namespace Core.MarketAnalyzer.MarketData
           _lastRefreshStatuses = Array.Empty<MarketDataRefreshStatus>();
         }
 
-        log.DoLogWarn("BinanceFutures analytics - StoreDataMaxHours must be greater than zero to calculate normalized MarketTrend metrics. Legacy PriceTrend analysis will continue.");
+        log.DoLogWarn("BinanceFutures analytics - StoreDataMaxHours must be greater than zero; normalized metrics including PriceTrend are unavailable.");
         return;
       }
 
       int targetHistoryCandles = GetTargetHistoryCandles(storeDataMaxHours);
       DataServiceInstance.Store.SetMaxCandlesPerSeries(targetHistoryCandles);
 
+      // For non-USD quote currencies, a fiat PriceTrend needs aligned
+      // quote/USDT closes. Fetch the reference on the same exchange without
+      // adding it to the analyzer's eligible asset/global populations.
+      bool hasFiatTrends = (systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? new List<MarketTrend>()).Any(trend =>
+          trend != null && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
+          && MarketTrendFiatConversion.IsFiat(trend.TrendCurrency));
+      string fiatSymbol = hasFiatTrends
+        ? MarketTrendFiatConversion.ConversionSymbol(mainMarket) : null;
+      string[] refreshSymbols = !String.IsNullOrWhiteSpace(fiatSymbol)
+        ? exchangeSymbols.Concat(new[] { fiatSymbol })
+          .Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+        : exchangeSymbols;
+
       // Pin the last fully closed candle as of the beginning of this refresh.
       // A long cold fetch may span another close; the evaluation must not
       // demand a candle unavailable to symbols fetched before that boundary.
       DateTimeOffset refreshAsOfUtc = DateTimeOffset.UtcNow;
       IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAsync(
-        exchangeSymbols,
+        refreshSymbols,
         BaseInterval,
         targetHistoryCandles,
         (symbol, count, logger, ct) => GetFiveMinuteMarketCandlesAsync(exchangeName, symbol, count, logger, ct),
@@ -205,13 +219,14 @@ namespace Core.MarketAnalyzer.MarketData
       {
         log.DoLogInfo(
           "BinanceFutures analytics - normalized 5m data current; no kline requests required for " + skipped +
-          " markets. StoreDataMaxHours=" + storeDataMaxHours + ", per-series capacity=" + targetHistoryCandles +
+          " markets" + (refreshSymbols.Length > exchangeSymbols.Length ? " (including fiat conversion)" : "") +
+          ". StoreDataMaxHours=" + storeDataMaxHours + ", per-series capacity=" + targetHistoryCandles +
           ", store series=" + DataServiceInstance.Store.SeriesCount + ".");
       }
       else
       {
         log.DoLogInfo(
-          "BinanceFutures analytics - normalized 5m data refreshed for " + refreshed + "/" + exchangeSymbols.Length +
+          "BinanceFutures analytics - normalized 5m data refreshed for " + refreshed + "/" + refreshSymbols.Length +
           " markets (" + receivedCandles + " candles received, " + skipped + " current/skipped, " + failed +
           " failed). StoreDataMaxHours=" + storeDataMaxHours + ", per-series capacity=" + targetHistoryCandles +
           ", store series=" + DataServiceInstance.Store.SeriesCount + ".");

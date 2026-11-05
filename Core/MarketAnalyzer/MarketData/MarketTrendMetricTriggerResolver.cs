@@ -69,11 +69,18 @@ namespace Core.MarketAnalyzer.MarketData
       }
       if (String.Equals(relation, Constants.MarketTrendRelationRelative, StringComparison.OrdinalIgnoreCase))
       {
-        if (!TryResolveGlobal(configuration, trend, metric, out double global, out error))
+        if (!BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses.TryGetValue(
+          trend.Name, out MarketTrendAnalysisSnapshot analysis) ||
+          !TryResolveSmsRelative(analysis, value, out double adjusted, out error))
         {
+          if (String.IsNullOrWhiteSpace(error))
+          {
+            error = "No normalized SMS-relative PriceTrend reference is available for MarketTrend '" +
+              trend.Name + "'.";
+          }
           return false;
         }
-        value -= global;
+        value = adjusted;
       }
       else if (String.Equals(relation, Constants.MarketTrendRelationRelativeTrigger, StringComparison.OrdinalIgnoreCase))
       {
@@ -91,6 +98,38 @@ namespace Core.MarketAnalyzer.MarketData
       {
         error = "PriceTrend relation '" + relation + "' produced a nonfinite result for market '" +
           marketSymbol + "'.";
+        return false;
+      }
+      return true;
+    }
+
+    /// <summary>
+    /// The legacy SMS-relative reference is the mean of ALL eligible asset
+    /// PriceTrend values, not the MaxMarkets-capped GlobalSetting average.
+    /// The feature already applies only PriceTrend's TrendThreshold and the
+    /// normalized minimum-coverage policy.
+    /// </summary>
+    public static bool TryResolveSmsRelative(
+      MarketTrendAnalysisSnapshot analysis, double assetPriceTrend,
+      out double relativePriceTrend, out string error)
+    {
+      relativePriceTrend = 0;
+      error = "";
+      FeatureValueSnapshot reference = analysis?.SmsRelativePriceTrend;
+      if (reference == null || !reference.IsValid || reference.IsStale ||
+        !reference.Value.HasValue || !double.IsFinite(reference.Value.Value))
+      {
+        error = "The uncapped SMS Relative PriceTrend benchmark is unavailable for MarketTrend '" +
+          (analysis?.MarketTrendName ?? "(unknown)") + "': " +
+          (String.IsNullOrWhiteSpace(reference?.InvalidReason)
+            ? "missing or stale asset returns." : reference.InvalidReason);
+        return false;
+      }
+
+      relativePriceTrend = assetPriceTrend - reference.Value.Value;
+      if (!double.IsFinite(relativePriceTrend))
+      {
+        error = "SMS Relative PriceTrend produced a nonfinite result.";
         return false;
       }
       return true;

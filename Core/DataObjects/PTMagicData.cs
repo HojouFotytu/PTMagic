@@ -164,6 +164,8 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue("")]
     public string AllowedMarkets { get; set; } = "";
 
+    // Legacy PriceTrend arithmetic-mean outlier gate (global and SMS-relative).
+    // Does not exclude assets from any other normalized metric's population.
     [DefaultValue(0)]
     public int TrendThreshold { get; set; } = 0;
 

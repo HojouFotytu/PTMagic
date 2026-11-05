@@ -1259,6 +1259,20 @@ namespace Core.Main
 
     private async Task BuildMarketDataAsync(CancellationToken cancellationToken = default)
     {
+      // Reject unrepresentable normalized timeframes before any exchange
+      // contact or potentially expensive historical reconstruction.
+      if (BinanceFuturesAnalyticsRuntime.IsSupportedExchange(
+        this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
+      {
+        foreach (MarketTrend trend in this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends
+          ?? new List<MarketTrend>())
+        {
+          if (trend != null && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase))
+          {
+            MarketTrendTimeframe.Validate(trend, TimeSpan.FromMinutes(5));
+          }
+        }
+      }
 
       if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("Binance", StringComparison.InvariantCultureIgnoreCase))
       {

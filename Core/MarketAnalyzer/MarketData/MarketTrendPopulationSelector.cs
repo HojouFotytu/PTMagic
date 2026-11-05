@@ -58,22 +58,9 @@ namespace Core.MarketAnalyzer.MarketData
         ? selected.Take(trend.MaxMarkets).ToArray()
         : selected;
 
-      // When TrendThreshold is explicitly configured, a return is needed
-      // solely for outlier filtering. Calculate it with the normalized
-      // engine, not the legacy snapshots. Invalid returns stay in the
-      // eligible population so 90% coverage can fail closed.
-      if (trend.TrendThreshold != 0 && normalizedStore != null && baseInterval > TimeSpan.Zero)
-      {
-        double threshold = Math.Abs((double)trend.TrendThreshold);
-        global = global.Where(symbol =>
-        {
-          FeatureValueSnapshot value = MarketTrendAnalyticsEngine.CalculateReturn(
-            normalizedStore.GetSnapshot(symbol, baseInterval, asOfUtc), trend.TrendMinutes, asOfUtc);
-          return value == null || !value.IsValid || value.IsStale || !value.Value.HasValue
-            || !double.IsFinite(value.Value.Value)
-            || Math.Abs(value.Value.Value) <= threshold;
-        }).ToArray();
-      }
+      // TrendThreshold is an arithmetic PriceTrend averaging rule only.
+      // It must not alter the selected population for median, breadth,
+      // dispersion, relative strength, concentration or volume metrics.
 
       return new MarketTrendSelectedPopulation
       {

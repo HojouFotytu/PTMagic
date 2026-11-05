@@ -37,6 +37,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         throw new ArgumentOutOfRangeException(nameof(interval));
       }
+      MarketTrendTimeframe.Validate(marketTrend, interval);
 
       string[] globalUniverse = NormalizeSymbols(globalSymbols);
       string[] assetUniverse = NormalizeSymbols(assetSymbols);
@@ -67,11 +68,28 @@ namespace Core.MarketAnalyzer.MarketData
         symbolsToCalculate.UnionWith(assetUniverse);
       }
 
+      // Fiat returns are calculated from the asset/quote and quote/USDT
+      // prices at the same closed endpoints. The conversion pair is a data
+      // dependency, not an additional market in the global/asset population.
+      bool fiat = MarketTrendFiatConversion.IsFiat(marketTrend.TrendCurrency);
+      string quote = benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase)
+        ? benchmarkSymbol.Substring(3) : "USDT";
+      string fiatConversionSymbol = fiat ? MarketTrendFiatConversion.ConversionSymbol(quote) : null;
+      MarketDataSeriesSnapshot fiatConversion = fiatConversionSymbol == null
+        ? null : store.GetSnapshot(fiatConversionSymbol, interval, calculatedAtUtc);
+
+      FeatureValueSnapshot GetReturn(string symbol)
+      {
+        MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, calculatedAtUtc);
+        return fiat
+          ? MarketTrendFiatConversion.CalculateReturn(series, fiatConversion, quote, marketTrend.TrendMinutes, calculatedAtUtc)
+          : CalculateReturn(series, marketTrend.TrendMinutes, calculatedAtUtc);
+      }
+
       Dictionary<string, FeatureValueSnapshot> returns = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
       foreach (string symbol in symbolsToCalculate)
       {
-        MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, calculatedAtUtc);
-        returns[symbol] = CalculateReturn(series, marketTrend.TrendMinutes, calculatedAtUtc);
+        returns[symbol] = GetReturn(symbol);
       }
 
       List<FeatureValueSnapshot> globalReturns = needsGlobalReturns
@@ -82,8 +100,16 @@ namespace Core.MarketAnalyzer.MarketData
           .ToList()
         : new List<FeatureValueSnapshot>();
 
-      FeatureValueSnapshot meanPriceTrend = needsMeanPriceTrend
+      // The legacy outlier gate applies ONLY to the arithmetic PriceTrend
+      // average, not to the shared population or other global metrics.
+      // Preserve the full mean for dispersion and mean/median spread.
+      FeatureValueSnapshot fullMean = needsMeanPriceTrend
         ? MarketMetricCoverage.Apply(CalculateMean(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes),
+            globalReturns.Count, globalUniverse.Length, calculatedAtUtc)
+        : null;
+      List<FeatureValueSnapshot> priceTrendReturns = FilterPriceTrendOutliers(globalReturns, marketTrend.TrendThreshold);
+      FeatureValueSnapshot meanPriceTrend = needsMeanPriceTrend
+        ? MarketMetricCoverage.Apply(CalculateMean(priceTrendReturns, calculatedAtUtc, marketTrend.TrendMinutes),
             globalReturns.Count, globalUniverse.Length, calculatedAtUtc)
         : null;
       FeatureValueSnapshot medianPriceTrend = needsMedianPriceTrend
@@ -103,7 +129,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase))
       {
         marketMetrics[MarketTrendMetrics.MeanMedianSpread] = MarketMetricCoverage.Apply(CalculateMeanMedianSpread(
-          meanPriceTrend,
+          fullMean,
           medianPriceTrend,
           globalReturns.Count,
           calculatedAtUtc,
@@ -118,7 +144,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (needsDispersion)
       {
         marketMetrics[MarketTrendMetrics.Dispersion] = MarketMetricCoverage.Apply(
-          CalculateDispersion(globalReturns, meanPriceTrend, calculatedAtUtc, marketTrend.TrendMinutes),
+          CalculateDispersion(globalReturns, fullMean, calculatedAtUtc, marketTrend.TrendMinutes),
           globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
       }
       if (needsConcentration)
@@ -143,10 +169,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         if (!returns.TryGetValue(benchmarkSymbol, out btcReturn))
         {
-          btcReturn = CalculateReturn(
-            store.GetSnapshot(benchmarkSymbol, interval, calculatedAtUtc),
-            marketTrend.TrendMinutes,
-            calculatedAtUtc);
+          btcReturn = GetReturn(benchmarkSymbol);
         }
       }
 
@@ -188,6 +211,17 @@ namespace Core.MarketAnalyzer.MarketData
           }
         }
       }
+
+      FeatureValueSnapshot smsRelativePriceTrend = enabledMetrics.Contains(
+          MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase)
+        ? MarketMetricCoverage.Apply(
+            CalculateMean(FilterPriceTrendOutliers(
+              assetUniverse.Where(returns.ContainsKey).Select(symbol => returns[symbol])
+                .Where(IsUsable).ToList(), marketTrend.TrendThreshold),
+              calculatedAtUtc, marketTrend.TrendMinutes),
+            assetUniverse.Count(symbol => returns.TryGetValue(symbol, out FeatureValueSnapshot item) && IsUsable(item)),
+            assetUniverse.Length, calculatedAtUtc)
+        : null;
 
       // Phase 1C runs only for explicitly enabled metrics, sharing the exact
       // frozen MarketTrend populations and the existing normalized OHLCV store.
@@ -239,6 +273,7 @@ namespace Core.MarketAnalyzer.MarketData
         GlobalInvalidReturnReasons = new ReadOnlyDictionary<string, int>(globalIssues),
         AssetInvalidReturnReasons = new ReadOnlyDictionary<string, int>(assetIssues),
         MarketTrendName = marketTrend.Name ?? "",
+        SmsRelativePriceTrend = smsRelativePriceTrend,
         TrendMinutes = marketTrend.TrendMinutes,
         CalculatedAtUtc = calculatedAtUtc,
         GlobalSymbols = Array.AsReadOnly(globalUniverse),
@@ -300,6 +335,14 @@ namespace Core.MarketAnalyzer.MarketData
         calculatedAtUtc,
         expectedCloseTimeUtc,
         2);
+    }
+
+    private static List<FeatureValueSnapshot> FilterPriceTrendOutliers(
+      List<FeatureValueSnapshot> features, int trendThreshold)
+    {
+      if (trendThreshold == 0) return features;
+      double limit = Math.Abs((double)trendThreshold);
+      return features.Where(feature => Math.Abs(feature.Value.Value) <= limit).ToList();
     }
 
     private static FeatureValueSnapshot CalculateMean(List<FeatureValueSnapshot> features, DateTimeOffset calculatedAtUtc, int trendMinutes)
@@ -702,6 +745,8 @@ namespace Core.MarketAnalyzer.MarketData
   public sealed class MarketTrendAnalysisSnapshot
   {
     public string MarketTrendName { get; init; } = "";
+    // Uncapped asset-population reference mean for legacy SMS Relative PriceTrend.
+    public FeatureValueSnapshot SmsRelativePriceTrend { get; init; }
     public DateTimeOffset ExpectedClosedCandleTimeUtc { get; init; }
     public bool GlobalReturnsEvaluated { get; init; }
     public bool AssetReturnsEvaluated { get; init; }
