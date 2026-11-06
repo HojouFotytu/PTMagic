@@ -16,7 +16,9 @@
       "UseProfitTrailerEnabledPairs": false, // false = analyze all exchange markets matching PT's MARKET; true = restrict analysis to PT's enabled_pairs
       "UseProfitTrailerAllowedUnderlyingTypes": false, // false = use IncludedUnderlyingTypes; true = use PT's allowed_underlying_type from the active PAIRS preset
       "IncludedUnderlyingTypes": [
-        "COIN", // current options for BinanceFutures: "EQUITY", "KR_EQUITY", "HK_EQUITY", "CN_EQUITY", "COMMODITY", "INDEX", "PREMARKET", "FX"         
+        "COIN",
+        "EQUITY",
+        "INDEX" // Other BinanceFutures types: "KR_EQUITY", "HK_EQUITY", "CN_EQUITY", "COMMODITY", "PREMARKET", "FX"
       ],
       "MarketTrends": [
         {
