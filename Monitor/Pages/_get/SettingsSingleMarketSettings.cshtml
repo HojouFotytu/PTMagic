@@ -188,15 +188,15 @@
 
     $(document).ready(function () {
 
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.TriggerRows(Model.SingleMarketSetting.Triggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, "SingleMarketSetting", Model.SettingName, Model.Summary.MainMarket))).map(AnalyzerTriggerTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.TriggerRows(Model.SingleMarketSetting.Triggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, "SingleMarketSetting", Model.SettingName, Model.Summary.MainMarket)))).map(AnalyzerTriggerTemplate).join(''));
 
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.OffTriggerRows(Model.SingleMarketSetting.OffTriggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, Model.SettingName, Model.Summary.MainMarket))).map(AnalyzerTriggerTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.OffTriggerRows(Model.SingleMarketSetting.OffTriggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, Model.SettingName, Model.Summary.MainMarket)))).map(AnalyzerTriggerTemplate).join(''));
 
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.PairsProperties, "SingleMarketSetting", Model.SettingName, "Pairs"))).map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.PairsProperties, "SingleMarketSetting", Model.SettingName, "Pairs")))).map(PropertyTemplate).join(''));
 
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.DCAProperties, "SingleMarketSetting", Model.SettingName, "DCA"))).map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.DCAProperties, "SingleMarketSetting", Model.SettingName, "DCA")))).map(PropertyTemplate).join(''));
 
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.IndicatorsProperties, "SingleMarketSetting", Model.SettingName, "Indicators"))).map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.IndicatorsProperties, "SingleMarketSetting", Model.SettingName, "Indicators")))).map(PropertyTemplate).join(''));
 
     $('#btn-new-standardtrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');

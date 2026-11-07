@@ -103,13 +103,13 @@
 
     $(document).ready(function () {
       
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.TriggerRows(Model.GlobalSetting.Triggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, "GlobalSetting", Model.SettingName, Model.Summary.MainMarket))).map(AnalyzerTriggerTemplate).join(''));
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.TriggerRows(Model.GlobalSetting.Triggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, "GlobalSetting", Model.SettingName, Model.Summary.MainMarket)))).map(AnalyzerTriggerTemplate).join(''));
 
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.PairsProperties, "GlobalSetting", Model.SettingName, "Pairs"))).map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.PairsProperties, "GlobalSetting", Model.SettingName, "Pairs")))).map(PropertyTemplate).join(''));
 
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.DCAProperties, "GlobalSetting", Model.SettingName, "DCA"))).map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.DCAProperties, "GlobalSetting", Model.SettingName, "DCA")))).map(PropertyTemplate).join(''));
 
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.IndicatorsProperties, "GlobalSetting", Model.SettingName, "Indicators"))).map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties').html(@(Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.IndicatorsProperties, "GlobalSetting", Model.SettingName, "Indicators")))).map(PropertyTemplate).join(''));
 
     $('#btn-new-standardtrigger-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
