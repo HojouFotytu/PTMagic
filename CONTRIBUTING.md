@@ -20,6 +20,7 @@ Furthermore we always try to not over-engineer things. If you think that the fea
 3. The code has to follow the Coding Style at all times.
 4. Test your stuff! We are not your beta testers! What doesn't work, won't get accepted.
 5. Respected the .gitignore file at all times. Do not commit your personal settings or Profit Trailer data etc.
+6. For PTMagic 2.10 changes, update [CHANGELOG-2.10.md](CHANGELOG-2.10.md) in the same pull request when behavior, metrics, settings, compatibility, diagnostics or validation changes. Describe the resulting behavior that remains in effect, consolidate replaced entries, and omit reversed work, intermediate designs and future plans. Include the file in merges, reference its relevant sections in PR and release descriptions, and synchronize its copy in the 2.10 roadmap/handoff repository as part of the same development handoff.
 
 ## Recommended Tools
 - Visual Studio Code

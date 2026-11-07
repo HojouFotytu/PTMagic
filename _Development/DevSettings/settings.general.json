@@ -2,7 +2,8 @@
   "GeneralSettings": {
     "Application": {
       "IsEnabled": true, // Enables the PTMagic bot (needs restart to take effect)
-      "TestMode": true, // If TestMode is active, no properties files will be changed
+      "TestMode": true, // Simulate PT configuration delivery and global SOM commands without sending either
+      "StartupSellOnlyMode": true, // Control PT global SOM at startup: pause new/DCA buys, allow sells; release after fresh conclusive analysis and acknowledged settings delivery
       "ProfitTrailerLicense": "ptlicense1asdf014325ehm", // Your Profit Trailer license key (needed to change your settings)
       "ProfitTrailerLicenseXtra": "", // Licenses for additional bots for PTM to update (optional - comma separated list)
       "ProfitTrailerServerAPIToken": "", //Your Profit Trailer Server API Token
