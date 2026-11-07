@@ -7,8 +7,9 @@ all supported example trend durations, stale data, lookback bounds, 90% global
 coverage, exact independent populations including explicitly selected BTC,
 missing BTC, aligned Fiat conversion, registry units, and shared-engine merging.
 
-This is source-authored coverage. It has **not been executed** in this work;
-build and test execution remains user-owned under D-021.
+**All 21 case groups passed** in the user's .NET 10.0.403 run at source
+`86c2ea3ff430b62e654f929a222935ec53ea8fa6`. Build and test execution remains
+user-owned under D-021; configured exchange/runtime acceptance remains separate.
 
 ```sh
 dotnet run --project Tests/Phase1DCorrelation/Phase1DCorrelation.csproj

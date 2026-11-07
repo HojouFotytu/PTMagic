@@ -1,6 +1,6 @@
 # Monitor settings form acceptance
 
-Status: **28 checks authored; not executed.** Native build and harness execution remain user-owned under D-021. These cases do not add to the previously confirmed test count until the user runs them successfully.
+Status: **all 28 checks passed in the user's .NET 10.0.403 run at source `86c2ea3ff430b62e654f929a222935ec53ea8fa6`.** Native build and harness execution remain user-owned under D-021. Browser acceptance remains separate from the production form round-trip results.
 
 The harness links the production `Monitor/Configuration/AnalyzerSettingsForm.cs` used by `SettingsAnalyzerModel.OnPost`, together with the production `AnalyzerSettingsEditor.cs` row projection used by the AJAX pages and `AnalyzerSettingsStore.cs` file commit. It does not implement an alternate save algorithm. The fixture converts production row values and selected HTML options into posted form fields, then calls the same detached-copy validation and transformation used by the Monitor. Two isolated temporary-file cases cover atomic commit, same-revision rejection and failed replacement without mutation of the source object or original file.
 
