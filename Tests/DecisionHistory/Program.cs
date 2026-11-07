@@ -195,7 +195,7 @@ internal static class Program
       var general = new GeneralSettingsWrapper { GeneralSettings = new GeneralSettings
       {
         Application = new Application { Exchange = "BinanceFutures", ProfitTrailerMonitorURL = "http://localhost/", TestMode = true },
-        Monitor = new Core.Main.DataObjects.PTMagicData.Monitor(), Telegram = new Telegram(), Backup = new Backup()
+        Monitor = new Core.Main.DataObjects.PTMagicData.Monitor(), Telegram = new Core.Main.DataObjects.PTMagicData.Telegram(), Backup = new Backup()
       } };
       var analyzer = new AnalyzerSettingsWrapper { AnalyzerSettings = new AnalyzerSettings
       {

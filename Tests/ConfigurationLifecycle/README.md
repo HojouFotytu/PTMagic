@@ -1,6 +1,6 @@
 # Configuration delivery and raid lifecycle acceptance
 
-Status: **66 checks authored; revised harness not yet executed.** Ten bootstrap and exchange-adapter regression groups were added after the user's earlier validation. Native .NET builds, harness execution and TestMode acceptance remain user-owned under D-021. The authored count is not a pass result.
+Status: **66 checks authored; execution pending after a harness compilation fix.** The user's .NET 10.0.403 run at source `86c2ea3ff430b62e654f929a222935ec53ea8fa6` built Core, PTMagic and Monitor successfully and passed the first ten harnesses (193 checks), then stopped here with CS0118: `Telegram` resolved to a namespace instead of the configuration type. No lifecycle checks executed. The fixture now fully qualifies `Core.Main.DataObjects.PTMagicData.Telegram`; that correction still requires the user's native rerun under D-021. The authored count is not a pass result.
 
 The harness calls the production `ConfigurationDeliveryCoordinator`, `GlobalSellOnlyModeAPI`, `SettingsAPI`, `SettingsHandler` and the public Binance, Binance Futures and Binance US exchange adapters. It also invokes the actual PTMagic private orchestration methods through reflection: initialization, preset bootstrap, startup API guard delivery and release, final configuration save, SMS evaluation, global trigger selection, SMS summary persistence and mode changes. No alternate delivery/SMS algorithm is implemented in the tests.
 

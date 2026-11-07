@@ -683,7 +683,7 @@ internal static class Program
           DecisionHistoryEnabled = false, ProfitTrailerMonitorURL = "http://pt-one.invalid/", ProfitTrailerLicense = "dummy-license-one", ProfitTrailerDefaultSettingName = "fixture",
           ProfitTrailerServerAPIToken = "dummy-token-one"
         },
-        Monitor = new Core.Main.DataObjects.PTMagicData.Monitor(), Backup = new Backup { IsEnabled = false }, Telegram = new Telegram { IsEnabled = false }
+        Monitor = new Core.Main.DataObjects.PTMagicData.Monitor(), Backup = new Backup { IsEnabled = false }, Telegram = new Core.Main.DataObjects.PTMagicData.Telegram { IsEnabled = false }
       };
       var analyzer = new AnalyzerSettings
       {

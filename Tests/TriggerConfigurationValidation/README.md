@@ -1,6 +1,6 @@
 # Trigger configuration validation acceptance
 
-Status: **40 checks authored; revised harness not yet executed.** Native build and harness execution remain user-owned under D-021. Do not count these as passed until the user provides run evidence.
+Status: **40 checks passed in the user's .NET 10.0.403 run at source `86c2ea3ff430b62e654f929a222935ec53ea8fa6`.** This includes the corrected finite-volume fixture and both sentinel boundary cases. Native build and harness execution remain user-owned under D-021; this result applies to the recorded source and does not establish full-suite or configured runtime acceptance.
 
 The user's run at source `78967a7703ab9f57fece40d488fc538b1caf393b` passed the first 23 checks, then exposed a fixture error in "timed and volume off-triggers need no trend". `Constants.Max24hVolume` is `double.MaxValue`; subtracting 1 rounds back to the same unbounded sentinel, so the row correctly required a trend reference. The fixture now uses a finite cap of 1,000. Two additional checks cover the adjacent representable value (`Math.BitDecrement`) as a volume cap and the exact sentinel as a negative control that still requires a trend. Production validation is unchanged.
 
