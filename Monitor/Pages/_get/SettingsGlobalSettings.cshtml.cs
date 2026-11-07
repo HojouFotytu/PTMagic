@@ -1,75 +1,45 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Linq;
-using Microsoft.AspNetCore.Http;
 using Core.Main;
 using Core.Helper;
 using Core.Main.DataObjects.PTMagicData;
-using Core.MarketAnalyzer;
+using Monitor.Configuration;
 
-namespace Monitor.Pages {
-  public class SettingsGlobalSettingsModel : _Internal.BasePageModelSecure {
+namespace Monitor.Pages
+{
+  public class SettingsGlobalSettingsModel : _Internal.BasePageModelSecure
+  {
     public GlobalSetting GlobalSetting = null;
     public string SettingName = "";
+    public bool IsDefaultSetting
+    {
+      get
+      {
+        var settings = PTMagicConfiguration.AnalyzerSettings.GlobalSettings;
+        var fallback = settings.FirstOrDefault(setting => String.Equals(setting.SettingName, "default", StringComparison.OrdinalIgnoreCase))
+          ?? settings.FirstOrDefault(setting => setting.SettingName.IndexOf("default", StringComparison.OrdinalIgnoreCase) >= 0);
+        return fallback != null && String.Equals(fallback.SettingName, GlobalSetting.SettingName, StringComparison.OrdinalIgnoreCase);
+      }
+    }
 
-    public void OnGet() {
-      // Initialize Config
+    public void OnGet()
+    {
       base.Init();
-      
-      BindData();
+      SettingName = GetStringParameter("gs", "");
+      if (!String.IsNullOrEmpty(SettingName))
+        GlobalSetting = PTMagicConfiguration.AnalyzerSettings.GlobalSettings.SingleOrDefault(setting =>
+          SystemHelper.StripBadCode(setting.SettingName, Constants.WhiteListNames) == SettingName);
+      else
+      {
+        GlobalSetting = new GlobalSetting { SettingName = "New Setting" };
+        SettingName = "new_" + SystemHelper.StripBadCode(GetStringParameter("newid", Guid.NewGuid().ToString("N")), Constants.WhiteListNames);
+      }
+      if (GlobalSetting == null) throw new InvalidOperationException("This setting no longer exists. Reload the editor.");
     }
 
-    private void BindData() {
-      SettingName = this.GetStringParameter("gs", "");
-      if (!SettingName.Equals("")) {
-        GlobalSetting = PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(gs => SystemHelper.StripBadCode(gs.SettingName, Constants.WhiteListNames).Equals(SettingName));
-      } else {
-        GlobalSetting = new GlobalSetting();
-        GlobalSetting.SettingName = "New Setting";
-      }
-    }
+    public string GetMarketTrendSelection(Trigger trigger) => AnalyzerSettingsEditor.Options(
+      PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Select(trend => trend.Name), trigger?.MarketTrendName);
+    public string GetValueModes(string key) => AnalyzerSettingsEditor.ValueModes(key);
 
-    public string GetMarketTrendSelection(Trigger t) {
-      string result = "";
-
-      foreach (MarketTrend mt in PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends) {
-        string selected = "";
-        if (t != null) {
-          if (t.MarketTrendName.Equals(mt.Name, StringComparison.InvariantCultureIgnoreCase)) {
-            selected = " selected=\"selected\"";
-          }
-        }
-
-        result += "<option" + selected + " value=\"" + SystemHelper.StripBadCode(mt.Name, Constants.WhiteListNames) + "\">" + mt.Name + "</option>";
-      }
-
-      return result;
-    }
-
-    public string GetValueModes(string propertyKey) {
-      string result = "";
-
-      string selected = "";
-      if (propertyKey.IndexOf("_OFFSET", StringComparison.InvariantCultureIgnoreCase) == -1) {
-        selected = " selected=\"selected\"";
-      }
-      result += "<option" + selected + " value=\"\">Flat value</option>";
-
-      if (propertyKey.EndsWith("_OFFSET", StringComparison.InvariantCultureIgnoreCase)) {
-        selected = " selected=\"selected\"";
-      } else {
-        selected = "";
-      }
-      result += "<option" + selected + " value=\"_OFFSET\">Offset by flat value</option>";
-
-      if (propertyKey.EndsWith("_OFFSETPERCENT", StringComparison.InvariantCultureIgnoreCase)) {
-        selected = " selected=\"selected\"";
-      } else {
-        selected = "";
-      }
-      result += "<option" + selected + " value=\"_OFFSETPERCENT\">Offset by percent</option>";
-
-      return result;
-    }
   }
 }

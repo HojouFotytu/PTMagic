@@ -32,10 +32,22 @@ namespace Core.Main.DataObjects.PTMagicData
   {
     public bool IsEnabled { get; set; } = true;
     public bool TestMode { get; set; } = true;
+    // PTM controls PT's native global SOM switch during startup: block new/DCA
+    // buys, permit sells; release after a fresh conclusive acknowledged decision.
+    public bool StartupSellOnlyMode { get; set; } = true;
+    // Maximum wall-clock age of the pinned analysis at decision time.
+    // This does not limit the age of a complete higher-timeframe source bar.
+    public int MaxAnalysisAgeSeconds { get; set; } = 300;
+    public bool DecisionHistoryEnabled { get; set; } = true;
+    public int DecisionHistoryRetentionDays { get; set; } = 30;
+    public int DecisionHistoryMaxMegabytes { get; set; } = 256;
     public bool EnableBetaFeatures { get; set; } = false;
     public string ProfitTrailerLicense { get; set; } = "";
     public string ProfitTrailerLicenseXtra { get; set; } = "";
     public string ProfitTrailerServerAPIToken { get; set; }
+    // Blank reuses the primary token; otherwise one comma-separated token per
+    // ProfitTrailerMonitorURLXtra entry, in the same order.
+    public string ProfitTrailerServerAPITokenXtra { get; set; } = "";
     public string ProfitTrailerMonitorURL { get; set; } = "";
     public string ProfitTrailerMonitorURLXtra { get; set; } = "";
     public string ProfitTrailerDefaultSettingName { get; set; } = "default";
@@ -151,6 +163,11 @@ namespace Core.Main.DataObjects.PTMagicData
     public double StrongVolumeExpansionThreshold { get; set; } = 1.5;
     [DefaultValue(10)]
     public int TopNVolumeCount { get; set; } = 10;
+
+    // Phase 1D counts synchronized simple returns on complete TrendMinutes
+    // periods; N returns require N+1 exact close endpoints.
+    [DefaultValue(30)]
+    public int CorrelationLookback { get; set; } = 30;
 
     [DefaultValue(true)]
     public bool DisplayGraph { get; set; } = true;
@@ -323,6 +340,14 @@ namespace Core.Main.DataObjects.PTMagicData
   public class Summary
   {
     public string Version { get; set; } = "";
+    public string DesiredGlobalSettingName { get; set; } = "";
+    public string AppliedGlobalSettingName { get; set; } = "";
+    public string ConfigurationDeliveryStatus { get; set; } = "";
+    public bool StartupSellOnlyModeActive { get; set; } = false;
+    public bool StartupSellOnlyModePending { get; set; } = false;
+    public string StartupSellOnlyModeStatus { get; set; } = "";
+    public DateTimeOffset? AnalysisAsOfUtc { get; set; }
+    public string SourceRevision { get; set; } = "";
     public DateTime LastRuntime { get; set; } = Constants.confMinDate;
     public int LastRuntimeSeconds { get; set; } = 0;
     public DateTime LastGlobalSettingSwitch { get; set; } = Constants.confMinDate;

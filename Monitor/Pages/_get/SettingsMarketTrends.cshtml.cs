@@ -26,7 +26,9 @@ namespace Monitor.Pages {
       } else {
         MarketTrend = new MarketTrend();
         MarketTrend.Name = "New Market Trend";
+        MarketTrendName = "new_" + SystemHelper.StripBadCode(GetStringParameter("newid", Guid.NewGuid().ToString("N")), Constants.WhiteListNames);
       }
+      if (MarketTrend == null) throw new InvalidOperationException("This MarketTrend no longer exists. Reload the editor.");
     }
   }
 }

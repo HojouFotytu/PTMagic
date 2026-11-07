@@ -14,6 +14,7 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public string Name { get; set; } = "";
     public int TrendMinutes { get; set; }
+    public List<MarketTrendHistoryRequirement> HistoryRequirements { get; set; } = new List<MarketTrendHistoryRequirement>();
     public DateTimeOffset ExpectedClosedCandleTimeUtc { get; set; }
     public bool GlobalReturnsEvaluated { get; set; }
     public bool AssetReturnsEvaluated { get; set; }

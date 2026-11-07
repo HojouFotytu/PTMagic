@@ -8,6 +8,7 @@ using Core.Helper;
 namespace Core.MarketAnalyzer.MarketData
 {
   public delegate Task<List<MarketCandle>> MarketCandleLoader(string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken);
+  public delegate Task<List<MarketCandle>> AnchoredMarketCandleLoader(string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken, DateTimeOffset asOfUtc);
 
   /// <summary>
   /// Central refresh coordinator for normalized market data. Feature calculators consume
@@ -27,7 +28,17 @@ namespace Core.MarketAnalyzer.MarketData
 
     public MarketDataStore Store => _store;
 
-    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, MarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null)
+    public Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, MarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null)
+    {
+      if (loader == null) throw new ArgumentNullException(nameof(loader));
+      // Compatibility adapter for independent/in-memory loaders. Production
+      // exchange clients use RefreshAtAsync and receive the fixed boundary.
+      return RefreshAtAsync(symbols, interval, targetHistoryCandles,
+        (symbol, count, logger, ct, _) => loader(symbol, count, logger, ct),
+        log, maxConcurrency, cancellationToken, refreshAsOfUtc);
+    }
+
+    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null)
     {
       if (symbols == null)
       {
@@ -91,13 +102,14 @@ namespace Core.MarketAnalyzer.MarketData
 
         try
         {
-          List<MarketCandle> candles = await loader(symbol, requestedCandleCount, log, ct).ConfigureAwait(false);
+          List<MarketCandle> candles = await loader(symbol, requestedCandleCount, log, ct, refreshStartedUtc).ConfigureAwait(false);
           candles ??= new List<MarketCandle>();
 
           List<MarketCandle> matchingCandles = candles
             .Where(candle => candle != null
               && candle.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase)
-              && candle.Interval == interval)
+              && candle.Interval == interval
+              && candle.OpenTimeUtc <= refreshStartedUtc)
             .ToList();
 
           _store.UpsertCandles(matchingCandles);

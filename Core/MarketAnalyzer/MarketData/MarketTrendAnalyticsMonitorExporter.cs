@@ -104,6 +104,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         Name = analysis.MarketTrendName,
         TrendMinutes = analysis.TrendMinutes,
+        HistoryRequirements = analysis.HistoryRequirements.ToList(),
         ExpectedClosedCandleTimeUtc = analysis.ExpectedClosedCandleTimeUtc,
         GlobalReturnsEvaluated = analysis.GlobalReturnsEvaluated,
         AssetReturnsEvaluated = analysis.AssetReturnsEvaluated,

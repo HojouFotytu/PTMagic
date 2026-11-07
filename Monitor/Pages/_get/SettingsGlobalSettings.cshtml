@@ -1,5 +1,6 @@
 ﻿@page
 @model SettingsGlobalSettingsModel
+@using Monitor.Configuration
 @{
   Layout = null;
 }
@@ -11,9 +12,9 @@
         @if (!Model.GlobalSetting.SettingName.Equals("")) {
           <h4 class="m-t-0 m-b-20 header-title">
             Global Setting "<span class="text-ptmagic">@Model.GlobalSetting.SettingName</span>"
-            @if (!Model.GlobalSetting.SettingName.StartsWith("Default", StringComparison.InvariantCultureIgnoreCase)) {
-              <button class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-GS btn-move-GS@(Model.SettingName)" data-datadirection="down" data-datatarget="GlobalSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move down"><i class="fa fa-chevron-down"></i></button>
-              <button class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-GS btn-move-GS@(Model.SettingName) m-r-5" data-datadirection="up" data-datatarget="GlobalSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move up"><i class="fa fa-chevron-up"></i></button>
+            @if (!Model.IsDefaultSetting) {
+              <button type="button" class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-GS btn-move-GS@(Model.SettingName)" data-datadirection="down" data-datatarget="GlobalSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move down"><i class="fa fa-chevron-down"></i></button>
+              <button type="button" class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-GS btn-move-GS@(Model.SettingName) m-r-5" data-datadirection="up" data-datatarget="GlobalSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move up"><i class="fa fa-chevron-up"></i></button>
             }
           </h4>
         } else {
@@ -23,68 +24,76 @@
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Setting Name (Unique) <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="UNIQUE name of your setting"></i></label>
           <div class="col-md-8">
-            @if (!Model.GlobalSetting.SettingName.StartsWith("Default", StringComparison.InvariantCultureIgnoreCase)) {
-              <input type="text" class="form-control" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|SettingName" value="@Core.Helper.SystemHelper.StripBadCode(Model.GlobalSetting.SettingName, Core.Main.Constants.WhiteListNames)">
-              <span class="help-block"><small>Allowed characters: Letters, Numbers and '_'</small></span>
+            @if (!Model.IsDefaultSetting) {
+              <input type="text" class="form-control" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|SettingName" value="@Model.GlobalSetting.SettingName">
+              <span class="help-block"><small>Use a unique setting name.</small></span>
             } else {
-              <input type="hidden" class="form-control" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|SettingName" value="@Core.Helper.SystemHelper.StripBadCode(Model.GlobalSetting.SettingName, Core.Main.Constants.WhiteListNames)">
+              <input type="hidden" class="form-control" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|SettingName" value="@Model.GlobalSetting.SettingName">
               @Model.GlobalSetting.SettingName
             }
           </div>
         </div>
 
-        @if (!Model.GlobalSetting.SettingName.StartsWith("Default", StringComparison.InvariantCultureIgnoreCase)) {
+        @if (!Model.IsDefaultSetting) {
           <div class="form-group row">
-            <label class="col-md-4 col-form-label">Trigger Connection <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Define if triggers will be connected by AND or OR"></i></label>
+            <label class="col-md-4 col-form-label">Trigger Connection <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="AND / OR, or a Boolean expression using the trigger Tags (for example A &amp;&amp; !B)"></i></label>
             <input type="text" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|TriggerConnection" class="form-control" value="@Model.GlobalSetting.TriggerConnection" />
           </div>
 
           <hr />
 
           <h5 class="header-title m-b-20">Triggers (@Model.GlobalSetting.Triggers.Count)</h5>
+          <input type="hidden" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|TriggersRendered" value="true" />
           <div id="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers"></div>
 
-          <button id="btn-new-standardtrigger-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers">
+          <button type="button" id="btn-new-standardtrigger-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers">
             Add Trigger
           </button>
         }
 
         <hr />
 
-        <h5 class="header-title m-b-20">Pairs Properties (@Model.GlobalSetting.PairsProperties.Count)</h5>
+        <h5 class="header-title m-b-20">Pairs Properties (@(Model.GlobalSetting.PairsProperties?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|PairsPropertiesRendered" value="true" />
         <div id="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties"></div>
 
-        <button id="btn-new-pairs-property-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties">
+        <button type="button" id="btn-new-pairs-property-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties">
           Add Property
         </button>
 
         <hr />
 
-        <h5 class="header-title m-b-20">DCA Properties (@Model.GlobalSetting.DCAProperties.Count)</h5>
+        <h5 class="header-title m-b-20">DCA Properties (@(Model.GlobalSetting.DCAProperties?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|DCAPropertiesRendered" value="true" />
         <div id="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties"></div>
-        <button id="btn-new-dca-property-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties">
+        <button type="button" id="btn-new-dca-property-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties">
           Add Property
         </button>
 
         <hr />
 
-        <h5 class="header-title m-b-20">Indicators Properties (@Model.GlobalSetting.IndicatorsProperties.Count)</h5>
+        <h5 class="header-title m-b-20">Indicators Properties (@(Model.GlobalSetting.IndicatorsProperties?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|IndicatorsPropertiesRendered" value="true" />
         <div id="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties"></div>
 
-        <button id="btn-new-indicators-property-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties">
+        <button type="button" id="btn-new-indicators-property-GS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties">
           Add Property
         </button>
 
-        <button class="btn btn-danger m-t-20 btn-block text-uppercase waves-effect waves-light btn-remove-GS@(Model.SettingName)" data-datatarget="GlobalSetting_@Model.SettingName">
-          Remove Global Setting "@Model.GlobalSetting.SettingName"
-        </button>
+        @if (!Model.IsDefaultSetting) {
+          <button type="button" class="btn btn-danger m-t-20 btn-block text-uppercase waves-effect waves-light btn-remove-GS@(Model.SettingName)" data-datatarget="GlobalSetting_@Model.SettingName">
+            Remove Global Setting "@Model.GlobalSetting.SettingName"
+          </button>
+        }
       </div>
     </div>
   </div>
   <script type="text/javascript">
     function BindRemoveParentRow@(Model.SettingName)Event() {
-      $('.btn-remove-parentrow-GlobalSetting-@(Model.SettingName)').click(function () {
-        $(this).closest('.row').animate({ height: 0 }, 300, function () {
+      syncAnalyzerTrendOptions();
+      $('.btn-remove-parentrow-GlobalSetting-@(Model.SettingName)').off('click.analyzer').on('click.analyzer', function () {
+        $(this).closest('.analyzer-editor-row').find(':input').prop('disabled', true);
+        $(this).closest('.analyzer-editor-row').animate({ height: 0 }, 300, function () {
           $(this).remove();
         });
 
@@ -94,75 +103,38 @@
 
     $(document).ready(function () {
       
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers').html([
-      @foreach (Core.Main.DataObjects.PTMagicData.Trigger t in Model.GlobalSetting.Triggers) {
-        string minChangeValue = t.MinChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
-        if (t.MinChange == Core.Main.Constants.MinTrendChange) {
-          minChangeValue = "";
-        }
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_Triggers').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.TriggerRows(Model.GlobalSetting.Triggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, "GlobalSetting", Model.SettingName, Model.Summary.MainMarket))).map(AnalyzerTriggerTemplate).join(''));
 
-        string maxChangeValue = t.MaxChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
-        if (t.MaxChange == Core.Main.Constants.MaxTrendChange) {
-          maxChangeValue = "";
-        }
-        <text>
-      { settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', trendName: '@Core.Helper.SystemHelper.StripBadCode(t.MarketTrendName, Core.Main.Constants.WhiteListNames)', minChange: '@minChangeValue', maxChange: '@maxChangeValue', marketTrends: '@Html.Raw(Model.GetMarketTrendSelection(t))' },
-        </text>
-      }
-    ].map(GSStandardTriggerTemplate).join(''));
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.PairsProperties, "GlobalSetting", Model.SettingName, "Pairs"))).map(PropertyTemplate).join(''));
 
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_PairsProperties').html([
-      @foreach (KeyValuePair<string, object> property in Model.GlobalSetting.PairsProperties) {
-        string propertyKeySimple = property.Key.Replace("_OFFSETPERCENT", "").Replace("_OFFSET", "");
-        <text>
-      { settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'Pairs', propertyKeySimple: '@propertyKeySimple', value: '@Core.Helper.SystemHelper.PropertyToString(property.Value)', valueModes: '@Html.Raw(Model.GetValueModes(property.Key))' },
-        </text>
-      }
-    ].map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.DCAProperties, "GlobalSetting", Model.SettingName, "DCA"))).map(PropertyTemplate).join(''));
 
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_DCAProperties').html([
-      @foreach (KeyValuePair<string, object> property in Model.GlobalSetting.DCAProperties) {
-        string propertyKeySimple = property.Key.Replace("_OFFSETPERCENT", "").Replace("_OFFSET", "");
-        <text>
-      { settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'DCA', propertyKeySimple: '@propertyKeySimple', value: '@Core.Helper.SystemHelper.PropertyToString(property.Value)', valueModes: '@Html.Raw(Model.GetValueModes(property.Key))' },
-        </text>
-      }
-    ].map(PropertyTemplate).join(''));
-
-    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties').html([
-      @foreach (KeyValuePair<string, object> property in Model.GlobalSetting.IndicatorsProperties) {
-        string propertyKeySimple = property.Key.Replace("_OFFSETPERCENT", "").Replace("_OFFSET", "");
-        <text>
-      { settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'Indicators', propertyKeySimple: '@propertyKeySimple', value: '@Core.Helper.SystemHelper.PropertyToString(property.Value)', valueModes: '@Html.Raw(Model.GetValueModes(property.Key))' },
-        </text>
-      }
-    ].map(PropertyTemplate).join(''));
-
+    $('#MarketAnalyzer_GlobalSetting_@(Model.SettingName)_IndicatorsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.GlobalSetting.IndicatorsProperties, "GlobalSetting", Model.SettingName, "Indicators"))).map(PropertyTemplate).join(''));
 
     $('#btn-new-standardtrigger-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', trendName: '', minChange: '', maxChange: '', marketTrends: '@Html.Raw(Model.GetMarketTrendSelection(null))' }].map(GSStandardTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', trendName: '', minChange: '', maxChange: '', marketTrends: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetMarketTrendSelection(null))) }].map(GSStandardTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRow@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-pairs-property-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'Pairs', propertyKeySimple: '', value: '', valueModes: '@Html.Raw(Model.GetValueModes(""))' }].map(PropertyTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'Pairs', propertyKeySimple: '', value: '', valueModes: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetValueModes(""))) }].map(PropertyTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRow@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-dca-property-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'DCA', propertyKeySimple: '', value: '', valueModes: '@Html.Raw(Model.GetValueModes(""))' }].map(PropertyTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'DCA', propertyKeySimple: '', value: '', valueModes: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetValueModes(""))) }].map(PropertyTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRow@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-indicators-property-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'Indicators', propertyKeySimple: '', value: '', valueModes: '@Html.Raw(Model.GetValueModes(""))' }].map(PropertyTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', propertyType: 'Indicators', propertyKeySimple: '', value: '', valueModes: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetValueModes(""))) }].map(PropertyTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRow@(Model.SettingName)Event(); });
       return false;
     });
@@ -170,8 +142,9 @@
     $('.btn-remove-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
 
+      $('#' + dataTarget).find(':input').prop('disabled', true);
       $('#' + dataTarget).animate({ height: 0 }, 300, function () {
-        $(this).remove();
+        $(this).closest('.settings-globalsetting').remove();
       });
 
       return false;

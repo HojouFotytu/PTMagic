@@ -19,9 +19,12 @@ namespace Core.Main
 {
   public class PTMagic
   {
-    public PTMagic(LogHelper log)
+    public PTMagic(LogHelper log, Func<ConfigurationPayload, ConfigurationDeliveryResult> configurationSender = null,
+      Func<bool, ConfigurationDeliveryResult> globalSellOnlyModeSender = null)
     {
       this.Log = log;
+      _configurationSender = configurationSender;
+      _globalSellOnlyModeSender = globalSellOnlyModeSender;
     }
     
     #region Properties
@@ -67,6 +70,32 @@ namespace Core.Main
     private readonly SemaphoreSlim _raidSemaphore = new SemaphoreSlim(1, 1);
     private readonly Core.MarketAnalyzer.MarketData.RaidMetricWarnings _raidMetricWarnings =
       new Core.MarketAnalyzer.MarketData.RaidMetricWarnings();
+    private readonly Func<ConfigurationPayload, ConfigurationDeliveryResult> _configurationSender;
+    private readonly Func<bool, ConfigurationDeliveryResult> _globalSellOnlyModeSender;
+    private ConfigurationDeliveryCoordinator _configurationDelivery = new ConfigurationDeliveryCoordinator();
+    private ConfigurationDeliveryResult _raidDelivery = ConfigurationDeliveryResult.Deferred("No completed raid.");
+    private bool _firstSuccessfulRaidPending = true;
+    private bool _startupGuardActive;
+    private bool _startupGuardPending;
+    private ConfigurationDeliveryResult _startupGuardDelivery = ConfigurationDeliveryResult.Deferred("No startup global SOM command attempted.");
+    private string _startupGuardStatus = "Inactive";
+    private bool _selectionIndeterminate;
+    private bool _decisionFresh;
+    private bool _raidAnalysisBuilt;
+    private bool _normalDecisionCommittedThisRaid;
+    private bool _historyWritten;
+    private string _deliveryDestinationHash = "";
+    private bool? _deliveryTestMode;
+    private string _raidId = "";
+    private string _desiredGlobalSettingName = "";
+    private string _desiredPayloadHash = "";
+    private string[] _desiredSms = Array.Empty<string>();
+    private GlobalSetting _raidPriorSetting;
+    private DateTime _raidPriorSettingsChange;
+    private List<SingleMarketSettingSummary> _raidPriorSms;
+    private readonly Dictionary<string, DecisionMetricInput> _decisionInputs =
+      new Dictionary<string, DecisionMetricInput>(StringComparer.OrdinalIgnoreCase);
+    public ConfigurationDeliveryCoordinator ConfigurationDelivery => _configurationDelivery;
     private Mutex mutex = new Mutex(false, "analyzerStateMutex");
 
     public LogHelper Log
@@ -619,6 +648,7 @@ namespace Core.Main
       this.ActiveSetting = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(s => s.SettingName.Equals(this.DefaultSettingName, StringComparison.InvariantCultureIgnoreCase));
       this.ActiveSettingName = ActiveSetting.SettingName;
       this.LastSettingsChange = DateTime.UtcNow;
+      this.InitializeDeliveryTracking();
 
       // Start polling
       this.StartPTMagicIntervalTimer();
@@ -692,6 +722,15 @@ namespace Core.Main
     {
       bool result = true;
 
+      foreach (string error in TriggerConfigurationValidator.Validate(this.PTMagicConfiguration.AnalyzerSettings))
+      {
+        this.Log.DoLogError("Invalid analyzer configuration: " + error);
+        result = false;
+      }
+      foreach (string warning in TriggerConfigurationValidator.GetMetricWarnings(this.PTMagicConfiguration.AnalyzerSettings))
+        this.Log.DoLogWarn("Analyzer metric configuration: " + warning);
+      if (!result) return false;
+
       //Import Initial ProfitTrailer Information(Deactivated for now)
       //SettingsAPI.GetInitialProfitTrailerSettings(this.PTMagicConfiguration);
 
@@ -727,7 +766,7 @@ namespace Core.Main
       // Check if the program is enabled
       if (this.PTMagicConfiguration.GeneralSettings.Application.IsEnabled)
       {
-        result = RunProfitTrailerSettingsAPIChecks();
+        result = RunProfitTrailerSettingsAPIChecks() && result;
         try
         {
           if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode) 
@@ -861,6 +900,20 @@ namespace Core.Main
             this.WriteStateToFile();
             this.RunCount++;
             this.LastRuntime = DateTime.UtcNow;
+            _raidId = Guid.NewGuid().ToString("N");
+            _historyWritten = false;
+            _raidAnalysisBuilt = false;
+            _normalDecisionCommittedThisRaid = false;
+            _selectionIndeterminate = false;
+            _decisionFresh = false;
+            _decisionInputs.Clear();
+            _desiredPayloadHash = "";
+            _desiredSms = Array.Empty<string>();
+            _desiredGlobalSettingName = this.ActiveSettingName;
+            _raidPriorSetting = this.ActiveSetting;
+            _raidPriorSettingsChange = this.LastSettingsChange;
+            _raidPriorSms = null;
+            _raidDelivery = ConfigurationDeliveryResult.Deferred("Raid has not completed.");
 
             this.EnforceSettingsReapply = this.HaveSettingsChanged() || this.EnforceSettingsReapply;
 
@@ -868,6 +921,9 @@ namespace Core.Main
             {
               // Validate settings
               this.ValidateSettings();
+              this.EnsureDeliveryContext();
+              _raidPriorSetting = this.ActiveSetting;
+              _raidPriorSettingsChange = this.LastSettingsChange;
 
               // Start the process
               this.Log.DoLogInfo("");
@@ -880,15 +936,23 @@ namespace Core.Main
               this._raidMetricWarnings.Reset();
               this.LastRuntimeSummary.LastRuntime = this.LastRuntime;
               this.LastRuntimeSummary.Version = this.CurrentVersion.Major.ToString() + "." + this.CurrentVersion.Minor.ToString() + "." + this.CurrentVersion.Build.ToString();
+              this.LastRuntimeSummary.SourceRevision = BuildIdentity.SourceRevision;
+              this.Log.DoLogInfo("Source revision: " + BuildIdentity.SourceRevision);
 
-              // Check for latest GitHub version
-              await this.CheckLatestGitHubVersionAsync(this.LastRuntimeSummary.Version).ConfigureAwait(false);
+              // The native global SOM command changes no preset or property.
+              // Protect new and DCA buys before compilation/network bootstrap.
+              this.EnsureStartupSellOnlyMode();
 
               // Load current PT files
               this.LoadCurrentProfitTrailerProperties();
 
               // Loading SMS Summaries
               this.LoadSMSSummaries();
+              _raidPriorSms = JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(
+                JsonConvert.SerializeObject(this.SingleMarketSettingSummaries));
+
+              // Check for latest GitHub version after the startup guard is confirmed.
+              await this.CheckLatestGitHubVersionAsync(this.LastRuntimeSummary.Version).ConfigureAwait(false);
 
               // Get saved market info
               this.MarketInfos = BaseAnalyzer.GetMarketInfosFromFile(this.PTMagicConfiguration, this.Log);
@@ -920,6 +984,9 @@ namespace Core.Main
                 this.ApplyNormalizedPriceTrends();
                 MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
               }
+              _raidAnalysisBuilt = true;
+              _decisionFresh = this.IsRaidFresh(out string raidFreshnessReason);
+              if (!_decisionFresh) this._raidMetricWarnings.ReportGlobalDecision(raidFreshnessReason);
 
               // Check for global settings triggers
               GlobalSetting triggeredSetting = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(s => s.SettingName.Equals(this.DefaultSettingName, StringComparison.InvariantCultureIgnoreCase));
@@ -932,11 +999,9 @@ namespace Core.Main
 
               // Activate global setting
               this.ActivateSetting(ref triggeredSetting, ref matchedTriggers);
-              bool globalSettingSwitchedThisRaid = !String.Equals(
-                previousActiveSettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase);
 
               // Check for single market trend triggers
-              this.ApplySingleMarketSettings();
+              if (_decisionFresh) this.ApplySingleMarketSettings();
 
               // Ignore quarterly futures
               if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
@@ -962,9 +1027,11 @@ namespace Core.Main
 
               // Save new properties to Profit Trailer
               this.SaveProfitTrailerProperties();
+              bool globalSettingSwitchedThisRaid = _normalDecisionCommittedThisRaid && !String.Equals(
+                previousActiveSettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase);
 
               // Save Single Market Settings Summary
-              this.SaveSingleMarketSettingsSummary();
+              if (_normalDecisionCommittedThisRaid) this.SaveSingleMarketSettingsSummary();
 
               // Claculate raid time
               DateTime endTime = DateTime.UtcNow;
@@ -973,6 +1040,7 @@ namespace Core.Main
 
               // Save Runtime Summary
               this.SaveRuntimeSummary(elapsedSeconds);
+              this.RecordDecisionHistory();
 
               // Summarise raid              
               this.Log.DoLogInfo("##########################################################");
@@ -984,11 +1052,15 @@ namespace Core.Main
               }
               this.Log.DoLogInfo("+ Instance name: " + PTMagicConfiguration.GeneralSettings.Application.InstanceName);
               this.Log.DoLogInfo("+ Time spent: " + SystemHelper.GetProperDurationTime(elapsedSeconds));
-              this.Log.DoLogInfo("+ Active setting: " + this.LastRuntimeSummary.CurrentGlobalSetting.SettingName);
+              this.Log.DoLogInfo("+ Selected setting: " + _desiredGlobalSettingName);
+              this.Log.DoLogInfo("+ Confirmed PT setting: " + (String.IsNullOrWhiteSpace(this.LastRuntimeSummary.AppliedGlobalSettingName) ? "unknown" : this.LastRuntimeSummary.AppliedGlobalSettingName));
+              this.Log.DoLogInfo("+ Configuration delivery: " + _raidDelivery.Status);
+              this.Log.DoLogInfo("+ Startup global SOM: " + _startupGuardStatus
+                + (this.PTMagicConfiguration.GeneralSettings.Application.TestMode ? " (TestMode preview)" : ""));
               this.Log.DoLogInfo("+ Global setting switched: " + (globalSettingSwitchedThisRaid ? "Yes" : "No") + ((this.LastRuntimeSummary.FloodProtectedSetting != null) ? " (Flood protection!)" : ""));
-              this.Log.DoLogInfo("+ Global setting reapplied: " + ((this.GlobalSettingWritten && !globalSettingSwitchedThisRaid) ? "Yes" : "No"));
+              this.Log.DoLogInfo("+ Global setting reapplied: " + ((_normalDecisionCommittedThisRaid && this.GlobalSettingWritten && !globalSettingSwitchedThisRaid) ? "Yes" : "No"));
               this.Log.DoLogInfo("+ Single Market Settings changed: " + (this.SingleMarketSettingChanged ? "Yes" : "No"));
-              this.Log.DoLogInfo("+ PT Config updated: " + (((this.GlobalSettingWritten || this.SingleMarketSettingChanged) && !this.PTMagicConfiguration.GeneralSettings.Application.TestMode) ? "Yes" : "No") + ((this.PTMagicConfiguration.GeneralSettings.Application.TestMode) ? " - TESTMODE active" : ""));
+              this.Log.DoLogInfo("+ PT Config updated: " + ((_raidDelivery.Succeeded && _raidDelivery.Attempted && !_raidDelivery.Simulated) ? "Yes" : "No") + ((this.PTMagicConfiguration.GeneralSettings.Application.TestMode) ? " - TESTMODE active" : ""));
               this.Log.DoLogInfo("+ Markets with active single market settings: " + this.TriggeredSingleMarketSettings.Count.ToString());
               foreach (string activeSMS in this.SingleMarketSettingsCount.Keys)
               {
@@ -1028,11 +1100,20 @@ namespace Core.Main
           }
           catch (Exception ex)
           {
+            if (!_normalDecisionCommittedThisRaid)
+            {
+              this.RestoreRaidState();
+              if (_raidDelivery.Succeeded) _raidDelivery = ConfigurationDeliveryResult.Deferred("Raid failed before a normal configuration could be committed.");
+              this.UpdateDeliverySummary();
+            }
+            this.PersistFailedRaidSummary();
+            this.RecordDecisionHistory(ex.GetType().Name);
             // Error
             this.Log.DoLogCritical("A error occurred during the raid, the raid did not complete, but will try again next interval!", ex);
           }
           finally
           {
+            this.RecordDecisionHistory();
             // Cleanup to free memory in between intervals
             this.Cleanup();
 
@@ -1140,6 +1221,16 @@ namespace Core.Main
 
     private void ValidateSettings()
     {
+      TriggerConfigurationValidator.ThrowIfInvalid(this.PTMagicConfiguration.AnalyzerSettings);
+      if (this.EnforceSettingsReapply)
+        foreach (string warning in TriggerConfigurationValidator.GetMetricWarnings(this.PTMagicConfiguration.AnalyzerSettings))
+          this.Log.DoLogWarn("Analyzer metric configuration: " + warning);
+      Application application = this.PTMagicConfiguration.GeneralSettings.Application;
+      if (application.MaxAnalysisAgeSeconds < 1 || application.MaxAnalysisAgeSeconds > 86400)
+        throw new InvalidOperationException("MaxAnalysisAgeSeconds must be between 1 and 86400.");
+      if (application.DecisionHistoryRetentionDays < 1 || application.DecisionHistoryRetentionDays > 3650
+        || application.DecisionHistoryMaxMegabytes < 16 || application.DecisionHistoryMaxMegabytes > 102400)
+        throw new InvalidOperationException("Decision history requires retention 1–3650 days and a quota of 16–102400 MiB.");
       //Reimport Initial ProfitTrailer Information(Deactivated for now)
       //SettingsAPI.GetInitialProfitTrailerSettings(this.PTMagicConfiguration);
 
@@ -1195,7 +1286,11 @@ namespace Core.Main
       this.Log.DoLogInfo("Loading current Profit Trailer properties from preset files...");
 
       // Get current preset file PT properties
-      SettingsHandler.CompileProperties(this, this.ActiveSetting, this.LastSettingsChange.ToLocalTime());
+      // A failed send can leave ActiveSetting referencing the acknowledged
+      // pre-reload object. Always prepare the current definition for retry.
+      GlobalSetting configured = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(setting =>
+        String.Equals(setting.SettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase));
+      SettingsHandler.CompileProperties(this, configured ?? this.ActiveSetting, this.LastSettingsChange.ToLocalTime());
 
       if (this.PairsLines != null && this.DCALines != null && this.IndicatorsLines != null)
       {
@@ -1217,13 +1312,13 @@ namespace Core.Main
     {
       this.Log.DoLogInfo("Loading Single Market Setting Summaries...");
       this.SingleMarketSettingSummaries = new List<SingleMarketSettingSummary>();
-      if (File.Exists(Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "SingleMarketSettingSummary.json"))
+      if (File.Exists(SmsSummaryPath))
       {
         try
         {
           Dictionary<string, bool> smsVerificationResult = new Dictionary<string, bool>();
           // Cleanup SMS Summaries in case a SMS got removed
-          foreach (SingleMarketSettingSummary smsSummary in JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(System.IO.File.ReadAllText(Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "SingleMarketSettingSummary.json")))
+          foreach (SingleMarketSettingSummary smsSummary in JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(System.IO.File.ReadAllText(SmsSummaryPath)))
           {
             string smsName = smsSummary.SingleMarketSetting.SettingName;
             bool smsIsValid = false;
@@ -1401,6 +1496,7 @@ namespace Core.Main
 
     private void CheckGlobalSettingsTriggers(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
     {
+        _selectionIndeterminate = false;
         this.Log.DoLogInfo("Checking global settings triggers...");
         bool unavailableNormalizedTriggerFound = false;
         bool foundMatchingSetting = false;
@@ -1419,7 +1515,7 @@ namespace Core.Main
                   new List<Core.MarketAnalyzer.MarketData.TriggerTruthValue>();
                 foreach (Trigger trigger in globalSetting.Triggers)
                 {
-                    MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name == trigger.MarketTrendName);
+                    MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => String.Equals(mt.Name, trigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
                     if (marketTrend != null)
                     {
                         // Omitted Metric uses normalized PriceTrend; named metrics use the same engine.
@@ -1429,6 +1525,9 @@ namespace Core.Main
                         bool hasMetricValue = useNormalizedMetric &&
                           Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveGlobal(
                             this.PTMagicConfiguration, marketTrend, trigger.Metric, out resolvedMetricValue, out metricError);
+                        this.CaptureDecisionMetric(marketTrend, trigger.Metric, null, trigger.MarketTrendRelation,
+                          hasMetricValue ? resolvedMetricValue : (double?)null, metricError,
+                          "GlobalSetting", globalSetting.SettingName, "#" + (orderedTriggerResults.Count + 1));
                         if (hasMetricValue)
                         {
                             double averageMarketTrendChange = resolvedMetricValue;
@@ -1485,12 +1584,17 @@ namespace Core.Main
                     }
                     else
                     {
-                        orderedTriggerResults.Add(Core.MarketAnalyzer.MarketData.TriggerTruthValue.False);
+                        this.CaptureDecisionMetric(new MarketTrend { Name = trigger.MarketTrendName }, trigger.Metric, null,
+                          trigger.MarketTrendRelation, null, "Referenced MarketTrend does not exist.",
+                          "GlobalSetting", globalSetting.SettingName, "#" + (orderedTriggerResults.Count + 1));
+                        orderedTriggerResults.Add(Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable);
                         if (!String.IsNullOrWhiteSpace(trigger.Tag))
                         {
-                          triggerResults[trigger.Tag] = Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
+                          triggerResults[trigger.Tag] = Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable;
                         }
-                        this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' not found! Trigger ignored!");
+                        this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric,
+                          "Referenced MarketTrend does not exist.", "GlobalSetting", globalSetting.SettingName,
+                          null, trigger.MarketTrendRelation, trigger.Tag);
                     }
                 }
 
@@ -1533,8 +1637,10 @@ namespace Core.Main
         // setting matched, instead of falling back to default by accident.
         if (!foundMatchingSetting && unavailableNormalizedTriggerFound)
         {
+            _selectionIndeterminate = true;
             GlobalSetting active = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
-              .Find(setting => setting.SettingName.Equals(this.ActiveSettingName, StringComparison.OrdinalIgnoreCase));
+              .Find(setting => setting.SettingName.Equals(this.ActiveSettingName, StringComparison.OrdinalIgnoreCase))
+              ?? this.ActiveSetting;
             if (active != null)
             {
                 triggeredSetting = active;
@@ -1543,106 +1649,31 @@ namespace Core.Main
             }
             else
             {
-                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate; prior setting absent, using default.");
+                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate; no prior setting is known, so delivery is deferred.");
             }
         }
     }
 
     private void ActivateSetting(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
     {
-      // Do we need to write the settings?
-      if (this.EnforceSettingsReapply || !this.ActiveSettingName.Equals(triggeredSetting.SettingName, StringComparison.InvariantCultureIgnoreCase))
+      // Prepare the desired preset. Applied state is committed only after delivery.
+      bool changed = !String.Equals(this.ActiveSettingName, triggeredSetting.SettingName, StringComparison.OrdinalIgnoreCase);
+      if (changed && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
+        && this.LastSettingsChange > DateTime.UtcNow.AddMinutes(-PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes))
       {
-        // Check if we need to force a refresh of the settings
-        this.Log.DoLogInfo("Setting '" + this.ActiveSettingName + "' currently active. Checking for flood protection...");
-
-        // If the setting we are about to activate is the default one, do not list matched triggers
-        if (triggeredSetting.SettingName.Equals(this.DefaultSettingName, StringComparison.InvariantCultureIgnoreCase))
-        {
-          matchedTriggers = new List<string>();
-        }
-
-        // Check if flood protection is active
-        if (this.EnforceSettingsReapply || this.LastSettingsChange <= DateTime.UtcNow.AddMinutes(-PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes))
-        {
-          // Setting not set => Change setting
-          if (!this.ActiveSettingName.Equals(triggeredSetting.SettingName, StringComparison.InvariantCultureIgnoreCase))
-          {
-            this.Log.DoLogInfo("Switching global settings to '" + triggeredSetting.SettingName + "'...");
-          }
-          else
-          {
-            this.Log.DoLogInfo("Applying '" + triggeredSetting.SettingName + "' as the settings.analyzer.json or a preset file got changed.");
-          }
-
-          // Get file lines from the preset files
-          SettingsHandler.CompileProperties(this, triggeredSetting, DateTime.Now);
-          this.GlobalSettingWritten = true;
-
-          // Record the switch in the runtime summary
-          this.LastRuntimeSummary.LastGlobalSettingSwitch = this.LastRuntimeSummary.LastRuntime;
-          this.LastRuntimeSummary.CurrentGlobalSetting = triggeredSetting;
-
-          // Record last settings run
-          this.LastSettingsChange = DateTime.UtcNow;
-
-          // Build Telegram message
-          try
-          {
-            string telegramMessage;
-            telegramMessage = this.PTMagicConfiguration.GeneralSettings.Application.InstanceName + ": Setting switched to '*" + SystemHelper.SplitCamelCase(triggeredSetting.SettingName) + "*'.";
-
-            if (matchedTriggers.Count > 0)
-            {
-              telegramMessage += "\n\n*Matching Triggers:*";
-              foreach (string triggerResult in matchedTriggers)
-              {
-                telegramMessage += "\n" + triggerResult;
-              }
-            }
-
-            if (this.AverageMarketTrendChanges.Keys.Count > 0)
-            {
-              telegramMessage += "\n\n*Market Trends:*";
-              foreach (string key in this.AverageMarketTrendChanges.Keys)
-              {
-                telegramMessage += "\n" + key + ": " + this.AverageMarketTrendChanges[key].ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%";
-              }
-            }
-
-            // Send Telegram message
-            if (this.PTMagicConfiguration.GeneralSettings.Telegram.IsEnabled)
-            {
-              TelegramHelper.SendMessage(this.PTMagicConfiguration.GeneralSettings.Telegram.BotToken, this.PTMagicConfiguration.GeneralSettings.Telegram.ChatId, telegramMessage, this.PTMagicConfiguration.GeneralSettings.Telegram.SilentMode, this.Log);
-            }
-          }
-          catch (Exception ex)
-          {
-            this.Log.DoLogCritical("Failed to send Telegram message", ex);
-          }
-        }
-        else
-        {
-          // Flood protection
-          this.Log.DoLogInfo("Flood protection active until " + this.LastSettingsChange.AddMinutes(PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes).ToString() + " (UTC). Not switching settings to '" + triggeredSetting.SettingName + "'!");
-
-          this.LastRuntimeSummary.FloodProtectedSetting = triggeredSetting;
-          this.LastRuntimeSummary.CurrentGlobalSetting = this.ActiveSetting;
-        }
-      }
-      else
-      {
+        this.LastRuntimeSummary.FloodProtectedSetting = triggeredSetting;
+        triggeredSetting = this.ActiveSetting;
         matchedTriggers = new List<string>();
-
-        // Setting already set => Do nothing
-        this.Log.DoLogInfo("Setting '" + triggeredSetting.SettingName + "' already active. No action taken.");
-
-        this.LastRuntimeSummary.CurrentGlobalSetting = triggeredSetting;
+        changed = false;
+        this.Log.DoLogInfo("Flood protection retained the confirmed global setting '" + this.ActiveSettingName + "'.");
       }
-
-      // Set Active settings
-      this.ActiveSetting = this.LastRuntimeSummary.CurrentGlobalSetting;
-      this.ActiveSettingName = this.ActiveSetting.SettingName;
+      this.GlobalSettingWritten = this.EnforceSettingsReapply || changed;
+      if (this.GlobalSettingWritten)
+        SettingsHandler.CompileProperties(this, triggeredSetting, changed ? DateTime.Now : this.LastSettingsChange.ToLocalTime());
+      this.LastRuntimeSummary.CurrentGlobalSetting = triggeredSetting;
+      this.ActiveSetting = triggeredSetting;
+      this.ActiveSettingName = triggeredSetting.SettingName;
+      _desiredGlobalSettingName = triggeredSetting.SettingName;
     }
 
     private void ApplySingleMarketSettings()
@@ -1739,6 +1770,8 @@ namespace Core.Main
                     {
                       // Check for Activation time period trigger
                       int smsActiveHours = (int)Math.Floor(DateTime.UtcNow.Subtract(smss.ActivationDateTimeUTC).TotalHours);
+                      this.CaptureDecisionObservation("HoursSinceTriggered", marketPair, smsActiveHours, "",
+                        "SMS OffTrigger", marketSetting.SettingName, "#" + offTriggerIndex);
                       if (smsActiveHours >= offTrigger.HoursSinceTriggered)
                       {
 
@@ -1758,9 +1791,12 @@ namespace Core.Main
                     else if (offTrigger.Min24hVolume > 0 || offTrigger.Max24hVolume < Constants.Max24hVolume)
                     {
                       // Check for 24h volume trigger
-                      if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket))
+                      if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket)
+                        && double.IsFinite(recentMarket.Volume24h) && recentMarket.Volume24h >= 0)
                       {
                         double volume24h = recentMarket.Volume24h;
+                        this.CaptureDecisionObservation("Volume24h", marketPair, volume24h, "",
+                          "SMS OffTrigger", marketSetting.SettingName, "#" + offTriggerIndex);
                         {
                           if (volume24h >= offTrigger.Min24hVolume && volume24h <= offTrigger.Max24hVolume)
                           {
@@ -1778,6 +1814,12 @@ namespace Core.Main
                           }
                         }
                       }
+                      else
+                      {
+                        offTriggerResults.Add(null);
+                        this.CaptureDecisionObservation("Volume24h", marketPair, null, "Recent market volume is unavailable.",
+                          "SMS OffTrigger", marketSetting.SettingName, "#" + offTriggerIndex);
+                      }
                     }
                     else
                     {
@@ -1794,6 +1836,9 @@ namespace Core.Main
                           offTrigger.MarketTrendRelation, currentMarket?.Price ?? 0,
                           smss?.TriggerSnapshot?.LastPrice ?? 0,
                           out metricValue, out metricError);
+                        this.CaptureDecisionMetric(metricTrend, offTrigger.Metric, marketPair,
+                          offTrigger.MarketTrendRelation, validMetric ? metricValue : (double?)null, metricError,
+                          "SMS OffTrigger", marketSetting.SettingName, "#" + offTriggerIndex);
                         if (!validMetric)
                         {
                           this._raidMetricWarnings.ReportUnavailable(
@@ -1805,7 +1850,18 @@ namespace Core.Main
                           ? (bool?)(metricValue >= offTrigger.MinChange && metricValue < offTrigger.MaxChange)
                           : null);
                       }
-                      
+                      else
+                      {
+                        offTriggerResults.Add(null);
+                        this.CaptureDecisionMetric(metricTrend ?? new MarketTrend { Name = offTrigger.MarketTrendName },
+                          offTrigger.Metric, marketPair, offTrigger.MarketTrendRelation, null,
+                          "Referenced MarketTrend is missing or cannot supply normalized metrics.",
+                          "SMS OffTrigger", marketSetting.SettingName, "#" + offTriggerIndex);
+                        this._raidMetricWarnings.ReportUnavailable(offTrigger.MarketTrendName, offTrigger.Metric,
+                          "Referenced MarketTrend is missing or cannot supply normalized metrics.",
+                          "SMS OffTrigger", marketSetting.SettingName, marketPair,
+                          offTrigger.MarketTrendRelation, "#" + offTriggerIndex);
+                      }
                     }
                   }
 
@@ -1815,17 +1871,19 @@ namespace Core.Main
                   // AND/OR. Preserve that contract: unsupported values cannot
                   // deactivate an active SMS.
                   bool hasSupportedOffConnection =
-                    String.Equals(marketSetting.OffTriggerConnection, "AND", StringComparison.OrdinalIgnoreCase) ||
-                    String.Equals(marketSetting.OffTriggerConnection, "OR", StringComparison.OrdinalIgnoreCase);
-                  bool settingOffTriggered = hasSupportedOffConnection &&
-                    Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
+                    String.Equals(marketSetting.OffTriggerConnection?.Trim(), "AND", StringComparison.OrdinalIgnoreCase) ||
+                    String.Equals(marketSetting.OffTriggerConnection?.Trim(), "OR", StringComparison.OrdinalIgnoreCase);
+                  TriggerTruthValue offResult = hasSupportedOffConnection
+                    ? Core.MarketAnalyzer.MarketData.ThreeValuedTriggerLogic.Evaluate(
                       marketSetting.OffTriggerConnection,
                       offTriggerResults.Select(value => !value.HasValue
                         ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable
                         : value.Value
                           ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
                           : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList())
-                    == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
+                    : TriggerTruthValue.Unavailable;
+                  bool settingOffTriggered = offResult == TriggerTruthValue.True;
+                  if (offResult == TriggerTruthValue.Unavailable) _selectionIndeterminate = true;
                   // Setting got off triggered, remove it from the summary
                   if (settingOffTriggered)
                   {
@@ -1840,9 +1898,7 @@ namespace Core.Main
                 }
                 else
                 {
-                  this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' has no off triggers -> triggering off!");
-                  this.SingleMarketSettingSummaries.Remove(smss);
-                  smss = null;
+                  this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' has no off triggers; reevaluating activation.");
                 }
               }
             }
@@ -1872,9 +1928,12 @@ namespace Core.Main
                 if (trigger.Min24hVolume > 0 || trigger.Max24hVolume < Constants.Max24hVolume)
                 {
                   #region Check for 24h volume trigger
-                  if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket))
+                  if (this._recentMarketSnapshots.TryGetValue(marketPair, out Market recentMarket)
+                    && double.IsFinite(recentMarket.Volume24h) && recentMarket.Volume24h >= 0)
                   {
                     double volume24h = recentMarket.Volume24h;
+                    this.CaptureDecisionObservation("Volume24h", marketPair, volume24h, "",
+                      "SMS activation", marketSetting.SettingName, "#" + (triggerIndex + 1));
                     {
 
                       if (volume24h >= trigger.Min24hVolume && volume24h <= trigger.Max24hVolume)
@@ -1907,6 +1966,13 @@ namespace Core.Main
                       }
                     }
                   }
+                  else
+                  {
+                    triggerResults.Add(null);
+                    triggerTagsResults[trigger.Tag] = null;
+                    this.CaptureDecisionObservation("Volume24h", marketPair, null, "Recent market volume is unavailable.",
+                      "SMS activation", marketSetting.SettingName, "#" + (triggerIndex + 1));
+                  }
 
                   #endregion
                 }
@@ -1919,9 +1985,12 @@ namespace Core.Main
                     marketInfo = this.MarketInfos[marketPair];
                   }
 
-                  if (marketInfo != null)
+                  if (marketInfo != null && marketInfo.FirstSeen > Constants.confMinDate
+                    && marketInfo.FirstSeen <= DateTime.UtcNow)
                   {
                     int marketAge = (int)Math.Floor(DateTime.UtcNow.Subtract(marketInfo.FirstSeen).TotalDays);
+                    this.CaptureDecisionObservation("MarketAgeDays", marketPair, marketAge, "",
+                      "SMS activation", marketSetting.SettingName, "#" + (triggerIndex + 1));
                     if (marketAge < trigger.AgeDaysLowerThan)
                     {
                       matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": '" + marketPair + "' is only " + marketAge.ToString() + " days old on this exchange. Trigger matched!");
@@ -1939,9 +2008,11 @@ namespace Core.Main
                   }
                   else
                   {
-                    matchedSingleMarketTriggers.Add("Age for '" + marketPair + "' not found, trigger matched just to be safe!");
-                    this.Log.DoLogDebug("'" + marketPair + "' - Age not found, trigger matched just to be safe!");
-                    triggerResults.Add(true);
+                    this.Log.DoLogDebug("'" + marketPair + "' - Age unavailable; trigger remains indeterminate.");
+                    triggerResults.Add(null);
+                    triggerTagsResults[trigger.Tag] = null;
+                    this.CaptureDecisionObservation("MarketAgeDays", marketPair, null, "Market age is unavailable.",
+                      "SMS activation", marketSetting.SettingName, "#" + (triggerIndex + 1));
                   }
 
                   #endregion
@@ -1960,6 +2031,9 @@ namespace Core.Main
                       this.PTMagicConfiguration, metricTrend, trigger.Metric, marketPair,
                       trigger.MarketTrendRelation, currentMarket?.Price ?? 0, 0,
                       out metricValue, out metricError);
+                    this.CaptureDecisionMetric(metricTrend, trigger.Metric, marketPair,
+                      trigger.MarketTrendRelation, validMetric ? metricValue : (double?)null, metricError,
+                      "SMS activation", marketSetting.SettingName, "#" + (triggerIndex + 1));
                     bool metricTriggered = validMetric && metricValue >= trigger.MinChange && metricValue < trigger.MaxChange;
                     triggerResults.Add(validMetric ? (bool?)metricTriggered : null);
                     triggerTagsResults[trigger.Tag] = validMetric ? (bool?)metricTriggered : null;
@@ -1983,20 +2057,16 @@ namespace Core.Main
                   
                   else
                   {
-                    MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => mt.Name.Equals(trigger.MarketTrendName, StringComparison.InvariantCultureIgnoreCase));
-                    if (marketTrend != null)
-                    {
-                      if (!marketTrend.Platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase))
-                      {
-                        this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' is invalid for single market settings! Only trends using the platform 'Exchange' are valid for single market settings.");
-                        triggerResults.Add(false);
-                      }
-                    }
-                    else
-                    {
-                      this.Log.DoLogWarn("Market Trend '" + trigger.MarketTrendName + "' not found! Trigger ignored!");
-                      triggerResults.Add(false);
-                    }
+                    triggerResults.Add(null);
+                    triggerTagsResults[trigger.Tag] = null;
+                    this.CaptureDecisionMetric(metricTrend ?? new MarketTrend { Name = trigger.MarketTrendName },
+                      trigger.Metric, marketPair, trigger.MarketTrendRelation, null,
+                      "Referenced MarketTrend is missing or cannot supply normalized metrics.",
+                      "SMS activation", marketSetting.SettingName, "#" + (triggerIndex + 1));
+                    this._raidMetricWarnings.ReportUnavailable(trigger.MarketTrendName, trigger.Metric,
+                      "Referenced MarketTrend is missing or cannot supply normalized metrics.",
+                      "SMS activation", marketSetting.SettingName, marketPair,
+                      trigger.MarketTrendRelation, "#" + (triggerIndex + 1));
                   }
                   #endregion
                 }
@@ -2008,6 +2078,7 @@ namespace Core.Main
               // eligibility. Unknown branches can be masked by true OR /
               // false AND, but a final unknown cannot freshly activate SMS.
               bool settingTriggered;
+              bool activationIndeterminate;
               try
               {
                 Core.MarketAnalyzer.MarketData.TriggerTruthValue smsResult =
@@ -2025,6 +2096,8 @@ namespace Core.Main
                           ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
                           : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False));
                 settingTriggered = smsResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
+                activationIndeterminate = smsResult == TriggerTruthValue.Unavailable;
+                if (activationIndeterminate) _selectionIndeterminate = true;
               }
               catch (Exception ex)
               {
@@ -2036,6 +2109,16 @@ namespace Core.Main
               #endregion
 
               bool isFreshTrigger = true;
+
+              // Missing observations cannot prove that a previously applied SMS
+              // ended. Keep its activation snapshot until the result is known.
+              if (!settingTriggered && activationIndeterminate && smss != null)
+              {
+                settingTriggered = true;
+                isFreshTrigger = false;
+                matchedSingleMarketTriggers = MatchedMarketTriggerContent.CopyForSnapshot(
+                  smss.TriggerSnapshot?.MatchedTriggersContent ?? new List<string>());
+              }
 
               // Setting not triggered -> Check if it is already active as a long term SMS using Off Triggers
               if (!settingTriggered)
@@ -2152,6 +2235,7 @@ namespace Core.Main
               }
               else
               {
+                if (smss != null) this.SingleMarketSettingSummaries.Remove(smss);
                 this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' not triggered!");
               }
             }
@@ -2164,6 +2248,13 @@ namespace Core.Main
 
           marketPairProcess++;
         } // End loop through markets
+
+        // Persist only SMS that are actually part of this raid's desired
+        // configuration; filtered/removed settings must not remain latched.
+        this.SingleMarketSettingSummaries.RemoveAll(summary =>
+          !this.TriggeredSingleMarketSettings.TryGetValue(summary.Market, out List<SingleMarketSetting> active)
+          || !active.Any(setting => String.Equals(setting.SettingName, summary.SingleMarketSetting.SettingName,
+            StringComparison.OrdinalIgnoreCase)));
 
         // Did we trigger any SMS?
         if (this.TriggeredSingleMarketSettings.Count > 0)
@@ -2190,12 +2281,18 @@ namespace Core.Main
           this.Log.DoLogInfo("No settings triggered for single markets.");
 
           // Remove single market settings if no triggers are met - if necessary
-          this.SingleMarketSettingChanged = SettingsHandler.RemoveSingleMarketSettings(this);
+          bool hadAppliedSms = _lastActiveSingleMarketSettings != null && _lastActiveSingleMarketSettings.Count > 0;
+          this.SingleMarketSettingChanged = SettingsHandler.RemoveSingleMarketSettings(this) || hadAppliedSms;
+          _lastActiveSingleMarketSettings = new List<KeyValuePair<string, string>>();
         }
       }
       else
       {
         this.Log.DoLogInfo("No single market settings found.");
+        this.SingleMarketSettingSummaries.Clear();
+        this.SingleMarketSettingChanged = SettingsHandler.RemoveSingleMarketSettings(this)
+          || (_lastActiveSingleMarketSettings != null && _lastActiveSingleMarketSettings.Count > 0);
+        _lastActiveSingleMarketSettings = new List<KeyValuePair<string, string>>();
       }
     }
 
@@ -2217,30 +2314,409 @@ namespace Core.Main
       return !string.Equals(oldSms, newSms, StringComparison.OrdinalIgnoreCase);
     }
 
+    private string DeliveryCheckpointPath => Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "ConfigurationDeliveryState.json");
+    private string StartupGuardCheckpointPath => Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "StartupSellOnlyModeState.json");
+
+    private string StartupGuardDestinationFingerprint()
+    {
+      Application app = this.PTMagicConfiguration.GeneralSettings.Application;
+      // Ownership follows the destinations, not a particular token or preset.
+      return ConfigurationPayload.Hash(JsonConvert.SerializeObject(new[]
+      {
+        app.ProfitTrailerMonitorURL?.Trim().TrimEnd('/'), app.ProfitTrailerMonitorURLXtra?.Trim()
+      }));
+    }
+
+    private string DestinationFingerprint()
+    {
+      Application app = this.PTMagicConfiguration.GeneralSettings.Application;
+      return ConfigurationPayload.Hash(JsonConvert.SerializeObject(new[]
+      {
+        app.ProfitTrailerMonitorURL, app.ProfitTrailerMonitorURLXtra,
+        app.ProfitTrailerLicense, app.ProfitTrailerLicenseXtra, app.ProfitTrailerDefaultSettingName
+      }));
+    }
+
+    private void InitializeDeliveryTracking()
+    {
+      _deliveryDestinationHash = DestinationFingerprint();
+      _deliveryTestMode = this.PTMagicConfiguration.GeneralSettings.Application.TestMode;
+      ConfigurationDeliveryState state = null;
+      try
+      {
+        state = ConfigurationDeliveryCoordinator.Load(DeliveryCheckpointPath);
+        if (state != null && state.DestinationHash != DestinationFingerprint()) state = null;
+      }
+      catch (Exception exception)
+      {
+        this.Log.DoLogWarn("Configuration acknowledgement checkpoint could not be restored: " + exception.GetType().Name + ".");
+      }
+      _configurationDelivery = new ConfigurationDeliveryCoordinator(state);
+      _firstSuccessfulRaidPending = true;
+      StartupSellOnlyModeState guardState = null;
+      try
+      {
+        guardState = StartupSellOnlyModeState.Load(StartupGuardCheckpointPath);
+        if (guardState != null && guardState.DestinationHash != StartupGuardDestinationFingerprint()) guardState = null;
+      }
+      catch (Exception exception)
+      {
+        this.Log.DoLogWarn("Startup global SOM checkpoint could not be restored: " + exception.GetType().Name + ".");
+      }
+      _startupGuardPending = guardState?.PendingRelease == true;
+      _startupGuardActive = _startupGuardPending && guardState?.EnabledAcknowledged == true;
+      _startupGuardStatus = _startupGuardPending ? "Pending restart reconciliation" : "Inactive";
+      _startupGuardDelivery = ConfigurationDeliveryResult.Deferred("Startup global SOM has not been checked in this process.");
+      _lastEffectivePayload = null;
+      GlobalSetting confirmed = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
+        .Find(setting => String.Equals(setting.SettingName, state?.AppliedSettingName, StringComparison.OrdinalIgnoreCase));
+      if (confirmed != null)
+      {
+        this.ActiveSetting = confirmed;
+        this.ActiveSettingName = confirmed.SettingName;
+        this.LastSettingsChange = state.AppliedAtUtc?.UtcDateTime ?? Constants.confMinDate;
+      }
+    }
+
+    private void EnsureDeliveryContext()
+    {
+      bool testMode = this.PTMagicConfiguration.GeneralSettings.Application.TestMode;
+      if (_deliveryDestinationHash != DestinationFingerprint() || (_deliveryTestMode.HasValue && _deliveryTestMode.Value != testMode))
+        this.InitializeDeliveryTracking();
+      _deliveryTestMode = testMode;
+    }
+
+    private ConfigurationDeliveryResult SendConfiguration(ConfigurationPayload payload) =>
+      _configurationSender != null ? _configurationSender(payload) :
+      SettingsAPI.SendPropertyLinesToAPI(payload.Pairs.ToList(), payload.Dca.ToList(), payload.Indicators.ToList(),
+        this.PTMagicConfiguration, this.Log,
+        canSend: () => (_decisionFresh = this.IsRaidFresh(out _)));
+
+    private ConfigurationDeliveryResult SendGlobalSellOnlyMode(bool enabled)
+    {
+      if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode)
+        return new ConfigurationDeliveryResult { Succeeded = true, Simulated = true,
+          Status = enabled ? "TestMode global SOM enabled" : "TestMode global SOM released" };
+      return _globalSellOnlyModeSender != null ? _globalSellOnlyModeSender(enabled)
+        : GlobalSellOnlyModeAPI.Set(this.PTMagicConfiguration, enabled, this.Log,
+          canSend: () => enabled || (_decisionFresh = this.IsRaidFresh(out _)));
+    }
+
+    private void SaveDeliveryCheckpoint()
+    {
+      if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode) return;
+      try { _configurationDelivery.SaveConfirmed(DeliveryCheckpointPath); }
+      catch (Exception exception)
+      {
+        this.Log.DoLogError("PT acknowledged configuration, but its checkpoint could not be saved: " + exception.GetType().Name + ".");
+      }
+    }
+
+    private ConfigurationPayload _lastEffectivePayload;
+
+    private void SaveStartupGuardCheckpoint()
+    {
+      if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode) return;
+      new StartupSellOnlyModeState
+      {
+        DestinationHash = StartupGuardDestinationFingerprint(), PendingRelease = _startupGuardPending,
+        EnabledAcknowledged = _startupGuardActive
+      }.Save(StartupGuardCheckpointPath);
+    }
+
+    private void SaveAcknowledgedStartupGuardCheckpoint()
+    {
+      try { this.SaveStartupGuardCheckpoint(); }
+      catch (Exception exception)
+      {
+        // An HTTP acknowledgement remains real even if its metadata cannot be
+        // saved. A prior pending marker causes conservative replay on restart.
+        this.Log.DoLogError("Global SOM command acknowledged, but its checkpoint could not be saved: " + exception.GetType().Name + ".");
+      }
+    }
+
+    private void EnsureStartupSellOnlyMode()
+    {
+      if (!_firstSuccessfulRaidPending && !_startupGuardPending) return;
+      if (!this.PTMagicConfiguration.GeneralSettings.Application.StartupSellOnlyMode && !_startupGuardPending) return;
+      _startupGuardPending = true;
+      _startupGuardStatus = "Enable pending";
+      // Persist the intent before the API call, covering a crash/timeout after
+      // PT accepted true but before acknowledgement was recorded locally.
+      this.SaveStartupGuardCheckpoint();
+      try { _startupGuardDelivery = this.SendGlobalSellOnlyMode(true) ?? ConfigurationDeliveryResult.Failed("Global SOM transport returned no acknowledgement."); }
+      catch (Exception exception) { _startupGuardDelivery = ConfigurationDeliveryResult.Failed("Global SOM transport exception: " + exception.GetType().Name); }
+      if (!_startupGuardDelivery.Succeeded)
+      {
+        _startupGuardStatus = "Enable failed; remote state unconfirmed";
+        this.Log.DoLogError(_startupGuardDelivery.Error);
+        this.UpdateDeliverySummary();
+        throw new InvalidOperationException("Initial global SOM was not acknowledged; market-data bootstrap is deferred until the next interval.");
+      }
+      _startupGuardActive = true;
+      _startupGuardStatus = _startupGuardDelivery.Simulated ? "TestMode enabled" : "Enabled";
+      this.SaveAcknowledgedStartupGuardCheckpoint();
+      this.Log.DoLogInfo(_startupGuardDelivery.Simulated
+        ? "TESTMODE: startup global SOM preview; no PT API command was sent."
+        : "Startup global SOM enable acknowledged: new buys and DCA buys blocked; sells remain allowed. Loading market data.");
+      this.UpdateDeliverySummary();
+    }
+
+    private void ReleaseStartupSellOnlyMode()
+    {
+      if (!_startupGuardPending) return;
+      _decisionFresh = this.IsRaidFresh(out string reason);
+      if (!_decisionFresh || _selectionIndeterminate)
+      {
+        _startupGuardStatus = "Release deferred; waiting for a fresh conclusive raid";
+        _startupGuardDelivery = ConfigurationDeliveryResult.Deferred(reason);
+        return;
+      }
+      try { _startupGuardDelivery = this.SendGlobalSellOnlyMode(false) ?? ConfigurationDeliveryResult.Failed("Global SOM transport returned no acknowledgement."); }
+      catch (Exception exception) { _startupGuardDelivery = ConfigurationDeliveryResult.Failed("Global SOM transport exception: " + exception.GetType().Name); }
+      if (!_startupGuardDelivery.Succeeded)
+      {
+        _startupGuardStatus = "Release failed; remote state unconfirmed";
+        this.Log.DoLogWarn(_startupGuardDelivery.Error);
+        this.Log.DoLogWarn("The normal configuration is acknowledged, but startup global SOM release is pending. It will be reasserted before the next load and retried after a fresh conclusive raid.");
+        return;
+      }
+      _startupGuardActive = false;
+      _startupGuardPending = false;
+      _startupGuardStatus = _startupGuardDelivery.Simulated ? "TestMode released" : "Released";
+      this.SaveAcknowledgedStartupGuardCheckpoint();
+      this.Log.DoLogInfo(_startupGuardDelivery.Simulated
+        ? "TESTMODE: startup global SOM release preview; no PT API command was sent."
+        : "Startup global SOM disable acknowledged after fresh analysis and confirmed configuration delivery.");
+    }
+
+    private bool IsRaidFresh(out string reason)
+    {
+      // Even a volume/age-only configuration needs a completed, current raid.
+      // Never reuse the preceding raid's timestamp before this one has built.
+      if (!_raidAnalysisBuilt)
+      {
+        reason = "The current raid has not completed its market-data analysis.";
+        return false;
+      }
+      return BinanceFuturesAnalyticsRuntime.IsDecisionFresh(this.PTMagicConfiguration, out reason);
+    }
+
+    private void RestoreRaidState()
+    {
+      if (_raidPriorSetting != null)
+      {
+        this.ActiveSetting = _raidPriorSetting;
+        this.ActiveSettingName = _raidPriorSetting.SettingName;
+        this.LastSettingsChange = _raidPriorSettingsChange;
+        if (this.LastRuntimeSummary != null) this.LastRuntimeSummary.CurrentGlobalSetting = _raidPriorSetting;
+      }
+      if (_raidPriorSms != null) this.SingleMarketSettingSummaries = _raidPriorSms;
+      this.TriggeredSingleMarketSettings = _raidPriorSms == null
+        ? new Dictionary<string, List<SingleMarketSetting>>()
+        : _raidPriorSms.Where(summary => summary?.SingleMarketSetting != null)
+          .GroupBy(summary => summary.Market, StringComparer.OrdinalIgnoreCase)
+          .ToDictionary(group => group.Key, group => group.Select(summary => summary.SingleMarketSetting).ToList(), StringComparer.OrdinalIgnoreCase);
+      this.SingleMarketSettingsCount = this.TriggeredSingleMarketSettings.Values.SelectMany(settings => settings)
+        .GroupBy(setting => setting.SettingName, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+      if (_lastEffectivePayload != null)
+      {
+        this.PairsLines = _lastEffectivePayload.Pairs.ToList();
+        this.DCALines = _lastEffectivePayload.Dca.ToList();
+        this.IndicatorsLines = _lastEffectivePayload.Indicators.ToList();
+      }
+      else if (this.ActiveSetting != null)
+      {
+        try { SettingsHandler.CompileProperties(this, this.ActiveSetting, this.LastSettingsChange.ToLocalTime()); }
+        catch (Exception exception) { this.Log.DoLogWarn("Unable to reconstruct the previous preset for display: " + exception.GetType().Name + ". Confirmed delivery was not changed."); }
+      }
+    }
+
     private void SaveProfitTrailerProperties()
     {
-      // Get current PT properties
-      if (this.GlobalSettingWritten || this.SingleMarketSettingChanged)
+      _desiredGlobalSettingName = this.ActiveSettingName;
+      _desiredSms = this.TriggeredSingleMarketSettings
+        .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+        .SelectMany(pair => pair.Value.Select(setting => pair.Key + "/" + setting.SettingName)).ToArray();
+      ConfigurationPayload desired = new ConfigurationPayload(this.ActiveSettingName, this.PairsLines,
+        this.DCALines, this.IndicatorsLines, DestinationFingerprint());
+      _desiredPayloadHash = desired.PayloadHash;
+      _decisionFresh = this.IsRaidFresh(out string freshnessReason);
+      if (!_decisionFresh || ((_firstSuccessfulRaidPending || _startupGuardPending) && _selectionIndeterminate))
       {
-        // Save current PT properties to API (Valid for PT 2.x and above)
-        this.Log.DoLogInfo("Saving properties using API...");
+        _raidDelivery = ConfigurationDeliveryResult.Deferred(!_decisionFresh ? freshnessReason :
+          "Initial selection is indeterminate; the confirmed startup guard or prior configuration remains in place.");
+        this.RestoreRaidState();
+        this.UpdateDeliverySummary();
+        this.Log.DoLogWarn("PT configuration deferred: " + _raidDelivery.Error);
+        return;
+      }
 
-        // Send all Properties
-        if (!this.PTMagicConfiguration.GeneralSettings.Application.TestMode)
+      // Compare the full desired payload against the last acknowledgement. This
+      // covers removal of the last SMS and retries even when selection is unchanged.
+      _raidDelivery = _configurationDelivery.Deliver(desired, SendConfiguration,
+        this.PTMagicConfiguration.GeneralSettings.Application.TestMode,
+        this.EnforceSettingsReapply || _firstSuccessfulRaidPending);
+      if (_raidDelivery.Succeeded)
+      {
+        _normalDecisionCommittedThisRaid = true;
+        _firstSuccessfulRaidPending = false;
+        _lastEffectivePayload = desired;
+        bool switched = !String.Equals(_raidPriorSetting?.SettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase);
+        if (switched || this.GlobalSettingWritten) this.LastSettingsChange = DateTime.UtcNow;
+        if (switched) this.LastRuntimeSummary.LastGlobalSettingSwitch = this.LastRuntime;
+        this.SaveDeliveryCheckpoint();
+        this.ReleaseStartupSellOnlyMode();
+        this.Log.DoLogInfo(_raidDelivery.Simulated
+          ? "TESTMODE: configuration evaluated; no updates sent to PT."
+          : _raidDelivery.Attempted ? "Complete configuration acknowledged by all PT targets."
+          : "Confirmed PT configuration unchanged; no update required.");
+        if (switched && !_raidDelivery.Simulated && this.PTMagicConfiguration.GeneralSettings.Telegram.IsEnabled)
         {
-          SettingsAPI.SendPropertyLinesToAPI(this.PairsLines, this.DCALines, this.IndicatorsLines, this.PTMagicConfiguration, this.Log);
-          this.Log.DoLogInfo("Settings updates sent to PT!");
-        }
-        else
-        {
-          this.Log.DoLogWarn("TESTMODE enabled -- no updates sent to PT!");
+          try
+          {
+            TelegramHelper.SendMessage(this.PTMagicConfiguration.GeneralSettings.Telegram.BotToken,
+              this.PTMagicConfiguration.GeneralSettings.Telegram.ChatId,
+              this.PTMagicConfiguration.GeneralSettings.Application.InstanceName + ": Setting applied: " + this.ActiveSettingName + ".",
+              this.PTMagicConfiguration.GeneralSettings.Telegram.SilentMode, this.Log);
+          }
+          catch (Exception exception) { this.Log.DoLogCritical("Failed to send setting confirmation", exception); }
         }
       }
       else
       {
-        this.Log.DoLogInfo("Nothing changed, no config written!");
+        this.RestoreRaidState();
+        this.Log.DoLogError("PT configuration delivery failed; the desired update remains pending and will be retried after a fresh raid.");
+      }
+      this.UpdateDeliverySummary();
+    }
+
+    private void UpdateDeliverySummary()
+    {
+      if (this.LastRuntimeSummary == null) return;
+      this.LastRuntimeSummary.DesiredGlobalSettingName = _desiredGlobalSettingName;
+      this.LastRuntimeSummary.AppliedGlobalSettingName = _configurationDelivery.Confirmed.AppliedSettingName;
+      this.LastRuntimeSummary.ConfigurationDeliveryStatus = _raidDelivery.Status;
+      this.LastRuntimeSummary.StartupSellOnlyModeActive = _startupGuardActive;
+      this.LastRuntimeSummary.StartupSellOnlyModePending = _startupGuardPending;
+      this.LastRuntimeSummary.StartupSellOnlyModeStatus = _startupGuardStatus;
+      this.LastRuntimeSummary.AnalysisAsOfUtc = _raidAnalysisBuilt ? BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc : null;
+      this.LastRuntimeSummary.SourceRevision = BuildIdentity.SourceRevision;
+      this.LastRuntimeSummary.CurrentGlobalSetting ??= this.ActiveSetting;
+    }
+
+    private void PersistFailedRaidSummary()
+    {
+      // Failures before the full market summary must still be visible in the
+      // Monitor. Preserve the last market data while updating delivery state.
+      try
+      {
+        string directory = Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData);
+        string path = Path.Combine(directory, "LastRuntimeSummary.json");
+        Summary summary = File.Exists(path)
+          ? JsonConvert.DeserializeObject<Summary>(File.ReadAllText(path)) ?? new Summary() : new Summary();
+        summary.LastRuntime = this.LastRuntime;
+        summary.LastRuntimeSeconds = (int)Math.Max(0, Math.Ceiling((DateTime.UtcNow - this.LastRuntime).TotalSeconds));
+        summary.Version = this.CurrentVersion?.ToString() ?? "";
+        summary.SourceRevision = BuildIdentity.SourceRevision;
+        summary.CurrentGlobalSetting = this.ActiveSetting;
+        summary.DesiredGlobalSettingName = _desiredGlobalSettingName;
+        summary.AppliedGlobalSettingName = _configurationDelivery.Confirmed.AppliedSettingName;
+        summary.ConfigurationDeliveryStatus = _raidDelivery.Status;
+        summary.StartupSellOnlyModeActive = _startupGuardActive;
+        summary.StartupSellOnlyModePending = _startupGuardPending;
+        summary.StartupSellOnlyModeStatus = _startupGuardStatus;
+        summary.AnalysisAsOfUtc = _raidAnalysisBuilt ? BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc : null;
+        Directory.CreateDirectory(directory);
+        string temporary = path + ".tmp";
+        File.WriteAllText(temporary, JsonConvert.SerializeObject(summary));
+        File.Move(temporary, path, true);
+      }
+      catch (Exception exception)
+      {
+        this.Log.DoLogWarn("Failed raid status could not be saved: " + exception.GetType().Name + ".");
       }
     }
+
+    private void CaptureDecisionMetric(MarketTrend trend, string metric, string symbol, string relation,
+      double? value, string reason, string scope, string settingName, string triggerId)
+    {
+      if (!this.PTMagicConfiguration.GeneralSettings.Application.DecisionHistoryEnabled) return;
+      string name = MarketTrendMetrics.Normalize(metric);
+      BinanceFuturesAnalyticsRuntime.TryGetMetric(trend?.Name, name, symbol, out FeatureValueSnapshot feature);
+      string key = scope + "|" + settingName + "|" + triggerId + "|" + (trend?.Name ?? "")
+        + "|" + name + "|" + (symbol ?? "") + "|" + (relation ?? "");
+      _decisionInputs[key] = new DecisionMetricInput
+      {
+        Scope = scope, SettingName = settingName, TriggerId = triggerId,
+        MarketTrend = trend?.Name, Metric = name, Market = symbol, Relation = relation,
+        Value = value.HasValue && double.IsFinite(value.Value) ? value : null,
+        Available = value.HasValue && double.IsFinite(value.Value), Reason = reason ?? "",
+        SourceDataTimestampUtc = feature?.SourceDataTimestampUtc, CoveragePercent = feature?.CoveragePercent
+      };
+    }
+
+    private void CaptureDecisionObservation(string metric, string symbol, double? value, string reason,
+      string scope, string settingName, string triggerId)
+    {
+      if (!this.PTMagicConfiguration.GeneralSettings.Application.DecisionHistoryEnabled) return;
+      string key = scope + "|" + settingName + "|" + triggerId + "|" + metric + "|" + symbol;
+      _decisionInputs[key] = new DecisionMetricInput
+      {
+        Scope = scope, SettingName = settingName, TriggerId = triggerId,
+        Metric = metric, Market = symbol, Value = value.HasValue && double.IsFinite(value.Value) ? value : null,
+        Available = value.HasValue && double.IsFinite(value.Value), Reason = reason
+      };
+    }
+
+    private void RecordDecisionHistory(string errorCategory = "")
+    {
+      if (_historyWritten || this.PTMagicConfiguration?.GeneralSettings?.Application == null) return;
+      Application app = this.PTMagicConfiguration.GeneralSettings.Application;
+      if (!app.DecisionHistoryEnabled) return;
+      try
+      {
+        DecisionHistoryRecord record = new DecisionHistoryRecord
+        {
+          RaidId = _raidId, StartedAtUtc = new DateTimeOffset(DateTime.SpecifyKind(this.LastRuntime, DateTimeKind.Utc)),
+          RecordedAtUtc = DateTimeOffset.UtcNow, ApplicationVersion = this.CurrentVersion?.ToString() ?? "",
+          SourceRevision = BuildIdentity.SourceRevision, Exchange = app.Exchange,
+          ConfigurationHash = ConfigurationPayload.Hash(JsonConvert.SerializeObject(new
+          {
+            Analyzer = this.PTMagicConfiguration.AnalyzerSettings,
+            app.Exchange, app.MaxAnalysisAgeSeconds, app.StartupSellOnlyMode
+          })),
+          DesiredPayloadHash = _desiredPayloadHash, ConfirmedPayloadHash = _configurationDelivery.Confirmed.AppliedPayloadHash,
+          AnalysisAsOfUtc = _raidAnalysisBuilt ? BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc : null,
+          DecisionFresh = _decisionFresh, SelectionIndeterminate = _selectionIndeterminate,
+          StartupSellOnlyModeActive = _startupGuardActive, StartupSellOnlyModePending = _startupGuardPending,
+          StartupSellOnlyModeStatus = _startupGuardStatus, TestMode = app.TestMode,
+          DesiredGlobalSetting = _desiredGlobalSettingName, ConfirmedGlobalSetting = _configurationDelivery.Confirmed.AppliedSettingName,
+          DesiredSingleMarketSettings = _desiredSms, DeliveryStatus = _raidDelivery.Status,
+          ErrorCategory = String.IsNullOrWhiteSpace(errorCategory) ? (_raidDelivery.Succeeded ? "" : _raidDelivery.Status) : errorCategory,
+          MetricInputs = _decisionInputs.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(pair => pair.Value).ToArray(),
+          Universes = !_raidAnalysisBuilt ? Array.Empty<DecisionTrendUniverse>() :
+            BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses.Values.Select(analysis => new DecisionTrendUniverse
+            {
+              Name = analysis.MarketTrendName, TrendMinutes = analysis.TrendMinutes, AsOfUtc = analysis.CalculatedAtUtc,
+              ExpectedClosedCandleTimeUtc = analysis.ExpectedClosedCandleTimeUtc,
+              GlobalSymbols = analysis.GlobalSymbols.ToArray(), AssetSymbols = analysis.AssetSymbols.ToArray()
+            }).ToArray()
+        };
+        new DecisionHistoryWriter(Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "DecisionHistory"))
+          .Append(record, app.DecisionHistoryRetentionDays, app.DecisionHistoryMaxMegabytes);
+        _historyWritten = true;
+      }
+      catch (Exception exception)
+      {
+        this.Log.DoLogWarn("Decision history could not be appended: " + exception.GetType().Name + ". Configuration delivery status is unchanged.");
+      }
+    }
+
+    private string SmsSummaryPath => Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData,
+      this.PTMagicConfiguration.GeneralSettings.Application.TestMode
+        ? "SingleMarketSettingSummary.TestMode.json" : "SingleMarketSettingSummary.json");
 
     private void SaveSingleMarketSettingsSummary()
     {
@@ -2248,7 +2724,8 @@ namespace Core.Main
       smsSummaryJsonSettings.NullValueHandling = NullValueHandling.Ignore;
       smsSummaryJsonSettings.DefaultValueHandling = DefaultValueHandling.Ignore;
 
-      FileHelper.WriteTextToFile(Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + Constants.PTMagicPathData + Path.DirectorySeparatorChar, "SingleMarketSettingSummary.json", JsonConvert.SerializeObject(this.SingleMarketSettingSummaries, Formatting.None, smsSummaryJsonSettings));
+      FileHelper.WriteTextToFile(Path.GetDirectoryName(SmsSummaryPath) + Path.DirectorySeparatorChar,
+        Path.GetFileName(SmsSummaryPath), JsonConvert.SerializeObject(this.SingleMarketSettingSummaries, Formatting.None, smsSummaryJsonSettings));
 
       this.Log.DoLogInfo("Single Market Settings Summary saved.");
     }

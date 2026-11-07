@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -13,12 +14,13 @@ namespace Core.ProfitTrailer
   public static class SettingsAPI
   {
     // Save config back to Profit Trailer
-    public static void SendPropertyLinesToAPI(List<string> pairsLines, List<string> dcaLines, List<string> indicatorsLines, PTMagicConfiguration systemConfiguration, LogHelper log)
+    public static ConfigurationDeliveryResult SendPropertyLinesToAPI(List<string> pairsLines, List<string> dcaLines, List<string> indicatorsLines, PTMagicConfiguration systemConfiguration, LogHelper log, Func<HttpClient> clientFactory = null, Func<bool> canSend = null)
     {
       int retryCount = 0;
       int maxRetries = 3;
       bool transferCompleted = false;
       bool transferCanceled = false;
+      bool allTransfersCompleted = true;
 
       // get PT license list
       string licenses = systemConfiguration.GeneralSettings.Application.ProfitTrailerLicense;
@@ -39,15 +41,26 @@ namespace Core.ProfitTrailer
       int urlCount = urlList.Count;
 
       log.DoLogInfo("Found " + licenseCount + " licenses and " + urlCount + " URLs");
-      if (urlCount != licenseCount)
+      if (licenseCount == 0 || urlCount != licenseCount
+        || licenseList.Any(String.IsNullOrWhiteSpace) || urlList.Any(String.IsNullOrWhiteSpace))
       {
         log.DoLogWarn("ERROR - urlCount must match licenseCount");
+        return ConfigurationDeliveryResult.Failed("Configuration target and license counts must match and be nonzero.");
       }
       for (int i = 0; i < licenseCount; i++)
       {
         transferCompleted = false;
+        transferCanceled = false;
+        retryCount = 0;
         while (!transferCompleted && !transferCanceled)
         {
+          // Recheck before every target and retry: a slow earlier request must
+          // not authorize a new transfer from an expired analysis.
+          if (canSend != null && !canSend())
+          {
+            log.DoLogWarn("Configuration delivery stopped because the analysis is no longer fresh; a fresh raid will retry.");
+            return ConfigurationDeliveryResult.Failed("Analysis expired during configuration delivery.");
+          }
           try
           {
             using (HttpClientHandler handler = new HttpClientHandler())
@@ -55,19 +68,19 @@ namespace Core.ProfitTrailer
               handler.UseProxy = false;
               handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
 
-              using (HttpClient httpClient = new HttpClient(handler))
+              using (HttpClient httpClient = clientFactory != null ? clientFactory() : new HttpClient(handler))
               {
                 httpClient.Timeout = TimeSpan.FromSeconds(30);
 
                 // PT is using ordinary POST data, not JSON
-                string query = "configName=" + systemConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName;
-                query = query + "&license=" + licenseList[i];
+                string query = "configName=" + WebUtility.UrlEncode(systemConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName);
+                query = query + "&license=" + WebUtility.UrlEncode(licenseList[i]);
                 string pairsPropertiesString = SystemHelper.ConvertListToTokenString(pairsLines, Environment.NewLine, false);
                 string dcaPropertiesString = SystemHelper.ConvertListToTokenString(dcaLines, Environment.NewLine, false);
                 string indicatorsPropertiesString = SystemHelper.ConvertListToTokenString(indicatorsLines, Environment.NewLine, false);
                 query += "&pairsData=" + WebUtility.UrlEncode(pairsPropertiesString) + "&dcaData=" + WebUtility.UrlEncode(dcaPropertiesString) + "&indicatorsData=" + WebUtility.UrlEncode(indicatorsPropertiesString);
 
-                byte[] formData = Encoding.ASCII.GetBytes(query);
+                byte[] formData = Encoding.UTF8.GetBytes(query);
                 using (ByteArrayContent content = new ByteArrayContent(formData))
                 {
                   content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
@@ -76,7 +89,8 @@ namespace Core.ProfitTrailer
                   int adjustedCount = i + 1;
                   log.DoLogInfo("Sending Properties to license " + adjustedCount + " at " + urlList[i]);
 
-                  using (HttpResponseMessage response = httpClient.PostAsync(urlList[i] + "settingsapi/settings/saveAll", content).GetAwaiter().GetResult())
+                  string endpoint = urlList[i].TrimEnd('/') + "/settingsapi/settings/saveAll";
+                  using (HttpResponseMessage response = httpClient.PostAsync(endpoint, content).GetAwaiter().GetResult())
                   {
                     if (response.StatusCode == HttpStatusCode.NotModified)
                     {
@@ -141,7 +155,10 @@ namespace Core.ProfitTrailer
             transferCanceled = true;
           }
         }
+        allTransfersCompleted &= transferCompleted;
       }
+      return allTransfersCompleted ? ConfigurationDeliveryResult.Applied()
+        : ConfigurationDeliveryResult.Failed("One or more ProfitTrailer targets did not acknowledge the complete configuration.");
     }
   }
 }

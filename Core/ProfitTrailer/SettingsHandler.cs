@@ -677,7 +677,7 @@ namespace Core.ProfitTrailer
         ptmagicInstance.DCALines = cleanedUpDCALines;
         ptmagicInstance.IndicatorsLines = cleanedUpIndicatorsLines;
 
-        result = removedPairsSingleMarketSettings && removedDCASingleMarketSettings && removedIndicatorsSingleMarketSettings;
+        result = removedPairsSingleMarketSettings || removedDCASingleMarketSettings || removedIndicatorsSingleMarketSettings;
       }
       catch (Exception ex)
       {

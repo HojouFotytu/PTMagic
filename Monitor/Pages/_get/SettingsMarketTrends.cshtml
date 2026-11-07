@@ -1,5 +1,6 @@
 ﻿@page
 @model SettingsMarketTrendsModel
+@using Monitor.Configuration
 @{
   Layout = null;
 }
@@ -11,8 +12,8 @@
         @if (!Model.MarketTrend.Name.Equals("")) {
           <h4 class="m-t-0 m-b-20 header-title">
             Market Trend "<span class="text-ptmagic">@Model.MarketTrend.Name</span>"
-            <button class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-MT btn-move-MT@(Model.MarketTrendName)" data-datadirection="down" data-datatarget="MarketTrend_@Model.MarketTrendName" data-toggle="tooltip" data-placement="top" title="Move down"><i class="fa fa-chevron-down"></i></button>
-            <button class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-MT btn-move-MT@(Model.MarketTrendName) m-r-5" data-datadirection="up" data-datatarget="MarketTrend_@Model.MarketTrendName" data-toggle="tooltip" data-placement="top" title="Move up"><i class="fa fa-chevron-up"></i></button>
+            <button type="button" class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-MT btn-move-MT@(Model.MarketTrendName)" data-datadirection="down" data-datatarget="MarketTrend_@Model.MarketTrendName" data-toggle="tooltip" data-placement="top" title="Move down"><i class="fa fa-chevron-down"></i></button>
+            <button type="button" class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-MT btn-move-MT@(Model.MarketTrendName) m-r-5" data-datadirection="up" data-datatarget="MarketTrend_@Model.MarketTrendName" data-toggle="tooltip" data-placement="top" title="Move up"><i class="fa fa-chevron-up"></i></button>
           </h4>
         } else {
           <h4 class="m-t-0 m-b-20 header-title">New Market Trend</h4>
@@ -21,8 +22,8 @@
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Name (Unique) <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="UNIQUE market trend name (to be referenced by your triggers below)"></i></label>
           <div class="col-md-8">
-            <input type="text" class="form-control" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|Name" value="@Core.Helper.SystemHelper.StripBadCode(Model.MarketTrend.Name, Core.Main.Constants.WhiteListNames)">
-            <span class="help-block"><small>Allowed characters: Letters, Numbers and '_'</small></span>
+            <input type="text" class="form-control" data-analyzer-trend-name="true" data-trend-token="@Model.MarketTrendName" data-original-name="@Model.MarketTrend.Name" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|Name" value="@Model.MarketTrend.Name">
+            <span class="help-block"><small>Use a unique name and the same name in trigger references.</small></span>
           </div>
         </div>
 
@@ -30,7 +31,7 @@
           <label class="col-md-4 col-form-label">Platform <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Platform to grab prices from"></i></label>
           <div class="col-md-8">
             <select name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|Platform" class="form-control">
-              <option selected="@(Model.MarketTrend.Platform.Equals("Exchange", StringComparison.InvariantCultureIgnoreCase))">Exchange</option>
+              @Html.Raw(AnalyzerSettingsEditor.Options(new[] { "Exchange" }, Model.MarketTrend.Platform))
             </select>
           </div>
         </div>
@@ -54,12 +55,29 @@
           <label class="col-md-4 col-form-label">Trend Currency <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Trend Currency to build the trend against. If set to 'Fiat', the trend will take the USD value of your main currency into account to build the trend."></i></label>
           <div class="col-md-8">
             <select name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|TrendCurrency" class="form-control">
-              <option selected="@(Model.MarketTrend.TrendCurrency.Equals("Market", StringComparison.InvariantCultureIgnoreCase))">Market</option>
-              <option selected="@(Model.MarketTrend.TrendCurrency.Equals("Fiat", StringComparison.InvariantCultureIgnoreCase))">Fiat</option>
+              @Html.Raw(AnalyzerSettingsEditor.Options(new[] { "Market", "Fiat" }, Model.MarketTrend.TrendCurrency))
             </select>
             <span class="help-block"><small>Market = Trend of each coin against your main market (BTC, ETH) / Fiat = Trend of each coin against USD</small></span>
           </div>
         </div>
+
+        <div class="form-group row">
+          <label class="col-md-4 col-form-label">Metrics</label>
+          <div class="col-md-8">
+            <input type="text" class="form-control" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|Metrics" value="@Model.MarketTrend.Metrics" />
+            <span class="help-block"><small>Comma-separated metric names. Blank selects normalized PriceTrend. Trigger metrics must be enabled here.</small></span>
+          </div>
+        </div>
+
+        @foreach (string field in new[] { "ATRPeriod", "VolumeExpansionLookback", "CorrelationLookback", "TopNVolumeCount", "ATRPBreadthThreshold", "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold" }) {
+          <div class="form-group row">
+            <label class="col-md-4 col-form-label">@Core.Helper.SystemHelper.SplitCamelCase(field)</label>
+            <div class="col-md-8">
+              <input type="text" class="form-control" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|@field" value="@AnalyzerSettingsEditor.PropertyValue(typeof(Core.Main.DataObjects.PTMagicData.MarketTrend).GetProperty(field).GetValue(Model.MarketTrend))" />
+            </div>
+          </div>
+        }
+        <p class="text-muted">Lookbacks count complete MarketTrend-duration periods. Correlation uses 3–1000 synchronized returns (default 30). Breadth thresholds use percent for ATRP and ratios for volume expansion.</p>
 
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Ignored Markets <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Comma separated list of markets you want to be ignored in this market trend."></i></label>
@@ -87,18 +105,28 @@
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Display Graph <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Displays or hides the graph for this trend on the dashboard of your PT Magic monitor."></i></label>
           <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|DisplayGraph" value="false" />
             <input type="checkbox" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|DisplayGraph" checked="@(Model.MarketTrend.DisplayGraph)" data-plugin="switchery" data-switchery="false" data-color="#81c868" data-size="small" />
+          </div>
+        </div>
+
+        <div class="form-group row">
+          <label class="col-md-4 col-form-label">Display on Market Analyzer List</label>
+          <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|DisplayOnMarketAnalyzerList" value="false" />
+            <input type="checkbox" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|DisplayOnMarketAnalyzerList" checked="@(Model.MarketTrend.DisplayOnMarketAnalyzerList)" data-plugin="switchery" data-switchery="false" data-color="#81c868" data-size="small" />
           </div>
         </div>
 
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Exclude Main Currency <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Excludes the main currency (for example BTC) from market trend analysis."></i></label>
           <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|ExcludeMainCurrency" value="false" />
             <input type="checkbox" name="MarketAnalyzer_MarketTrend_@(Model.MarketTrendName)|ExcludeMainCurrency" checked="@(Model.MarketTrend.ExcludeMainCurrency)" data-plugin="switchery" data-switchery="false" data-color="#81c868" data-size="small" />
           </div>
         </div>
 
-        <button class="btn btn-danger btn-block text-uppercase waves-effect waves-light btn-remove-MT@(Model.MarketTrendName)" data-datatarget="MarketTrend_@Model.MarketTrendName">
+        <button type="button" class="btn btn-danger btn-block text-uppercase waves-effect waves-light btn-remove-MT@(Model.MarketTrendName)" data-datatarget="MarketTrend_@Model.MarketTrendName">
           Remove Market Trend "@Model.MarketTrend.Name"
         </button>
       </div>
@@ -110,8 +138,10 @@
     $('.btn-remove-MT@(Model.MarketTrendName)').click(function () {
       var dataTarget = $(this).data('datatarget');
 
+      $('#' + dataTarget).find(':input').prop('disabled', true);
       $('#' + dataTarget).animate({ height: 0 }, 300, function () {
-        $(this).remove();
+        $(this).closest('.settings-markettrend').remove();
+        syncAnalyzerTrendOptions();
       });
 
       return false;

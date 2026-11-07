@@ -38,7 +38,13 @@ namespace Core.MarketAnalyzer
     public static Task<List<MarketCandle>> GetFiveMinuteMarketCandlesAsync(
       string marketName, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
     {
-      return BinanceKlineClient.GetFiveMinuteCandlesAsync(ExchangeName, ApiBase, marketName, candlesNeeded, log, cancellationToken);
+      return GetFiveMinuteMarketCandlesAsync(marketName, candlesNeeded, log, cancellationToken, null);
+    }
+
+    public static Task<List<MarketCandle>> GetFiveMinuteMarketCandlesAsync(
+      string marketName, int candlesNeeded, LogHelper log, CancellationToken cancellationToken, DateTimeOffset? asOfUtc)
+    {
+      return BinanceKlineClient.GetFiveMinuteCandlesAsync(ExchangeName, ApiBase, marketName, candlesNeeded, log, cancellationToken, asOfUtc);
     }
 
     public static Task<List<MarketTick>> GetMarketTicksAsync(string marketName, int ticksNeeded, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)

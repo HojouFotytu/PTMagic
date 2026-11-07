@@ -81,6 +81,7 @@
               Add Global Setting
             </button>
             <div class="dropdown-menu">
+              <a class="dropdown-item btn-new" data-datatype="GlobalSetting" data-datadirection="append" data-datatarget="">Add at end</a>
               @foreach (Core.Main.DataObjects.PTMagicData.GlobalSetting gs in Model.PTMagicConfiguration.AnalyzerSettings.GlobalSettings) {
                 <a class="dropdown-item btn-new" data-datatype="GlobalSetting" data-datatarget="@Core.Helper.SystemHelper.StripBadCode(gs.SettingName, Core.Main.Constants.WhiteListNames)">Add before <i>@Core.Helper.SystemHelper.SplitCamelCase(gs.SettingName)</i></a>
               }
@@ -93,6 +94,7 @@
               Add Single Market Setting
             </button>
             <div class="dropdown-menu">
+              <a class="dropdown-item btn-new" data-datatype="SingleMarketSetting" data-datadirection="append" data-datatarget="">Add at end</a>
               @foreach (Core.Main.DataObjects.PTMagicData.SingleMarketSetting sms in Model.PTMagicConfiguration.AnalyzerSettings.SingleMarketSettings) {
                 <a class="dropdown-item btn-new" data-datatype="SingleMarketSetting" data-datadirection="before" data-datatarget="@Core.Helper.SystemHelper.StripBadCode(sms.SettingName, Core.Main.Constants.WhiteListNames)">Add before <i>@Core.Helper.SystemHelper.SplitCamelCase(sms.SettingName)</i></a>
               }
@@ -109,6 +111,12 @@
 </div>
 
 <form class="form-horizontal" method="post">
+  <input type="hidden" name="AnalyzerSettingsFormVersion" value="@Monitor.Configuration.AnalyzerSettingsForm.Version" />
+  <input type="hidden" name="AnalyzerSettingsRevision" value="@Model.SettingsRevision" />
+  <input type="hidden" id="AnalyzerSettingsReady" name="AnalyzerSettingsReady" value="false" />
+  @if (!String.IsNullOrEmpty(Model.ValidationMessage)) {
+    <div class="alert alert-danger">@Model.ValidationMessage</div>
+  }
   <div class="row">
     <div class="col-md-12">
       <div class="card-box">
@@ -131,6 +139,7 @@
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Exclude Main Currency <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Excludes the main currency (for example BTC) from market trend analysis."></i></label>
           <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_ExcludeMainCurrency" value="false" />
             <input type="checkbox" name="MarketAnalyzer_ExcludeMainCurrency" checked="@(Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.ExcludeMainCurrency)" data-plugin="switchery" data-color="#81c868" data-size="small" />
           </div>
         </div>
@@ -138,6 +147,7 @@
         <div class="form-group row">
           <label for="MarketAnalyzer_UseProfitTrailerEnabledPairs" class="col-md-4 col-form-label">Use ProfitTrailer Enabled Pairs <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="When enabled, PTMagic restricts market analysis to enabled_pairs from the active ProfitTrailer PAIRS preset. When disabled, PTMagic can analyze all exchange markets matching ProfitTrailer's MARKET setting."></i></label>
           <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_UseProfitTrailerEnabledPairs" value="false" />
             <input id="MarketAnalyzer_UseProfitTrailerEnabledPairs" type="checkbox" name="MarketAnalyzer_UseProfitTrailerEnabledPairs" checked="@(Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.UseProfitTrailerEnabledPairs)" data-plugin="switchery" data-color="#81c868" data-size="small" />
           </div>
         </div>
@@ -145,6 +155,7 @@
         <div class="form-group row">
           <label for="MarketAnalyzer_UseProfitTrailerAllowedUnderlyingTypes" class="col-md-4 col-form-label">Use ProfitTrailer Allowed Underlying Types <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Binance Futures only. When enabled, PTMagic uses allowed_underlying_type from the active ProfitTrailer PAIRS preset. When disabled, PTMagic uses Included Underlying Types below."></i></label>
           <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_UseProfitTrailerAllowedUnderlyingTypes" value="false" />
             <input id="MarketAnalyzer_UseProfitTrailerAllowedUnderlyingTypes" type="checkbox" name="MarketAnalyzer_UseProfitTrailerAllowedUnderlyingTypes" checked="@(Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.UseProfitTrailerAllowedUnderlyingTypes)" data-plugin="switchery" data-color="#81c868" data-size="small" />
           </div>
         </div>
@@ -272,7 +283,7 @@
 
 @section Scripts {
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/switchery/js/switchery.min.js"></script>
-  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/analyzer-settings.js?v=@Html.Raw(Model.Summary.Version)"></script>
+  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/analyzer-settings.js?v=@Html.Raw(Model.Summary.Version)-editor@(Monitor.Configuration.AnalyzerSettingsForm.Version)"></script>
 
   <script type="text/javascript">
     $(document).ready(function () {
@@ -281,6 +292,7 @@
       $('.settings-markettrend').buildMarketTrendSettings();
       $('.settings-globalsetting').buildGlobalSettings();
       $('.settings-singlemarketsetting').buildSingleMarketSettings();
+      checkBuildStatus();
 
       $('.btn-new').click(function () {
         var dataType = $(this).data('datatype');
@@ -294,19 +306,19 @@
             $('.settings-markettrend.new').buildMarketTrendSettings();
             break;
           case 'GlobalSetting':
-            $('html, body').scrollTop($('#MarketAnalyzer_GlobalSettings > [data-settingname="' + dataTarget + '"]').offset().top - 100);
-            $('#MarketAnalyzer_GlobalSettings > [data-settingname="' + dataTarget + '"]').before('<div class="settings-globalsetting new" data-settingname="" data-rooturl="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)"><i class="fa fa-circle-o-notch fa-spin fa-3x fa-fw"></i></div>');
-            $('.settings-globalsetting.new').buildGlobalSettings();
-            break;
           case 'SingleMarketSetting':
-            if (dataDirection === 'before') {
-              $('html, body').scrollTop($('#MarketAnalyzer_SingleMarketSettings > [data-settingname="' + dataTarget + '"]').offset().top - 100);
-              $('#MarketAnalyzer_SingleMarketSettings > [data-settingname="' + dataTarget + '"]').before('<div class="settings-singlemarketsetting new" data-settingname="" data-rooturl="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)"><i class="fa fa-circle-o-notch fa-spin fa-3x fa-fw"></i></div>');
-            } else {
-              $('html, body').scrollTop($('#MarketAnalyzer_SingleMarketSettings > [data-settingname="' + dataTarget + '"]').offset().top + $('#MarketAnalyzer_SingleMarketSettings > [data-settingname="' + dataTarget + '"]').height() - 100);
-              $('#MarketAnalyzer_SingleMarketSettings > [data-settingname="' + dataTarget + '"]').after('<div class="settings-singlemarketsetting new" data-settingname="" data-rooturl="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)"><i class="fa fa-circle-o-notch fa-spin fa-3x fa-fw"></i></div>');
-            }
-            $('.settings-singlemarketsetting.new').buildSingleMarketSettings();
+            var isGlobal = dataType === 'GlobalSetting';
+            var container = isGlobal ? $('#MarketAnalyzer_GlobalSettings') : $('#MarketAnalyzer_SingleMarketSettings');
+            var cssClass = isGlobal ? 'settings-globalsetting' : 'settings-singlemarketsetting';
+            var target = container.children('[data-settingname]').filter(function () { return $(this).attr('data-settingname') === dataTarget; }).first();
+            var newSetting = $('<div>').addClass(cssClass + ' new').attr('data-settingname', '').attr('data-rooturl', '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)')
+              .html('<i class="fa fa-circle-o-notch fa-spin fa-3x fa-fw"></i>');
+            if (!target.length || dataDirection === 'append') container.append(newSetting);
+            else if (dataDirection === 'after') target.after(newSetting);
+            else target.before(newSetting);
+            $('html, body').scrollTop(newSetting.offset().top - 100);
+            if (isGlobal) newSetting.buildGlobalSettings();
+            else newSetting.buildSingleMarketSettings();
             break;
         }
         return false;
@@ -343,7 +355,7 @@
 
       @if (!Model.NotifyType.Equals("") && !Model.NotifyHeadline.Equals("") && !Model.NotifyMessage.Equals("")) {
         <text>
-        $.Notification.notify('@Model.NotifyType', 'top left', '@Model.NotifyHeadline', '@Model.NotifyMessage');
+        $.Notification.notify(@Html.Raw(Monitor.Configuration.AnalyzerSettingsEditor.Json(Model.NotifyType)), 'top left', @Html.Raw(Monitor.Configuration.AnalyzerSettingsEditor.Json(Model.NotifyHeadline)), @Html.Raw(Monitor.Configuration.AnalyzerSettingsEditor.Json(Model.NotifyMessage)));
         window.history.pushState('@Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName Monitor', '@Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName Monitor', '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)SettingsAnalyzer');
         </text>
       }

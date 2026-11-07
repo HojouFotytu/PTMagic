@@ -1,5 +1,6 @@
 ﻿@page
 @model SettingsSingleMarketSettingsModel
+@using Monitor.Configuration
 @{
   Layout = null;
 }
@@ -11,8 +12,8 @@
         @if (!Model.SingleMarketSetting.SettingName.Equals("")) {
           <h4 class="m-t-0  m-b-20 header-title">
             Single Market Setting "<span class="text-ptmagic">@Model.SingleMarketSetting.SettingName</span>"
-            <button class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-SMS btn-move-SMS@(Model.SettingName)" data-datadirection="down" data-datatarget="SingleMarketSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move down"><i class="fa fa-chevron-down"></i></button>
-            <button class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-SMS btn-move-SMS@(Model.SettingName) m-r-5" data-datadirection="up" data-datatarget="SingleMarketSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move up"><i class="fa fa-chevron-up"></i></button>
+            <button type="button" class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-SMS btn-move-SMS@(Model.SettingName)" data-datadirection="down" data-datatarget="SingleMarketSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move down"><i class="fa fa-chevron-down"></i></button>
+            <button type="button" class="btn btn-ptmagic text-uppercase waves-effect waves-light btn-sort btn-xs pull-right btn-move-SMS btn-move-SMS@(Model.SettingName) m-r-5" data-datadirection="up" data-datatarget="SingleMarketSetting_@Model.SettingName" data-toggle="tooltip" data-placement="top" title="Move up"><i class="fa fa-chevron-up"></i></button>
           </h4>
         } else {
           <h4 class="m-t-0 header-title">New Single Market Setting</h4>
@@ -21,13 +22,13 @@
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Setting Name (Unique) <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="UNIQUE name of your setting"></i></label>
           <div class="col-md-8">
-            <input type="text" class="form-control" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|SettingName" value="@Core.Helper.SystemHelper.StripBadCode(Model.SingleMarketSetting.SettingName, Core.Main.Constants.WhiteListNames)">
-            <span class="help-block"><small>Allowed characters: Letters, Numbers and '_'</small></span>
+            <input type="text" class="form-control" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|SettingName" value="@Model.SingleMarketSetting.SettingName">
+            <span class="help-block"><small>Use a unique setting name.</small></span>
           </div>
         </div>
 
         <div class="form-group row">
-          <label class="col-md-4 col-form-label">Trigger Connection <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Define if triggers will be connected by AND or OR"></i></label>
+          <label class="col-md-4 col-form-label">Trigger Connection <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="AND / OR, or a Boolean expression using the trigger Tags (for example A &amp;&amp; !B)"></i></label>
           <div class="col-md-8">
             <input type="text" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|TriggerConnection" class="form-control" value="@Model.SingleMarketSetting.TriggerConnection" />
           </div>
@@ -73,6 +74,7 @@
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Stop Process When Triggered <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Stops looking for other single market settings when this setting gets triggered for a market."></i></label>
           <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|StopProcessWhenTriggered" value="false" />
             <input type="checkbox" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|StopProcessWhenTriggered" checked="@(Model.SingleMarketSetting.StopProcessWhenTriggered)" data-plugin="switchery" data-switchery="false" data-color="#81c868" data-size="small" />
           </div>
         </div>
@@ -80,21 +82,22 @@
         <hr />
 
         <h5 class="header-title m-b-20">Triggers (@Model.SingleMarketSetting.Triggers.Count)</h5>
-        <div id="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers"></div>
+        <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|TriggersRendered" value="true" />
+          <div id="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers"></div>
 
         <div class="row m-b-20">
           <div class="col-md-4">
-            <button id="btn-new-standardtrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers">
+            <button type="button" id="btn-new-standardtrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers">
               New Standard Trigger
             </button>
           </div>
           <div class="col-md-4">
-            <button id="btn-new-24hvolumetrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers">
+            <button type="button" id="btn-new-24hvolumetrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers">
               New 24h Volume Trigger
             </button>
           </div>
           <div class="col-md-4">
-            <button id="btn-new-coinagetrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers">
+            <button type="button" id="btn-new-coinagetrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers">
               New Coin Age Trigger
             </button>
           </div>
@@ -102,22 +105,32 @@
 
         <hr />
 
-        <h5 class="header-title m-b-20">Off Triggers (@Model.SingleMarketSetting.OffTriggers.Count)</h5>
+        <div class="form-group row">
+          <label class="col-md-4 col-form-label">Refresh Off Triggers</label>
+          <div class="col-md-8">
+            <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|RefreshOffTriggers" value="false" />
+            <input type="checkbox" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|RefreshOffTriggers" checked="@(Model.SingleMarketSetting.RefreshOffTriggers)" data-plugin="switchery" data-switchery="false" data-color="#81c868" data-size="small" />
+            <span class="help-block"><small>Restart the off-trigger reference when activation triggers match again.</small></span>
+          </div>
+        </div>
+
+        <h5 class="header-title m-b-20">Off Triggers (@(Model.SingleMarketSetting.OffTriggers?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|OffTriggersRendered" value="true" />
         <div id="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers"></div>
 
         <div class="row m-b-20">
           <div class="col-md-4">
-            <button id="btn-new-standardofftrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers">
+            <button type="button" id="btn-new-standardofftrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers">
               New Standard Off Trigger
             </button>
           </div>
           <div class="col-md-4">
-            <button id="btn-new-24hvolumeofftrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers">
+            <button type="button" id="btn-new-24hvolumeofftrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers">
               New 24h Volume Off Trigger
             </button>
           </div>
           <div class="col-md-4">
-            <button id="btn-new-hoursactiveofftrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers">
+            <button type="button" id="btn-new-hoursactiveofftrigger-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom btn-block text-uppercase waves-effect waves-light" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers">
               New Timed Off Trigger
             </button>
           </div>
@@ -125,32 +138,35 @@
 
         <hr />
 
-        <h5 class="header-title m-b-20">Pairs Properties (@Model.SingleMarketSetting.PairsProperties.Count)</h5>
+        <h5 class="header-title m-b-20">Pairs Properties (@(Model.SingleMarketSetting.PairsProperties?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|PairsPropertiesRendered" value="true" />
         <div id="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties"></div>
 
-        <button id="btn-new-pairs-property-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties">
+        <button type="button" id="btn-new-pairs-property-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties">
           Add Property
         </button>
 
         <hr />
 
-        <h5 class="header-title m-b-20">DCA Properties (@Model.SingleMarketSetting.DCAProperties.Count)</h5>
+        <h5 class="header-title m-b-20">DCA Properties (@(Model.SingleMarketSetting.DCAProperties?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|DCAPropertiesRendered" value="true" />
         <div id="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties"></div>
 
-        <button id="btn-new-dca-property-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties">
+        <button type="button" id="btn-new-dca-property-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties">
           Add Property
         </button>
 
         <hr />
 
-        <h5 class="header-title m-b-20">Indicators Properties (@Model.SingleMarketSetting.IndicatorsProperties.Count)</h5>
+        <h5 class="header-title m-b-20">Indicators Properties (@(Model.SingleMarketSetting.IndicatorsProperties?.Count ?? 0))</h5>
+        <input type="hidden" name="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)|IndicatorsPropertiesRendered" value="true" />
         <div id="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties"></div>
 
-        <button id="btn-new-indicators-property-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties">
+        <button type="button" id="btn-new-indicators-property-SMS@(Model.SettingName)" class="btn btn-ptmagic btn-custom  btn-block text-uppercase waves-effect waves-light m-b-20" data-datatarget="MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties">
           Add Property
         </button>
 
-        <button class="btn btn-danger m-t-20 btn-block text-uppercase waves-effect waves-light btn-remove-SMS@(Model.SettingName)" data-datatarget="SingleMarketSetting_@Model.SettingName">
+        <button type="button" class="btn btn-danger m-t-20 btn-block text-uppercase waves-effect waves-light btn-remove-SMS@(Model.SettingName)" data-datatarget="SingleMarketSetting_@Model.SettingName">
           Remove Single Market Setting "@Model.SingleMarketSetting.SettingName"
         </button>
       </div>
@@ -159,8 +175,10 @@
 
   <script type="text/javascript">
   function BindRemoveParentRowSMS@(Model.SettingName)Event() {
-    $('.btn-remove-parentrow-SingleMarketSetting-@(Model.SettingName)').click(function () {
-      $(this).closest('.row').animate({ height: 0 }, 300, function () {
+    syncAnalyzerTrendOptions();
+    $('.btn-remove-parentrow-SingleMarketSetting-@(Model.SettingName)').off('click.analyzer').on('click.analyzer', function () {
+      $(this).closest('.analyzer-editor-row').find(':input').prop('disabled', true);
+      $(this).closest('.analyzer-editor-row').animate({ height: 0 }, 300, function () {
         $(this).remove();
       });
 
@@ -170,184 +188,75 @@
 
     $(document).ready(function () {
 
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers').html([
-      @foreach (Core.Main.DataObjects.PTMagicData.Trigger t in Model.SingleMarketSetting.Triggers.FindAll(t => t.AgeDaysLowerThan == 0 && t.Min24hVolume == 0 && t.Max24hVolume == Core.Main.Constants.Max24hVolume)) {
-        string minChangeValue = t.MinChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
-        if (t.MinChange == Core.Main.Constants.MinTrendChange) {
-          minChangeValue = "";
-        }
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.TriggerRows(Model.SingleMarketSetting.Triggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, "SingleMarketSetting", Model.SettingName, Model.Summary.MainMarket))).map(AnalyzerTriggerTemplate).join(''));
 
-        string maxChangeValue = t.MaxChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
-        if (t.MaxChange == Core.Main.Constants.MaxTrendChange) {
-          maxChangeValue = "";
-        }
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', trendName: '@Core.Helper.SystemHelper.StripBadCode(t.MarketTrendName, Core.Main.Constants.WhiteListNames)', triggerPrefix: '', minChange: '@minChangeValue', maxChange: '@maxChangeValue', marketTrends: '@Html.Raw(Model.GetMarketTrendSelection(t))', marketTrendRelations: '@Html.Raw(Model.GetMarketTrendRelationSelection(t))' },
-        </text>
-      }
-    ].map(SMSStandardTriggerTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.OffTriggerRows(Model.SingleMarketSetting.OffTriggers, Model.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends, Model.SettingName, Model.Summary.MainMarket))).map(AnalyzerTriggerTemplate).join(''));
 
-    @{ int ageDaysIndex = 0;}
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers').append([
-      @foreach (Core.Main.DataObjects.PTMagicData.Trigger t in Model.SingleMarketSetting.Triggers.FindAll(t => t.AgeDaysLowerThan > 0)) {
-        ageDaysIndex++;
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@ageDaysIndex', coinAgeDays: '@t.AgeDaysLowerThan.ToString()' },
-        </text>
-      }
-    ].map(CoinAgeTriggerTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.PairsProperties, "SingleMarketSetting", Model.SettingName, "Pairs"))).map(PropertyTemplate).join(''));
 
-    @{ int volume24hIndex = 0;}
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_Triggers').append([
-      @foreach (Core.Main.DataObjects.PTMagicData.Trigger t in Model.SingleMarketSetting.Triggers.FindAll(t => t.Min24hVolume > 0 || t.Max24hVolume < Core.Main.Constants.Max24hVolume)) {
-        string min24hVolumeValue = t.Min24hVolume.ToString(new System.Globalization.CultureInfo("en-US"));
-        if (t.Min24hVolume == 0) {
-          min24hVolumeValue = "";
-        }
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.DCAProperties, "SingleMarketSetting", Model.SettingName, "DCA"))).map(PropertyTemplate).join(''));
 
-        string max24hVolumeValue = t.Max24hVolume.ToString(new System.Globalization.CultureInfo("en-US"));
-        if (t.Max24hVolume == Core.Main.Constants.Max24hVolume) {
-          max24hVolumeValue = "";
-        }
-        volume24hIndex++;
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@volume24hIndex', triggerPrefix: '', mainMarket: '@Model.Summary.MainMarket', min24hVolume: '@min24hVolumeValue', max24hVolume: '@max24hVolumeValue' },
-        </text>
-      }
-    ].map(SMS24hVolumeTriggerTemplate).join(''));
-
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers').html([
-      @foreach (Core.Main.DataObjects.PTMagicData.OffTrigger ot in Model.SingleMarketSetting.OffTriggers.FindAll(ot => ot.HoursSinceTriggered == 0 && ot.Min24hVolume == 0 && ot.Max24hVolume == Core.Main.Constants.Max24hVolume)) {
-        string minChangeValue = ot.MinChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
-        if (ot.MinChange == Core.Main.Constants.MinTrendChange) {
-          minChangeValue = "";
-        }
-
-        string maxChangeValue = ot.MaxChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US"));
-        if (ot.MaxChange == Core.Main.Constants.MaxTrendChange) {
-          maxChangeValue = "";
-        }
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', trendName: '@Core.Helper.SystemHelper.StripBadCode(ot.MarketTrendName, Core.Main.Constants.WhiteListNames)', triggerPrefix: 'Off', minChange: '@minChangeValue', maxChange: '@maxChangeValue', marketTrends: '@Html.Raw(Model.GetOffTriggerMarketTrendSelection(ot))', marketTrendRelations: '@Html.Raw(Model.GetOffTriggerMarketTrendRelationSelection(ot))' },
-        </text>
-      }
-    ].map(SMSStandardTriggerTemplate).join(''));
-
-    @{ int volume24hOffIndex = 0;}
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers').append([
-      @foreach (Core.Main.DataObjects.PTMagicData.OffTrigger ot in Model.SingleMarketSetting.OffTriggers.FindAll(ot => ot.Min24hVolume > 0 || ot.Max24hVolume < Core.Main.Constants.Max24hVolume)) {
-        string min24hVolumeValue = ot.Min24hVolume.ToString(new System.Globalization.CultureInfo("en-US"));
-        if (ot.Min24hVolume == 0) {
-          min24hVolumeValue = "";
-        }
-
-        string max24hVolumeValue = ot.Max24hVolume.ToString(new System.Globalization.CultureInfo("en-US"));
-        if (ot.Max24hVolume == Core.Main.Constants.Max24hVolume) {
-          max24hVolumeValue = "";
-        }
-        volume24hOffIndex++;
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@volume24hOffIndex', triggerPrefix: 'Off', mainMarket: '@Model.Summary.MainMarket', min24hVolume: '@min24hVolumeValue', max24hVolume: '@max24hVolumeValue' },
-        </text>
-      }
-    ].map(SMS24hVolumeTriggerTemplate).join(''));
-
-    @{ int activeHoursIndex = 0;}
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_OffTriggers').append([
-      @foreach (Core.Main.DataObjects.PTMagicData.OffTrigger ot in Model.SingleMarketSetting.OffTriggers.FindAll(t => t.HoursSinceTriggered > 0)) {
-        activeHoursIndex++;
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@activeHoursIndex', hoursSinceTriggered: '@ot.HoursSinceTriggered.ToString()' },
-        </text>
-      }
-    ].map(SMSHoursActiveTriggerTemplate).join(''));
-
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_PairsProperties').html([
-      @foreach (KeyValuePair<string, object> property in Model.SingleMarketSetting.PairsProperties) {
-        string propertyKeySimple = property.Key.Replace("_OFFSETPERCENT", "").Replace("_OFFSET", "");
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'Pairs', propertyKeySimple: '@propertyKeySimple', value: '@Core.Helper.SystemHelper.PropertyToString(property.Value)', valueModes: '@Html.Raw(Model.GetValueModes(property.Key))' },
-        </text>
-      }
-    ].map(PropertyTemplate).join(''));
-
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_DCAProperties').html([
-      @foreach (KeyValuePair<string, object> property in Model.SingleMarketSetting.DCAProperties) {
-        string propertyKeySimple = property.Key.Replace("_OFFSETPERCENT", "").Replace("_OFFSET", "");
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'DCA', propertyKeySimple: '@propertyKeySimple', value: '@Core.Helper.SystemHelper.PropertyToString(property.Value)', valueModes: '@Html.Raw(Model.GetValueModes(property.Key))' },
-        </text>
-      }
-    ].map(PropertyTemplate).join(''));
-
-    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties').html([
-      @foreach (KeyValuePair<string, object> property in Model.SingleMarketSetting.IndicatorsProperties) {
-        string propertyKeySimple = property.Key.Replace("_OFFSETPERCENT", "").Replace("_OFFSET", "");
-        <text>
-      { settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'Indicators', propertyKeySimple: '@propertyKeySimple', value: '@Core.Helper.SystemHelper.PropertyToString(property.Value)', valueModes: '@Html.Raw(Model.GetValueModes(property.Key))' },
-        </text>
-      }
-    ].map(PropertyTemplate).join(''));
+    $('#MarketAnalyzer_SingleMarketSetting_@(Model.SettingName)_IndicatorsProperties').html(@Html.Raw(AnalyzerSettingsEditor.Json(AnalyzerSettingsEditor.PropertyRows(Model.SingleMarketSetting.IndicatorsProperties, "SingleMarketSetting", Model.SettingName, "Indicators"))).map(PropertyTemplate).join(''));
 
     $('#btn-new-standardtrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', trendName: '', triggerPrefix: '', minChange: '', maxChange: '', marketTrends: '@Html.Raw(Model.GetMarketTrendSelection(null))', marketTrendRelations: '@Html.Raw(Model.GetMarketTrendRelationSelection(null))' }].map(SMSStandardTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', trendName: '', triggerPrefix: '', minChange: '', maxChange: '', marketTrends: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetMarketTrendSelection(null))), marketTrendRelations: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetMarketTrendRelationSelection(null))) }].map(SMSStandardTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-24hvolumetrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@volume24hIndex', triggerPrefix: '', mainMarket: '@Model.Summary.MainMarket', min24hVolume: '', max24hVolume: '' }].map(SMS24hVolumeTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerPrefix: '', mainMarket: @Html.Raw(AnalyzerSettingsEditor.Json(Model.Summary.MainMarket)), min24hVolume: '', max24hVolume: '' }].map(SMS24hVolumeTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-coinagetrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@ageDaysIndex', coinAgeDays: '' }].map(CoinAgeTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', coinAgeDays: '' }].map(CoinAgeTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-standardofftrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', trendName: '', triggerPrefix: 'Off', minChange: '', maxChange: '', marketTrends: '@Html.Raw(Model.GetOffTriggerMarketTrendSelection(null))', marketTrendRelations: '@Html.Raw(Model.GetOffTriggerMarketTrendRelationSelection(null))' }].map(SMSStandardTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', trendName: '', triggerPrefix: 'Off', minChange: '', maxChange: '', marketTrends: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetOffTriggerMarketTrendSelection(null))), marketTrendRelations: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetOffTriggerMarketTrendRelationSelection(null))) }].map(SMSStandardTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-24hvolumeofftrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@volume24hIndex', triggerPrefix: 'Off', mainMarket: '@Model.Summary.MainMarket', min24hVolume: '', max24hVolume: '' }].map(SMS24hVolumeTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerPrefix: 'Off', mainMarket: @Html.Raw(AnalyzerSettingsEditor.Json(Model.Summary.MainMarket)), min24hVolume: '', max24hVolume: '' }].map(SMS24hVolumeTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-hoursactiveofftrigger-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerIndex: '@volume24hIndex', triggerPrefix: 'Off', hoursSinceTriggered: '' }].map(SMSHoursActiveTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', triggerPrefix: 'Off', hoursSinceTriggered: '' }].map(SMSHoursActiveTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-pairs-property-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'Pairs', propertyKeySimple: '', value: '', valueModes: '@Html.Raw(Model.GetValueModes(""))' }].map(PropertyTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'Pairs', propertyKeySimple: '', value: '', valueModes: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetValueModes(""))) }].map(PropertyTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-dca-property-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'DCA', propertyKeySimple: '', value: '', valueModes: '@Html.Raw(Model.GetValueModes(""))' }].map(PropertyTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'DCA', propertyKeySimple: '', value: '', valueModes: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetValueModes(""))) }].map(PropertyTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
 
     $('#btn-new-indicators-property-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'Indicators', propertyKeySimple: '', value: '', valueModes: '@Html.Raw(Model.GetValueModes(""))' }].map(PropertyTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'SingleMarketSetting', settingName: '@(Model.SettingName)', propertyType: 'Indicators', propertyKeySimple: '', value: '', valueModes: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetValueModes(""))) }].map(PropertyTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRowSMS@(Model.SettingName)Event(); });
       return false;
     });
@@ -355,8 +264,9 @@
     $('.btn-remove-SMS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
 
+      $('#' + dataTarget).find(':input').prop('disabled', true);
       $('#' + dataTarget).animate({ height: 0 }, 300, function () {
-        $(this).remove();
+        $(this).closest('.settings-singlemarketsetting').remove();
       });
 
       return false;

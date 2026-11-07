@@ -18,6 +18,9 @@
   }
 
   string globalSettingInfoTooltip = "<b>Instance: </b>" + Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName;
+  globalSettingInfoTooltip += "<br /><b>Applied: </b>" + System.Net.WebUtility.HtmlEncode(String.IsNullOrEmpty(Model.Summary.AppliedGlobalSettingName) ? "Not confirmed" : Model.Summary.AppliedGlobalSettingName);
+  globalSettingInfoTooltip += "<br /><b>Delivery: </b>" + System.Net.WebUtility.HtmlEncode(String.IsNullOrEmpty(Model.Summary.ConfigurationDeliveryStatus) ? "Not recorded" : Model.Summary.ConfigurationDeliveryStatus);
+  if (!String.IsNullOrEmpty(Model.Summary.StartupSellOnlyModeStatus)) globalSettingInfoTooltip += "<br /><b>Startup global SOM: </b>" + System.Net.WebUtility.HtmlEncode(Model.Summary.StartupSellOnlyModeStatus);
 
   DateTime lastRuntime = Model.Summary.LastRuntime;
   double elapsedSecondsSinceRuntime = DateTime.UtcNow.Subtract(lastRuntime).TotalSeconds;
@@ -34,10 +37,17 @@
   if (Model.IsAnalyzerRunning()) {
     ptMagicHealthIcon = "fa-cog fa-spin";
   }
+  if (String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Failed", StringComparison.OrdinalIgnoreCase)
+    || String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Deferred", StringComparison.OrdinalIgnoreCase)
+    || Model.Summary.StartupSellOnlyModePending) {
+    healthIconColor = "text-warning";
+    ptMagicHealthIcon = "fa-exclamation-triangle";
+    ptMagicHealthTooltip = "Configuration delivery: " + Model.Summary.ConfigurationDeliveryStatus + "; startup global SOM: " + Model.Summary.StartupSellOnlyModeStatus + ". Check Status Summary and the logs.";
+  }
 }
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined @globalIconColor" data-ticker-role="global-card">
-  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Active global setting">@Core.Helper.SystemHelper.SplitCamelCase(Model.Summary.CurrentGlobalSetting.SettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-100 text-left'></div></div>"></i></a></span>
+  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Selected global setting; see details for confirmed delivery">Selected: @Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-100 text-left'></div></div>"></i></a></span>
 </div>
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined" data-ticker-role="sms-card">

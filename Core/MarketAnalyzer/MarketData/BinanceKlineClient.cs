@@ -26,10 +26,15 @@ namespace Core.MarketAnalyzer.MarketData
 
     internal static Task<List<MarketCandle>> GetFiveMinuteCandlesAsync(string exchangeName, string apiBase, string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken = default)
     {
-      return GetCandlesAsync(exchangeName, apiBase, symbol, "5m", FiveMinuteInterval, candlesNeeded, log, cancellationToken);
+      return GetFiveMinuteCandlesAsync(exchangeName, apiBase, symbol, candlesNeeded, log, cancellationToken, null);
     }
 
-    private static async Task<List<MarketCandle>> GetCandlesAsync(string exchangeName, string apiBase, string symbol, string intervalName, TimeSpan interval, int candlesNeeded, LogHelper log, CancellationToken cancellationToken)
+    internal static Task<List<MarketCandle>> GetFiveMinuteCandlesAsync(string exchangeName, string apiBase, string symbol, int candlesNeeded, LogHelper log, CancellationToken cancellationToken, DateTimeOffset? asOfUtc)
+    {
+      return GetCandlesAsync(exchangeName, apiBase, symbol, "5m", FiveMinuteInterval, candlesNeeded, log, cancellationToken, asOfUtc);
+    }
+
+    private static async Task<List<MarketCandle>> GetCandlesAsync(string exchangeName, string apiBase, string symbol, string intervalName, TimeSpan interval, int candlesNeeded, LogHelper log, CancellationToken cancellationToken, DateTimeOffset? asOfUtc = null)
     {
       List<MarketCandle> result = new List<MarketCandle>();
       if (candlesNeeded <= 0)
@@ -41,7 +46,10 @@ namespace Core.MarketAnalyzer.MarketData
         throw new ArgumentException("A Binance symbol is required.", nameof(symbol));
       }
 
-      long observedAtMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+      // Every symbol in a normalized raid uses the same upper boundary. A
+      // late request must not move the retained window forward and evict a
+      // reference candle still required by the pinned analysis.
+      long observedAtMilliseconds = (asOfUtc ?? DateTimeOffset.UtcNow).ToUniversalTime().ToUnixTimeMilliseconds();
       long endTimeMilliseconds = observedAtMilliseconds;
       int candlesFetched = 0;
 

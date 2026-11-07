@@ -31,7 +31,9 @@ namespace Monitor.Pages
       MarketTrendMetrics.VolumeConcentration,
       MarketTrendMetrics.TopNVolumeShare,
       MarketTrendMetrics.BTCVolumeShare,
-      MarketTrendMetrics.BTCETHVolumeShare
+      MarketTrendMetrics.BTCETHVolumeShare,
+      MarketTrendMetrics.MeanCorrelationToBTC,
+      MarketTrendMetrics.MedianCorrelationToBTC
     };
 
     public IReadOnlyList<string> AssetMetricNames { get; } = new string[]
@@ -39,7 +41,8 @@ namespace Monitor.Pages
       MarketTrendMetrics.RelativeStrengthMarket,
       MarketTrendMetrics.RelativeStrengthBTC,
       MarketTrendMetrics.ATRP,
-      MarketTrendMetrics.VolumeExpansion
+      MarketTrendMetrics.VolumeExpansion,
+      MarketTrendMetrics.CorrelationToBTC
     };
 
     public void OnGet()
@@ -105,7 +108,10 @@ namespace Monitor.Pages
         || metric.Equals(MarketTrendMetrics.RelativeStrengthBTC, StringComparison.OrdinalIgnoreCase)
         || metric.Equals(MarketTrendMetrics.Concentration, StringComparison.OrdinalIgnoreCase);
 
-      string format = isReturnDifference ? "+#,#0.00;-#,#0.00;0.00" : "#,#0.00";
+      bool isCorrelation = metric.Equals(MarketTrendMetrics.CorrelationToBTC, StringComparison.OrdinalIgnoreCase)
+        || metric.Equals(MarketTrendMetrics.MeanCorrelationToBTC, StringComparison.OrdinalIgnoreCase)
+        || metric.Equals(MarketTrendMetrics.MedianCorrelationToBTC, StringComparison.OrdinalIgnoreCase);
+      string format = isCorrelation ? "0.0000" : isReturnDifference ? "+#,#0.00;-#,#0.00;0.00" : "#,#0.00";
       string unit = MarketTrendMetricTriggerResolver.GetUnit(metric);
       return feature.Value.Value.ToString(format, new System.Globalization.CultureInfo("en-US")) + unit;
     }
@@ -163,6 +169,9 @@ namespace Monitor.Pages
         MarketTrendMetrics.TopNVolumeShare => "Top N Volume Share",
         MarketTrendMetrics.BTCVolumeShare => "BTC Volume Share",
         MarketTrendMetrics.BTCETHVolumeShare => "BTC+ETH Volume Share",
+        MarketTrendMetrics.CorrelationToBTC => "Correlation to BTC",
+        MarketTrendMetrics.MeanCorrelationToBTC => "Mean BTC Correlation",
+        MarketTrendMetrics.MedianCorrelationToBTC => "Median BTC Correlation",
         _ => metric
       };
     }
@@ -178,7 +187,7 @@ namespace Monitor.Pages
         MarketTrendMetrics.Dispersion => "Population standard deviation of valid market price changes over this MarketTrend timeframe. Displayed as a percentage magnitude.",
         MarketTrendMetrics.RelativeStrengthMarket => "Individual market price change minus MedianPriceTrend. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
         MarketTrendMetrics.RelativeStrengthBTC => "Individual market price change minus BTC price change over the same timeframe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
-        MarketTrendMetrics.Concentration => "Mean return of the Top10 markets by trailing 24-hour quote volume minus the mean return of the remaining MarketTrend universe. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns, not a relative percentage increase.",
+        MarketTrendMetrics.Concentration => "Mean return of the Top10 markets ranked by trailing MarketTrend-duration quote volume minus the mean return of the remaining MarketTrend universe. Ranking and returns share the same normalized 5-minute endpoint; complete population coverage is required. Displayed as a signed %; mathematically this is an absolute difference between percentage returns.",
         MarketTrendMetrics.ATRP => "Wilder ATR over complete MarketTrend-duration candles divided by latest complete trend close, in percent.",
         MarketTrendMetrics.MedianATRP => "Median ATRP across global eligible markets; 90% coverage.",
         MarketTrendMetrics.VolatilityBreadth => "Percent of valid markets whose ATRP exceeds configured ATRPBreadthThreshold; 90% coverage.",
@@ -190,6 +199,9 @@ namespace Monitor.Pages
         MarketTrendMetrics.TopNVolumeShare => "TopNVolumeCount ranked-market share of latest complete MarketTrend-duration quote volume, percent; complete global population required.",
         MarketTrendMetrics.BTCVolumeShare => "BTC quote-volume share of the complete eligible global universe in latest complete trend period, percent.",
         MarketTrendMetrics.BTCETHVolumeShare => "Combined BTC and ETH quote-volume share of complete eligible global universe in latest complete trend period, percent.",
+        MarketTrendMetrics.CorrelationToBTC => "Pearson correlation of this market and BTC across CorrelationLookback synchronized simple returns. Each return spans exactly TrendMinutes; missing, stale or flat series are unavailable. Unitless coefficient from -1 to 1.",
+        MarketTrendMetrics.MeanCorrelationToBTC => "Arithmetic mean of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
+        MarketTrendMetrics.MedianCorrelationToBTC => "Median of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         _ => metric
       };
     }

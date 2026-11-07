@@ -38,6 +38,9 @@ namespace Core.MarketAnalyzer.MarketData
     public const string TopNVolumeShare = "TopNVolumeShare";
     public const string BTCVolumeShare = "BTCVolumeShare";
     public const string BTCETHVolumeShare = "BTCETHVolumeShare";
+    public const string CorrelationToBTC = "CorrelationToBTC";
+    public const string MeanCorrelationToBTC = "MeanCorrelationToBTC";
+    public const string MedianCorrelationToBTC = "MedianCorrelationToBTC";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -60,7 +63,10 @@ namespace Core.MarketAnalyzer.MarketData
         [VolumeConcentration] = MarketTrendMetricScope.Global,
         [TopNVolumeShare] = MarketTrendMetricScope.Global,
         [BTCVolumeShare] = MarketTrendMetricScope.Global,
-        [BTCETHVolumeShare] = MarketTrendMetricScope.Global
+        [BTCETHVolumeShare] = MarketTrendMetricScope.Global,
+        [CorrelationToBTC] = MarketTrendMetricScope.Asset,
+        [MeanCorrelationToBTC] = MarketTrendMetricScope.Global,
+        [MedianCorrelationToBTC] = MarketTrendMetricScope.Global
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();

@@ -23,6 +23,11 @@
         if (elapsedSecondsSinceRuntime > (intervalSeconds + intervalSeconds)) {
           ptMagicHealthIcon = "<i class=\"fa fa-bolt text-danger\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"PT Magic seems to have problems, check the logs!\"></i>";
         }
+        if (String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Failed", StringComparison.OrdinalIgnoreCase)
+          || String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Deferred", StringComparison.OrdinalIgnoreCase)
+          || Model.Summary.StartupSellOnlyModePending) {
+          ptMagicHealthIcon = "<i class=\"fa fa-exclamation-triangle text-warning\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"Configuration delivery or startup global SOM is pending. Check the status and logs.\"></i>";
+        }
 
         string floodProtectionIcon = "";
         if (Model.Summary.FloodProtectedSetting != null) {
@@ -44,8 +49,28 @@
       <table class="table table-striped table-sm">
         <tbody>
           <tr>
-            <td>Active Global Setting</td>
-            <td class="text-right">@Html.Raw(floodProtectionIcon) @Core.Helper.SystemHelper.SplitCamelCase(Model.Summary.CurrentGlobalSetting.SettingName)</td>
+            <td>Selected Global Setting</td>
+            <td class="text-right">@Html.Raw(floodProtectionIcon) @Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</td>
+          </tr>
+          <tr>
+            <td>Confirmed Applied Setting</td>
+            <td class="text-right">@(String.IsNullOrEmpty(Model.Summary.AppliedGlobalSettingName) ? "Not confirmed" : Core.Helper.SystemHelper.SplitCamelCase(Model.Summary.AppliedGlobalSettingName))</td>
+          </tr>
+          <tr>
+            <td>Configuration Delivery</td>
+            <td class="text-right">@(String.IsNullOrEmpty(Model.Summary.ConfigurationDeliveryStatus) ? "Not recorded" : Model.Summary.ConfigurationDeliveryStatus)</td>
+          </tr>
+          <tr>
+            <td>Startup Global SOM</td>
+            <td class="text-right">@(String.IsNullOrEmpty(Model.Summary.StartupSellOnlyModeStatus) ? "Not recorded" : Model.Summary.StartupSellOnlyModeStatus)</td>
+          </tr>
+          <tr>
+            <td>Analysis As Of (UTC)</td>
+            <td class="text-right">@(Model.Summary.AnalysisAsOfUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") ?? "Not recorded")</td>
+          </tr>
+          <tr>
+            <td>Source Revision</td>
+            <td class="text-right">@(String.IsNullOrEmpty(Model.Summary.SourceRevision) ? "Not recorded" : Model.Summary.SourceRevision)</td>
           </tr>
           <tr>
             <td>Last Runtime</td>

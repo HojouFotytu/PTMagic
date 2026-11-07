@@ -13,8 +13,6 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public static class MarketTrendAnalyticsEngine
   {
-    private static readonly TimeSpan ConcentrationRankingWindow = TimeSpan.FromHours(24);
-
     public static MarketTrendAnalysisSnapshot Calculate(
       MarketTrend marketTrend,
       IEnumerable<string> globalSymbols,
@@ -23,7 +21,8 @@ namespace Core.MarketAnalyzer.MarketData
       TimeSpan interval,
       DateTimeOffset calculatedAtUtc,
       IReadOnlyCollection<string> selectedMetrics = null,
-      string benchmarkSymbol = "BTCUSDT")
+      string benchmarkSymbol = "BTCUSDT",
+      int? configuredStoreDataMaxHours = null)
     {
       if (marketTrend == null)
       {
@@ -154,7 +153,8 @@ namespace Core.MarketAnalyzer.MarketData
           returns,
           store,
           interval,
-          calculatedAtUtc);
+          calculatedAtUtc,
+          TimeSpan.FromMinutes(marketTrend.TrendMinutes));
         // Top10 ranking and remaining-population comparison require a complete
         // trailing-volume sample, unlike the 90% mean/median/breadth policy.
         marketMetrics[MarketTrendMetrics.Concentration] = MarketMetricCoverage.Apply(
@@ -254,6 +254,29 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
+      if (MarketTrendPhase1DEngine.HasMetrics(enabledMetrics))
+      {
+        Phase1DFeatureResult phase1d = MarketTrendPhase1DEngine.Calculate(
+          marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval,
+          calculatedAtUtc, benchmarkSymbol);
+        foreach (KeyValuePair<string, FeatureValueSnapshot> feature in phase1d.GlobalMetrics)
+        {
+          marketMetrics[feature.Key] = feature.Value;
+        }
+        foreach (KeyValuePair<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> asset in phase1d.AssetMetrics)
+        {
+          Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
+              out IReadOnlyDictionary<string, FeatureValueSnapshot> existing)
+            ? new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (KeyValuePair<string, FeatureValueSnapshot> metric in asset.Value)
+          {
+            merged[metric.Key] = metric.Value;
+          }
+          assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+      }
+
       Dictionary<string, int> globalIssues = needsGlobalReturns
         ? CountInvalidReturnReasons(globalUniverse, returns)
         : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -279,6 +302,8 @@ namespace Core.MarketAnalyzer.MarketData
         GlobalSymbols = Array.AsReadOnly(globalUniverse),
         AssetSymbols = Array.AsReadOnly(assetUniverse),
         EnabledMetrics = Array.AsReadOnly(enabledMetrics.ToArray()),
+        HistoryRequirements = MarketTrendHistoryRequirements.Describe(marketTrend, enabledMetrics,
+          interval, calculatedAtUtc, configuredStoreDataMaxHours),
         MarketMetrics = new ReadOnlyDictionary<string, FeatureValueSnapshot>(marketMetrics),
         AssetMetrics = new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(assetMetrics)
       };
@@ -436,14 +461,15 @@ namespace Core.MarketAnalyzer.MarketData
       IReadOnlyDictionary<string, FeatureValueSnapshot> returns,
       MarketDataStore store,
       TimeSpan interval,
-      DateTimeOffset calculatedAtUtc)
+      DateTimeOffset calculatedAtUtc,
+      TimeSpan rankingWindow)
     {
       DateTimeOffset expectedCloseTimeUtc = GetExpectedClosedCandleCloseTime(calculatedAtUtc, interval);
       List<RankedMarket> rankedMarkets = new List<RankedMarket>();
       foreach (string symbol in globalUniverse)
       {
         MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, calculatedAtUtc);
-        if (TryCalculateCompleteTrailingQuoteVolume(series, interval, expectedCloseTimeUtc, out double quoteVolume))
+        if (TryCalculateCompleteTrailingQuoteVolume(series, interval, rankingWindow, expectedCloseTimeUtc, out double quoteVolume))
         {
           rankedMarkets.Add(new RankedMarket
           {
@@ -458,7 +484,8 @@ namespace Core.MarketAnalyzer.MarketData
         return InvalidFeature(
           calculatedAtUtc,
           rankedMarkets.Count,
-          "At least 11 markets with a complete trailing 24-hour quote-volume window ending at the current normalized endpoint are required for concentration. StoreDataMaxHours may be insufficient.");
+          "At least 11 markets with a complete trailing " + rankingWindow.TotalMinutes +
+          "-minute quote-volume window ending at the current normalized endpoint are required for concentration. StoreDataMaxHours may be insufficient.");
       }
 
       RankedMarket[] orderedMarkets = rankedMarkets
@@ -511,6 +538,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static bool TryCalculateCompleteTrailingQuoteVolume(
       MarketDataSeriesSnapshot series,
       TimeSpan interval,
+      TimeSpan rankingWindow,
       DateTimeOffset expectedCloseTimeUtc,
       out double quoteVolume)
     {
@@ -524,8 +552,8 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      int requiredCandles = (int)Math.Ceiling(ConcentrationRankingWindow.TotalMilliseconds / interval.TotalMilliseconds);
-      DateTimeOffset firstRequiredClose = expectedCloseTimeUtc - ConcentrationRankingWindow + interval;
+      int requiredCandles = checked((int)(rankingWindow.Ticks / interval.Ticks));
+      DateTimeOffset firstRequiredClose = expectedCloseTimeUtc - rankingWindow + interval;
       MarketCandle[] selected = series.ClosedCandles
         .Where(candle => candle != null && candle.IsClosed && candle.CloseTimeUtc >= firstRequiredClose && candle.CloseTimeUtc <= expectedCloseTimeUtc)
         .OrderBy(candle => candle.CloseTimeUtc)
@@ -540,6 +568,8 @@ namespace Core.MarketAnalyzer.MarketData
       {
         DateTimeOffset expectedClose = firstRequiredClose + TimeSpan.FromTicks(interval.Ticks * index);
         if (selected[index].CloseTimeUtc != expectedClose
+          || selected[index].Interval != interval
+          || selected[index].OpenTimeUtc != expectedClose - interval + TimeSpan.FromMilliseconds(1)
           || !double.IsFinite(selected[index].QuoteVolume)
           || selected[index].QuoteVolume < 0)
         {
@@ -759,6 +789,7 @@ namespace Core.MarketAnalyzer.MarketData
     public IReadOnlyList<string> GlobalSymbols { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> AssetSymbols { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<string> EnabledMetrics { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<MarketTrendHistoryRequirement> HistoryRequirements { get; init; } = Array.Empty<MarketTrendHistoryRequirement>();
     public IReadOnlyDictionary<string, FeatureValueSnapshot> MarketMetrics { get; init; } = new Dictionary<string, FeatureValueSnapshot>();
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> AssetMetrics { get; init; } = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(StringComparer.OrdinalIgnoreCase);
   }

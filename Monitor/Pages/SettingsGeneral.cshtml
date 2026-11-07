@@ -55,9 +55,17 @@
               </div>
 
               <div class="form-group row">
-                <label class="col-md-4 col-form-label">Test Mode <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="If TestMode is active market analysis will continue, however PT settings will not be updated."></i></label>
+                <label class="col-md-4 col-form-label">Test Mode <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="If TestMode is active market analysis continues; PT settings and global SOM controls are simulated."></i></label>
                 <div class="col-md-8">
                   <input type="checkbox" name="Application_TestMode" checked="@(Model.PTMagicConfiguration.GeneralSettings.Application.TestMode)" data-plugin="switchery" data-color="#81c868" data-size="small" />
+                </div>
+              </div>
+
+              <div class="form-group row">
+                <label class="col-md-4 col-form-label">Startup Global SOM <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="PTM enables global SOM while loading startup data, then disables it after a fresh successful raid and settings delivery. New buys and DCA buys pause; sells continue."></i></label>
+                <div class="col-md-8">
+                  <input type="hidden" name="Application_StartupSellOnlyModePresent" value="true" />
+                  <input type="checkbox" name="Application_StartupSellOnlyMode" checked="@(Model.PTMagicConfiguration.GeneralSettings.Application.StartupSellOnlyMode)" data-plugin="switchery" data-color="#81c868" data-size="small" />
                 </div>
               </div>
 
@@ -91,6 +99,13 @@
                 <label class="col-md-4 col-form-label">Profit Trailer Server API Token <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="The API token needed to communicate with Profit Trailer - set in Profit Trailer Server Settings"></i></label>
                 <div class="col-md-8">
                   <input type="text" class="form-control" name="Application_ProfitTrailerServerAPIToken" value="@Model.PTMagicConfiguration.GeneralSettings.Application.ProfitTrailerServerAPIToken">
+                </div>
+              </div>
+
+              <div class="form-group row">
+                <label class="col-md-4 col-form-label">Additional PT API Tokens <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="For additional PT URLs, enter comma-separated API tokens in the same order. Leave blank when all bots use the primary token."></i></label>
+                <div class="col-md-8">
+                  <input type="password" class="form-control" name="Application_ProfitTrailerServerAPITokenXtra" value="@Model.PTMagicConfiguration.GeneralSettings.Application.ProfitTrailerServerAPITokenXtra" autocomplete="off">
                 </div>
               </div>
 

@@ -11,7 +11,7 @@
   <div class="row">
     <div class="col-sm-12">
       <div class="card-box">
-        <h4 class="m-t-0 header-title"><b>Applied Single Market Settings</b></h4>
+        <h4 class="m-t-0 header-title"><b>@(Model.PTMagicConfiguration.GeneralSettings.Application.TestMode ? "TestMode Single Market Settings Preview" : "Applied Single Market Settings")</b></h4>
         <tbody>
           <p style="text-align: center;"><br>
           <tr>
@@ -30,7 +30,7 @@
                   <td><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)SettingsAnalyzer#SingleMarketSetting_@sms">@sms</a>:&nbsp;@smsCount &emsp; &emsp;</td>
                 }
               @if (Model.PTMagicConfiguration.GeneralSettings.Monitor.IsPasswordProtected) {
-                  <a class="btn btn-danger btn-sm btn-custom btn-block text-uppercase btn-deleteall" style="margin-top: 10px;" data-filename="SingleMarketSettingSummary.json" href="#">Reset ALL Single MarketSettings</a>
+                  <a class="btn btn-danger btn-sm btn-custom btn-block text-uppercase btn-deleteall" style="margin-top: 10px;" data-filename="@Model.SmsSummaryFileName" href="#">Reset ALL Single MarketSettings</a>
                 } else {
                   <a class="btn btn-danger btn-custom btn-block text-uppercase" data-toggle="tooltip" data-placement="top" title="This is only accessible when you protect your monitor with a password!"><i class="fa fa-lock text-danger"></i> Delete File</a>
                 } 
@@ -312,7 +312,7 @@
         var dataTarget = $(this).data('datatarget');
         var dataSetting = $(this).data('setting');
 
-        var postValues = { Market: dataTarget, Setting: dataSetting };
+        var postValues = { Market: dataTarget, Setting: dataSetting, SummaryFileName: '@Model.SmsSummaryFileName' };
         $.ajax({
           type: 'POST',
           url: "@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)_post/ResetSingleMarketSetting",

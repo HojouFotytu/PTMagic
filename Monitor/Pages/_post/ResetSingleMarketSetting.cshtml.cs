@@ -15,6 +15,7 @@ namespace Monitor.Pages {
   public class ResetSingleMarketSettingForm {
     public string Market = "";
     public string Setting = "";
+    public string SummaryFileName = "";
   }
 
   public class ResetSingleMarketSettingModel : _Internal.BasePageModelSecure {
@@ -27,6 +28,8 @@ namespace Monitor.Pages {
 
     public ActionResult OnPost() {
       base.Init();
+      string summaryFileName = PTMagicConfiguration.GeneralSettings.Application.TestMode
+        ? "SingleMarketSettingSummary.TestMode.json" : "SingleMarketSettingSummary.json";
 
       JsonResult result = new JsonResult("Error removing transaction.");
 
@@ -38,9 +41,11 @@ namespace Monitor.Pages {
         if (requestBody.Length > 0) {
           ResetSingleMarketSettingForm rsf = JsonConvert.DeserializeObject<ResetSingleMarketSettingForm>(requestBody);
           if (rsf != null) {
-            if (System.IO.File.Exists(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "SingleMarketSettingSummary.json")) {
+            if (!String.Equals(rsf.SummaryFileName, summaryFileName, StringComparison.Ordinal))
+              return new BadRequestObjectResult("The application mode changed. Reload Manage SMS before resetting its settings.");
+            if (System.IO.File.Exists(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + summaryFileName)) {
               try {
-                List<SingleMarketSettingSummary> smsSummaries = JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(System.IO.File.ReadAllText(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "SingleMarketSettingSummary.json"));
+                List<SingleMarketSettingSummary> smsSummaries = JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(System.IO.File.ReadAllText(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + summaryFileName));
                 SingleMarketSettingSummary smsSummary = smsSummaries.Find(s => s.Market.Equals(rsf.Market) && s.SingleMarketSetting.SettingName.Equals(rsf.Setting));
                 if (smsSummary != null) {
                   smsSummaries.Remove(smsSummary);
@@ -50,7 +55,7 @@ namespace Monitor.Pages {
                   smsSummaryJsonSettings.NullValueHandling = NullValueHandling.Ignore;
                   smsSummaryJsonSettings.DefaultValueHandling = DefaultValueHandling.Ignore;
 
-                  FileHelper.WriteTextToFile(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar, "SingleMarketSettingSummary.json", JsonConvert.SerializeObject(smsSummaries, Formatting.None, smsSummaryJsonSettings));
+                  FileHelper.WriteTextToFile(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar, summaryFileName, JsonConvert.SerializeObject(smsSummaries, Formatting.None, smsSummaryJsonSettings));
 
                 }
 

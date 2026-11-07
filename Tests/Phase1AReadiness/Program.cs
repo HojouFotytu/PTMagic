@@ -118,11 +118,12 @@ internal static class Program
   {
     MarketDataStore store = new MarketDataStore(400);
     string[] symbols = Enumerable.Range(1, 12).Select(i => "VOLUME" + i + "USDT").ToArray();
-    // Exactly 288 consecutive five-minute closed candles make a 24-hour window.
-    DateTimeOffset firstOpen = LatestOpen - TimeSpan.FromMinutes(287 * 5);
+    // 288 source candles cover this 24-hour trend's volume window; the
+    // preceding close is also required for its same-window price return.
+    DateTimeOffset firstOpen = LatestOpen - TimeSpan.FromMinutes(288 * 5);
     for (int symbolIndex = 0; symbolIndex < symbols.Length; symbolIndex++)
     {
-      for (int candleIndex = 0; candleIndex < 288; candleIndex++)
+      for (int candleIndex = 0; candleIndex < 289; candleIndex++)
       {
         if (symbolIndex == 11 && candleIndex == 100)
         {
@@ -135,6 +136,7 @@ internal static class Program
     }
 
     MarketTrend trend = NewTrend("Concentration");
+    trend.TrendMinutes = 1440;
     MarketTrendAnalysisSnapshot incomplete = MarketTrendAnalyticsEngine.Calculate(
       trend, symbols, Array.Empty<string>(), store, Interval, AsOf);
     FeatureValueSnapshot invalidConcentration = Get(incomplete, MarketTrendMetrics.Concentration);

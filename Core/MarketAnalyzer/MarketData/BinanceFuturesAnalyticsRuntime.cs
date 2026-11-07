@@ -28,13 +28,13 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     private static Task<List<MarketCandle>> GetFiveMinuteMarketCandlesAsync(
-      string exchange, string symbol, int candles, LogHelper log, CancellationToken ct)
+      string exchange, string symbol, int candles, LogHelper log, CancellationToken ct, DateTimeOffset asOfUtc)
     {
       switch (exchange?.ToUpperInvariant())
       {
-        case "BINANCE": return Binance.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct);
-        case "BINANCEUS": return BinanceUS.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct);
-        case "BINANCEFUTURES": return BinanceFutures.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct);
+        case "BINANCE": return Binance.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct, asOfUtc);
+        case "BINANCEUS": return BinanceUS.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct, asOfUtc);
+        case "BINANCEFUTURES": return BinanceFutures.GetFiveMinuteMarketCandlesAsync(symbol, candles, log, ct, asOfUtc);
         default: throw new ArgumentException("Unsupported normalized Exchange.", nameof(exchange));
       }
     }
@@ -53,6 +53,19 @@ namespace Core.MarketAnalyzer.MarketData
     private static DateTimeOffset? _currentRaidAsOfUtc;
 
     public static MarketDataService DataService => DataServiceInstance;
+
+    public static DateTimeOffset? CurrentRaidAsOfUtc
+    {
+      get { lock (SnapshotLock) return _currentRaidAsOfUtc; }
+    }
+
+    public static bool IsDecisionFresh(PTMagicConfiguration configuration, out string reason,
+      DateTimeOffset? decisionTimeUtc = null)
+    {
+      return AnalysisDecisionFreshness.IsFresh(CurrentRaidAsOfUtc,
+        decisionTimeUtc ?? DateTimeOffset.UtcNow,
+        configuration?.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300, out reason);
+    }
 
     public static AnalyzerUniverseSnapshot CurrentUniverse
     {
@@ -193,11 +206,11 @@ namespace Core.MarketAnalyzer.MarketData
       // A long cold fetch may span another close; the evaluation must not
       // demand a candle unavailable to symbols fetched before that boundary.
       DateTimeOffset refreshAsOfUtc = DateTimeOffset.UtcNow;
-      IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAsync(
+      IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAtAsync(
         refreshSymbols,
         BaseInterval,
         targetHistoryCandles,
-        (symbol, count, logger, ct) => GetFiveMinuteMarketCandlesAsync(exchangeName, symbol, count, logger, ct),
+        (symbol, count, logger, ct, asOfUtc) => GetFiveMinuteMarketCandlesAsync(exchangeName, symbol, count, logger, ct, asOfUtc),
         log,
         RefreshConcurrency,
         cancellationToken,
@@ -433,8 +446,22 @@ namespace Core.MarketAnalyzer.MarketData
           BaseInterval,
           analysisAsOfUtc,
           enabledMetrics,
-          "BTC" + universe.MainMarket);
+          "BTC" + universe.MainMarket,
+          systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0);
         analyses[marketTrend.Name] = analysis;
+
+        foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)
+        {
+          string detail = "BinanceFutures analytics - history requirement for '" + marketTrend.Name +
+            "' / " + requirement.Metric + ": " + requirement.MinimumClosedSourceCandles +
+            " closed source candles minimum; " + requirement.RequiredStoredSourceCandles +
+            " retained slots at this raid; recommended StoreDataMaxHours >= " +
+            requirement.RecommendedStoreDataMaxHours + ". " + requirement.Basis;
+          if (requirement.HasAllAlignmentCapacity == false)
+            log.DoLogWarn(detail + " " + requirement.Diagnostic);
+          else
+            log.DoLogDebug(detail);
+        }
 
         LogTrendAnalysis(marketTrend, analysis, log);
       }

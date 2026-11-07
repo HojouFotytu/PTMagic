@@ -14,6 +14,8 @@ namespace Monitor.Pages
   public class ManageSMSModel : _Internal.BasePageModelSecure
   {
     public List<SingleMarketSettingSummary> SingleMarketSettingSummaries = new List<SingleMarketSettingSummary>();
+    public string SmsSummaryFileName => PTMagicConfiguration.GeneralSettings.Application.TestMode
+      ? "SingleMarketSettingSummary.TestMode.json" : "SingleMarketSettingSummary.json";
     private readonly IWebHostEnvironment _hostingEnvironment;
 
     public ManageSMSModel(IWebHostEnvironment hostingEnvironment)
@@ -43,9 +45,10 @@ namespace Monitor.Pages
     
     public IActionResult OnPostDeleteFile(string filename)
     {
-        string webRootParent = Directory.GetParent(_hostingEnvironment.WebRootPath).FullName;
-        string ptMagicRoot = Directory.GetParent(webRootParent).FullName;
-        string analyzerStatePath = Path.Combine(ptMagicRoot, "_data", "AnalyzerState");
+        base.Init();
+        if (!String.Equals(filename, SmsSummaryFileName, StringComparison.Ordinal))
+          return new JsonResult(new { success = false, message = "The application mode changed. Reload Manage SMS before resetting its settings." });
+        string analyzerStatePath = Path.Combine(PTMagicBasePath, Constants.PTMagicPathData, "AnalyzerState");
 
         // Read the AnalyzerState file
         if (System.IO.File.Exists(analyzerStatePath))
@@ -60,7 +63,7 @@ namespace Monitor.Pages
         // If state is "0", proceed to delete the file
         try
         {
-            string path = Path.Combine(ptMagicRoot, "_data", filename);
+            string path = Path.Combine(PTMagicBasePath, Constants.PTMagicPathData, SmsSummaryFileName);
             if (System.IO.File.Exists(path))
             {
                 System.IO.File.Delete(path);
@@ -75,11 +78,11 @@ namespace Monitor.Pages
 
     private void BindData()
     {
-      if (System.IO.File.Exists(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "SingleMarketSettingSummary.json"))
+      if (System.IO.File.Exists(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + SmsSummaryFileName))
       {
         try
         {
-          SingleMarketSettingSummaries = JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(System.IO.File.ReadAllText(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "SingleMarketSettingSummary.json"));
+          SingleMarketSettingSummaries = JsonConvert.DeserializeObject<List<SingleMarketSettingSummary>>(System.IO.File.ReadAllText(PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + SmsSummaryFileName));
         }
         catch { }
       }

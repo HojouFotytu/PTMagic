@@ -138,6 +138,12 @@ namespace Core.MarketAnalyzer.MarketData
     public static string GetUnit(string metric)
     {
       string metricName = MarketTrendMetrics.Normalize(metric);
+      if (metricName == MarketTrendMetrics.CorrelationToBTC ||
+        metricName == MarketTrendMetrics.MeanCorrelationToBTC ||
+        metricName == MarketTrendMetrics.MedianCorrelationToBTC)
+      {
+        return "";
+      }
       if (metricName == MarketTrendMetrics.VolumeExpansion || metricName == MarketTrendMetrics.MedianVolumeExpansion)
       {
         return "x";
@@ -197,6 +203,13 @@ namespace Core.MarketAnalyzer.MarketData
         out FeatureValueSnapshot feature))
       {
         error = ExplainMissingMetric(configuration, marketTrend, normalizedMetric, marketSymbol);
+        return false;
+      }
+
+      // Snapshot validity is assessed at its pinned time. A long refresh must
+      // not turn that historical consistency into permission to act much later.
+      if (!BinanceFuturesAnalyticsRuntime.IsDecisionFresh(configuration, out error))
+      {
         return false;
       }
 
