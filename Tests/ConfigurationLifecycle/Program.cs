@@ -14,11 +14,135 @@ internal static class Program
 {
   private static readonly LogHelper Log = new LogHelper(NullLogger<LogHelper>.Instance);
   private static int _passed;
+  private static readonly string[] InvalidMainMarkets =
+    { null, "", " \t ", "US DT", "USD/T", "USD_T", "USDT?symbol=BTC", "USDT=USD", "\"USDT\"", "USD\uFF34", "u\u017Fdt" };
 
   private static int Main()
   {
     try
     {
+      Check("main market parsing uses the exact key and preserves normalized non-USDT quotes", () =>
+      {
+        using var fixture = new Fixture();
+        foreach (var quote in new[] { (Input: "btc", Expected: "BTC"), (Input: "usdc", Expected: "USDC"), (Input: "usd1", Expected: "USD1") })
+        {
+          var pairs = new List<string>
+          {
+            null, "", " # MARKET = USDT", "! MARKET = USD", "MARKET_CAP = ETH", "MARKETS = USDT", "DEFAULT_market = BNB",
+            " \tmArKeT \t = " + quote.Input + " \t "
+          };
+          Require(SettingsHandler.GetMainMarket(fixture.Configuration, pairs, Log) == quote.Expected);
+        }
+      });
+      Check("missing blank commented and prefix-only market definitions fail without a default quote", () =>
+      {
+        using var fixture = new Fixture();
+        foreach (List<string> pairs in new List<string>[]
+        {
+          null, new List<string>(), new List<string> { null, "", " \t " },
+          new List<string> { "# MARKET = USDT", "! MARKET = BTC", "MARKET_CAP = USDC", "MARKETS = ETH" },
+          new List<string> { "MARKET" }, new List<string> { "MARKET =" }, new List<string> { " market \t= \t " }
+        })
+          ExpectPairsMarketError(() => SettingsHandler.GetMainMarket(fixture.Configuration, pairs, Log));
+      });
+      Check("malformed PAIRS quote values fail before becoming API symbols", () =>
+      {
+        using var fixture = new Fixture();
+        foreach (string quote in InvalidMainMarkets)
+          ExpectPairsMarketError(() => SettingsHandler.GetMainMarket(fixture.Configuration, new List<string> { "market = " + quote }, Log));
+      });
+      Check("null PAIRS DCA and INDICATORS groups inherit all default preset assignments", () =>
+      {
+        using var fixture = new Fixture();
+        string[] pairs = File.ReadAllLines(fixture.DefaultPreset("pairs.properties"));
+        string[] dca = File.ReadAllLines(fixture.DefaultPreset("dca.properties"));
+        string[] indicators = File.ReadAllLines(fixture.DefaultPreset("indicators.properties"));
+        var risk = fixture.Configuration.AnalyzerSettings.GlobalSettings.Single(setting => setting.SettingName == "Risk");
+        risk.PairsProperties = null; risk.DCAProperties = null; risk.IndicatorsProperties = null;
+        fixture.SelectRisk();
+        Require(pairs.All(fixture.Bot.PairsLines.Contains) && dca.All(fixture.Bot.DCALines.Contains)
+          && indicators.All(fixture.Bot.IndicatorsLines.Contains));
+        Require(SettingsHandler.GetMainMarket(fixture.Configuration, fixture.Bot.PairsLines, Log) == "USDT");
+        Require(fixture.Sent.Count == 0 && fixture.SomCalls.Count == 0 && !File.Exists(fixture.Checkpoint));
+      });
+      Check("fresh-summary bootstrap resolves the selected market without changing acknowledgement", () =>
+      {
+        foreach (bool previouslyAcknowledged in new[] { false, true })
+        {
+          using var fixture = new Fixture(); fixture.SelectRisk();
+          if (previouslyAcknowledged) Call(fixture.Bot, "SaveProfitTrailerProperties");
+          string confirmed = JsonConvert.SerializeObject(fixture.Bot.ConfigurationDelivery.Confirmed);
+          string checkpoint = File.Exists(fixture.Checkpoint) ? File.ReadAllText(fixture.Checkpoint) : null;
+          int sends = fixture.Sent.Count;
+          File.WriteAllLines(fixture.DefaultPreset("pairs.properties"),
+            new[] { "# fixture", "market = bTc", "DEFAULT_sell_only_mode_enabled = false" });
+          fixture.Bot.LastRuntimeSummary = new Summary();
+          fixture.Bot.PairsLines = null; fixture.Bot.DCALines = null; fixture.Bot.IndicatorsLines = null;
+          Set(fixture.Bot, "_raidAnalysisBuilt", false);
+          Call(fixture.Bot, "LoadCurrentProfitTrailerProperties");
+          Require(fixture.Bot.LastRuntimeSummary.MainMarket == "BTC" && fixture.Bot.ActiveSettingName == "Risk");
+          Require(fixture.Bot.PairsLines.Contains("DEFAULT_sell_only_mode_enabled = true"));
+          Require(JsonConvert.SerializeObject(fixture.Bot.ConfigurationDelivery.Confirmed) == confirmed
+            && fixture.Sent.Count == sends && fixture.SomCalls.Count == 0);
+          Require(File.Exists(fixture.Checkpoint) == previouslyAcknowledged);
+          if (previouslyAcknowledged) Require(File.ReadAllText(fixture.Checkpoint) == checkpoint);
+        }
+      });
+      Check("missing market during bootstrap preserves the owned guard and sends no normal configuration", () =>
+      {
+        using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        string guardCheckpoint = File.ReadAllText(fixture.GuardCheckpoint);
+        File.WriteAllLines(fixture.DefaultPreset("pairs.properties"),
+          new[] { "# MARKET = USDT", "MARKET_CAP = USDC", "DEFAULT_sell_only_mode_enabled = false" });
+        fixture.Bot.LastRuntimeSummary = new Summary(); Set(fixture.Bot, "_raidAnalysisBuilt", false);
+        var error = ExpectPairsMarketError(() => Call(fixture.Bot, "LoadCurrentProfitTrailerProperties"));
+        Require(error.Message.Contains("Default", StringComparison.Ordinal));
+        Call(fixture.Bot, "RestoreRaidState"); Call(fixture.Bot, "UpdateDeliverySummary");
+        Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
+        Require(fixture.Bot.LastRuntimeSummary.StartupSellOnlyModeActive && fixture.Bot.LastRuntimeSummary.StartupSellOnlyModePending
+          && Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
+        Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedPayloadHash == "" && !File.Exists(fixture.Checkpoint)
+          && File.ReadAllText(fixture.GuardCheckpoint) == guardCheckpoint);
+      });
+      Check("all exchange price adapters return the USDT identity without I/O", () =>
+      {
+        using var fixture = new Fixture(); var canceled = new CancellationToken(true);
+        foreach (var adapter in PriceAdapters(fixture))
+          foreach (string quote in new[] { "USDT", "usdt", " \tuSdT \t" })
+            Require(adapter.Read(quote, canceled).GetAwaiter().GetResult() == 1.0);
+      });
+      Check("USD identity is Binance US only and other quotes cannot silently become USDT", () =>
+      {
+        using var fixture = new Fixture(); var canceled = new CancellationToken(true);
+        foreach (var adapter in PriceAdapters(fixture))
+        {
+          if (adapter.Name == "BinanceUS") Require(adapter.Read(" usd ", canceled).GetAwaiter().GetResult() == 1.0);
+          else ExpectException<OperationCanceledException>(() => adapter.Read("USD", canceled).GetAwaiter().GetResult());
+          foreach (string quote in new[] { "BTC", "USDC" })
+            ExpectException<OperationCanceledException>(() => adapter.Read(quote, canceled).GetAwaiter().GetResult());
+        }
+      });
+      Check("exchange price adapters reject invalid quotes before I/O cancellation", () =>
+      {
+        using var fixture = new Fixture(); var canceled = new CancellationToken(true);
+        foreach (var adapter in PriceAdapters(fixture))
+          foreach (string quote in InvalidMainMarkets)
+          {
+            var error = ExpectException<ArgumentException>(() => adapter.Read(quote, canceled).GetAwaiter().GetResult());
+            Require(error.ParamName == "mainMarket");
+          }
+      });
+      Check("exchange market-data adapters reject invalid quotes before collection or futures metadata refresh", () =>
+      {
+        using var fixture = new Fixture(); var canceled = new CancellationToken(true);
+        foreach (var adapter in MarketDataAdapters(fixture))
+          foreach (string quote in InvalidMainMarkets)
+          {
+            var error = ExpectException<ArgumentException>(() => adapter.Read(quote, canceled).GetAwaiter().GetResult());
+            Require(error.ParamName == "mainMarket");
+          }
+        Require(fixture.Bot.MarketInfos.Count == 0 && !Directory.Exists(Path.Combine(fixture.Root, Constants.PTMagicPathData, Constants.PTMagicPathExchange)));
+      });
       Check("delivery success advances confirmed acknowledgement", () =>
       {
         var coordinator = new ConfigurationDeliveryCoordinator(); var payload = Payload("A");
@@ -474,6 +598,22 @@ internal static class Program
   private static ConfigurationPayload Payload(string setting) => new ConfigurationPayload(setting,
     new[] { "DEFAULT_sell_only_mode_enabled = false" }, new[] { "DEFAULT_DCA_enabled = true" }, new[] { "RSI_candle_period = 300" }, "destination");
 
+  private static (string Name, Func<string, CancellationToken, Task<double>> Read)[] PriceAdapters(Fixture fixture) =>
+    new (string, Func<string, CancellationToken, Task<double>>)[]
+    {
+      ("Binance", (quote, token) => Core.MarketAnalyzer.Binance.GetMainCurrencyPriceAsync(quote, fixture.Configuration, Log, token)),
+      ("BinanceFutures", (quote, token) => Core.MarketAnalyzer.BinanceFutures.GetMainCurrencyPriceAsync(quote, fixture.Configuration, Log, token)),
+      ("BinanceUS", (quote, token) => Core.MarketAnalyzer.BinanceUS.GetMainCurrencyPriceAsync(quote, fixture.Configuration, Log, token))
+    };
+
+  private static (string Name, Func<string, CancellationToken, Task<List<string>>> Read)[] MarketDataAdapters(Fixture fixture) =>
+    new (string, Func<string, CancellationToken, Task<List<string>>>)[]
+    {
+      ("Binance", (quote, token) => Core.MarketAnalyzer.Binance.GetMarketDataAsync(quote, fixture.Bot.MarketInfos, fixture.Configuration, Log, token)),
+      ("BinanceFutures", (quote, token) => Core.MarketAnalyzer.BinanceFutures.GetMarketDataAsync(quote, fixture.Bot.MarketInfos, fixture.Configuration, Log, token)),
+      ("BinanceUS", (quote, token) => Core.MarketAnalyzer.BinanceUS.GetMarketDataAsync(quote, fixture.Bot.MarketInfos, fixture.Configuration, Log, token))
+    };
+
   private static ConfigurationDeliveryResult Http(Fixture fixture, FakeHttp wire, Func<bool> canSend = null) =>
     SettingsAPI.SendPropertyLinesToAPI(new List<string> { "MARKET = USDT" }, new List<string> { "DEFAULT_DCA_enabled = true" },
       new List<string> { "RSI_candle_period = 300" }, fixture.Configuration, Log, wire.Client, canSend);
@@ -519,6 +659,7 @@ internal static class Program
     public string Root { get; } = Path.Combine(Path.GetTempPath(), "PTMagic-ConfigurationLifecycle-" + Guid.NewGuid().ToString("N"));
     public string Checkpoint => Path.Combine(Root, Constants.PTMagicPathData, "ConfigurationDeliveryState.json");
     public string GuardCheckpoint => Path.Combine(Root, Constants.PTMagicPathData, "StartupSellOnlyModeState.json");
+    public string DefaultPreset(string fileName) => Path.Combine(Root, Constants.PTMagicPathPresets, "Default", fileName);
     public Engine Bot { get; }
     public PTMagicConfiguration Configuration { get; }
     public SingleMarketSetting Sms => Configuration.AnalyzerSettings.SingleMarketSettings[0];
@@ -625,6 +766,18 @@ internal static class Program
   private static void Set(object target, string name, object value) => target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).SetValue(target, value);
   private static T Get<T>(object target, string name) => (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(target);
   private static void SetStatic(Type type, string name, object value) => type.GetField(name, BindingFlags.Static | BindingFlags.NonPublic).SetValue(null, value);
+  private static TException ExpectException<TException>(Action action) where TException : Exception
+  {
+    try { action(); } catch (TException error) { return error; }
+    throw new InvalidOperationException("Expected " + typeof(TException).Name + ".");
+  }
+  private static InvalidOperationException ExpectPairsMarketError(Action action)
+  {
+    var error = ExpectException<InvalidOperationException>(action);
+    Require(error.Message.Contains("PAIRS", StringComparison.OrdinalIgnoreCase)
+      && error.Message.Contains("market", StringComparison.OrdinalIgnoreCase));
+    return error;
+  }
   private static void Require(bool condition) { if (!condition) throw new InvalidOperationException("Assertion failed."); }
   private static void Check(string name, Action test) { test(); _passed++; Console.WriteLine("PASS " + name); }
 }

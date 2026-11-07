@@ -161,20 +161,16 @@ namespace Core.ProfitTrailer
 
     public static string GetMainMarket(PTMagicConfiguration systemConfiguration, List<string> pairsLines, LogHelper log)
     {
-      string result = "";
-
-      foreach (string line in pairsLines)
+      try
       {
-        if (line.Replace(" ", "").StartsWith("MARKET", StringComparison.InvariantCultureIgnoreCase))
-        {
-          result = line.Replace("MARKET", "", StringComparison.InvariantCultureIgnoreCase);
-          result = result.Replace("#", "");
-          result = result.Replace("=", "").Trim();
-          break;
-        }
+        // Read the exact property key; market-prefixed options and comments
+        // must not become the quote currency used to construct API symbols.
+        return BinanceAnalyzerCommon.NormalizeMainMarket(GetPropertyValue(pairsLines, "market"));
       }
-
-      return result;
+      catch (ArgumentException error)
+      {
+        throw new InvalidOperationException("Compiled PAIRS properties require a nonempty 'market' asset code (for example 'market = USDT'). Check the selected setting's PAIRS preset and PairsProperties overrides before loading exchange data.", error);
+      }
     }
 
     public static string GetMarketPairs(PTMagicConfiguration systemConfiguration, List<string> pairsLines, LogHelper log)
@@ -318,7 +314,7 @@ namespace Core.ProfitTrailer
         GlobalSetting defaultSetting = ptmagicInstance.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(a => a.SettingName.Equals(ptmagicInstance.DefaultSettingName, StringComparison.InvariantCultureIgnoreCase));
         Dictionary<string, object> defaultProperties = (Dictionary<string, object>)defaultSetting.GetType().GetProperty(fileType + "Properties").GetValue(defaultSetting, null);
 
-        if (defaultProperties.ContainsKey("File"))
+        if (defaultProperties != null && defaultProperties.ContainsKey("File"))
         {
           fileLines = SettingsFiles.GetPresetFileLinesAsList(defaultSetting.SettingName, defaultProperties["File"].ToString(), ptmagicInstance.PTMagicConfiguration);
         }
@@ -349,7 +345,13 @@ namespace Core.ProfitTrailer
         }
         else if (IsPropertyLine(line))
         {
-          if (properties != null)
+          if (properties == null)
+          {
+            // A null property group inherits the default preset unchanged.
+            // Retain its actual assignments, including the required market.
+            result.Add(line);
+          }
+          else
           {
             bool madeSubstitution = false;
 

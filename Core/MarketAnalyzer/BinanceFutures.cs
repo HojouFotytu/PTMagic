@@ -23,6 +23,7 @@ namespace Core.MarketAnalyzer
 
     public static async Task<List<string>> GetMarketDataAsync(string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
+      mainMarket = BinanceAnalyzerCommon.NormalizeMainMarket(mainMarket);
       await BinanceFuturesMarketUniverse.RefreshAsync(ApiBase, log, cancellationToken).ConfigureAwait(false);
       BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
 

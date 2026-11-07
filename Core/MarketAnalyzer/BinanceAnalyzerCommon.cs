@@ -23,8 +23,19 @@ namespace Core.MarketAnalyzer
     private const string QuoteVolumeField = "quoteVolume";
     private const string SymbolField = "symbol";
 
+    internal static string NormalizeMainMarket(string mainMarket)
+    {
+      string market = mainMarket?.Trim();
+      if (String.IsNullOrEmpty(market) || market.Any(character =>
+        !((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z')
+          || (character >= '0' && character <= '9'))))
+        throw new ArgumentException("A nonempty main market asset code is required. Check the 'market' value in the compiled PAIRS preset (for example 'market = USDT').", nameof(mainMarket));
+      return market.ToUpperInvariant();
+    }
+
     internal static async Task<List<string>> GetMarketDataAsync(string exchangeName, string apiBase, string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, bool supportsUsdMainMarket, bool logIncorrectBaseCurrency, bool caseSensitiveBaseMatch, bool parallelHistoricalBuild, CancellationToken cancellationToken = default)
     {
+      mainMarket = NormalizeMainMarket(mainMarket);
       List<string> result = new List<string>();
       string lastMarket = "";
 
@@ -82,7 +93,8 @@ namespace Core.MarketAnalyzer
 
     internal static async Task<double> GetMainCurrencyPriceAsync(string exchangeName, string apiBase, string mainMarket, LogHelper log, bool supportsUsdMainMarket, CancellationToken cancellationToken = default)
     {
-      if (supportsUsdMainMarket && mainMarket.Equals("USD", StringComparison.InvariantCultureIgnoreCase))
+      mainMarket = NormalizeMainMarket(mainMarket);
+      if (mainMarket == "USDT" || (supportsUsdMainMarket && mainMarket == "USD"))
       {
         return 1.0;
       }

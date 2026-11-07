@@ -1290,7 +1290,8 @@ namespace Core.Main
       // pre-reload object. Always prepare the current definition for retry.
       GlobalSetting configured = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(setting =>
         String.Equals(setting.SettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase));
-      SettingsHandler.CompileProperties(this, configured ?? this.ActiveSetting, this.LastSettingsChange.ToLocalTime());
+      GlobalSetting settingToLoad = configured ?? this.ActiveSetting;
+      SettingsHandler.CompileProperties(this, settingToLoad, this.LastSettingsChange.ToLocalTime());
 
       if (this.PairsLines != null && this.DCALines != null && this.IndicatorsLines != null)
       {
@@ -1305,7 +1306,15 @@ namespace Core.Main
       }
 
       // Get market from PT properties
-      this.LastRuntimeSummary.MainMarket = SettingsHandler.GetMainMarket(this.PTMagicConfiguration, this.PairsLines, this.Log);
+      try
+      {
+        this.LastRuntimeSummary.MainMarket = SettingsHandler.GetMainMarket(this.PTMagicConfiguration, this.PairsLines, this.Log);
+      }
+      catch (InvalidOperationException error)
+      {
+        throw new InvalidOperationException("Unable to determine the analysis main market for GlobalSetting '" + settingToLoad.SettingName + "'. " + error.Message, error);
+      }
+      this.Log.DoLogInfo("Analysis main market: " + this.LastRuntimeSummary.MainMarket + " (compiled PAIRS for GlobalSetting '" + settingToLoad.SettingName + "').");
     }
 
     private void LoadSMSSummaries()

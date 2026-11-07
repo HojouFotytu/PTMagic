@@ -58,9 +58,25 @@ internal static class Program
         settings.SingleMarketSettings[0].OffTriggers = new List<OffTrigger>
         {
           new OffTrigger { HoursSinceTriggered = 3, Min24hVolume = 1 },
-          new OffTrigger { Max24hVolume = Constants.Max24hVolume - 1 }
+          new OffTrigger { Max24hVolume = 1_000 }
         };
       });
+      // Subtracting 1 from the double.MaxValue sentinel rounds back to it.
+      // Its adjacent representable value and the sentinel must take different paths.
+      Valid("volume off-trigger just below the unbounded sentinel needs no trend", settings =>
+      {
+        settings.SingleMarketSettings[0].OffTriggers = new List<OffTrigger>
+        {
+          new OffTrigger { Max24hVolume = Math.BitDecrement(Constants.Max24hVolume) }
+        };
+      });
+      Invalid("unbounded off-trigger without time or volume still requires a trend", settings =>
+      {
+        settings.SingleMarketSettings[0].OffTriggers = new List<OffTrigger>
+        {
+          new OffTrigger { Max24hVolume = Constants.Max24hVolume }
+        };
+      }, "OffTrigger #1 references missing MarketTrend");
       Valid("null OffTriggers means no persistent condition", settings => settings.SingleMarketSettings[0].OffTriggers = null);
       Warning("unknown metric remains diagnostic unavailable", settings => settings.GlobalSettings[0].Triggers[0].Metric = "UnknownMetric", "Unknown metric");
       Warning("disabled metric remains diagnostic unavailable", settings => settings.GlobalSettings[0].Triggers[0].Metric = "MedianATRP", "does not enable");

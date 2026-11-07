@@ -1,13 +1,19 @@
 # Configuration delivery and raid lifecycle acceptance
 
-Status: **56 checks authored; not executed.** Native .NET builds, harness execution and TestMode acceptance remain user-owned under D-021. The authored count is not a pass result.
+Status: **66 checks authored; revised harness not yet executed.** Ten bootstrap and exchange-adapter regression groups were added after the user's earlier validation. Native .NET builds, harness execution and TestMode acceptance remain user-owned under D-021. The authored count is not a pass result.
 
-The harness calls the production `ConfigurationDeliveryCoordinator`, `GlobalSellOnlyModeAPI`, `SettingsAPI` and `SettingsHandler`. It also invokes the actual PTMagic private orchestration methods through reflection: initialization, startup API guard delivery and release, final configuration save, SMS evaluation, global trigger selection, SMS summary persistence and mode changes. No alternate delivery/SMS algorithm is implemented in the tests.
+The harness calls the production `ConfigurationDeliveryCoordinator`, `GlobalSellOnlyModeAPI`, `SettingsAPI`, `SettingsHandler` and the public Binance, Binance Futures and Binance US exchange adapters. It also invokes the actual PTMagic private orchestration methods through reflection: initialization, preset bootstrap, startup API guard delivery and release, final configuration save, SMS evaluation, global trigger selection, SMS summary persistence and mode changes. No alternate delivery/SMS algorithm is implemented in the tests.
 
-HTTP requests use an injected `HttpMessageHandler`; every request must address one of two `.invalid` fixture hosts. The fake handler records method, URI, query and body, and supplies success, unauthorized, server-error, redirect, HTML/login, explicit API-failure and immediate timeout outcomes. No network request or real delay is involved. Each orchestration fixture writes settings, presets and checkpoints into a unique temporary directory, pins the production raid observation clock, then restores the previous working directory and static pin before deleting its fixture files.
+ProfitTrailer requests use an injected `HttpMessageHandler`; every request must address one of two `.invalid` fixture hosts. The fake handler records method, URI, query and body, and supplies success, unauthorized, server-error, redirect, HTML/login, explicit API-failure and immediate timeout outcomes. No network request or real delay is involved. Each orchestration fixture writes settings, presets and checkpoints into a unique temporary directory, pins the production raid observation clock, then restores the previous working directory and static pin before deleting its fixture files.
+
+Exchange-adapter boundary calls always receive an already-canceled `CancellationToken`. Valid USDT identity prices (and USD on Binance US) return 1 without collection; invalid asset codes must raise `ArgumentException` for `mainMarket` before any I/O or Futures metadata refresh. Valid quotes that need conversion must reach cancellation rather than silently return an identity price. The canceled token prevents network transmission if the input/identity boundary regresses; these cases do not fetch market data.
 
 Coverage includes:
 
+- Exact, case-insensitive PAIRS `market` parsing, whitespace trimming, uppercase normalization and preservation of non-USDT quote currencies. Comments and market-prefixed keys are ignored; missing, null, blank, malformed and non-ASCII values raise an actionable PAIRS/market error instead of defaulting to USDT.
+- Null PAIRS, DCA and INDICATORS property groups inherit actual default-preset assignments. A fresh summary obtains the selected preset's quote before exchange loading, with and without a prior acknowledged configuration, without sending settings or changing the acknowledgement checkpoint.
+- A missing market during bootstrap preserves an owned startup SOM guard and its checkpoint, leaves the first successful raid pending, and sends no normal configuration or SOM release.
+- Public exchange price/data adapter input boundaries, USDT identity on all three exchanges, and the Binance US-only USD identity.
 - Success, failure, exception, missing acknowledgement, same-payload retry, unchanged suppression, forced replay and destination changes.
 - Confirmed A → partial B failure → desired A replay; a failed partial transfer cannot use the old confirmed hash to skip recovery.
 - Complete multi-target HTTP acknowledgement and expiration before the next target/retry.
@@ -32,7 +38,7 @@ if ($LASTEXITCODE -ne 0) { throw "ConfigurationLifecycle failed." }
 Expected final line after a successful run:
 
 ```text
-Configuration lifecycle checks passed: 56.
+Configuration lifecycle checks passed: 66.
 ```
 
 This fixture does not execute the full scheduled raid loop, live exchange collection, a real ProfitTrailer server or Monitor Razor/JavaScript. Native build, TestMode observation and the documented browser acceptance remain required before claiming release readiness. Reflection intentionally couples these cases to the production methods; a method/field rename must update the fixture rather than replace it with a simulated algorithm.
