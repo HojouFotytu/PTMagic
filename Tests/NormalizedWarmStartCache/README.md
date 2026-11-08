@@ -24,6 +24,6 @@ Expected successful final line:
 Normalized warm-start cache tests passed: 8.
 ```
 
-**Acceptance status:** authored, not yet executed in the user's .NET environment. Runtime acceptance still needs two startups: cold cache creation, then a short restart with restored candle count, kline request count, and no changed analytics values.
+**Acceptance status:** Verified in user-local .NET SDK 10.0.403 at exact application source `925db7c153ee4d53cfe3b7bf736318e7a30bccf1` on November 9, 2026. `dotnet build .\PTMagic.sln` succeeded in 18.3 seconds (Core, PTMagic and Monitor). This harness passed 8/8. `Phase1AnalyticsReliability` passed 16/16 and `Phase1COhlcv` passed 13/13, totaling 37/37 focused checks. **Configured runtime acceptance still needs two startups:** cold cache creation, then a short restart with restored candle count, kline request count and unchanged analytics availability/values. The 272 previously passing regression groups were executed at earlier revisions, not as a full suite at `925db7c`.
 
 Scope: persistent normalized five-minute OHLCV only. Legacy minute-tick reconstruction and first-seen-date acquisition are separate older data paths with their own disk/refresh rules; this cache does not change those paths.
