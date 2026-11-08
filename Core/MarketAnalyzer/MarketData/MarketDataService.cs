@@ -20,10 +20,12 @@ namespace Core.MarketAnalyzer.MarketData
     private const int RefreshOverlapCandles = 2;
 
     private readonly MarketDataStore _store;
+    private readonly MarketDataWarmStartCache _warmStartCache;
 
-    public MarketDataService(MarketDataStore store = null)
+    public MarketDataService(MarketDataStore store = null, MarketDataWarmStartCache warmStartCache = null)
     {
       _store = store ?? new MarketDataStore();
+      _warmStartCache = warmStartCache;
     }
 
     public MarketDataStore Store => _store;
@@ -38,7 +40,7 @@ namespace Core.MarketAnalyzer.MarketData
         log, maxConcurrency, cancellationToken, refreshAsOfUtc);
     }
 
-    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null)
+    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null, string cacheExchange = null)
     {
       if (symbols == null)
       {
@@ -77,6 +79,28 @@ namespace Core.MarketAnalyzer.MarketData
       DateTimeOffset refreshStartedUtc = (refreshAsOfUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
       MarketDataRefreshStatus[] statuses = new MarketDataRefreshStatus[distinctSymbols.Length];
 
+      // The cache is only an optional seed. All restored series still pass the
+      // normal pinned-window completeness and freshness checks below.
+      if (_warmStartCache != null && !String.IsNullOrWhiteSpace(cacheExchange))
+      {
+        int restoredSeries = 0;
+        long restoredCandles = 0;
+        foreach (string symbol in distinctSymbols)
+        {
+          int count = _warmStartCache.TryRestore(cacheExchange, symbol, interval,
+            refreshStartedUtc, _store, log);
+          if (count > 0)
+          {
+            restoredSeries++;
+            restoredCandles += count;
+          }
+        }
+        if (restoredSeries > 0)
+          log.DoLogInfo("Normalized warm-start restored " + restoredCandles +
+            " validated closed candles across " + restoredSeries + " " + cacheExchange +
+            " markets. Refreshing only missing, stale or incomplete windows.");
+      }
+
       await Parallel.ForEachAsync(Enumerable.Range(0, distinctSymbols.Length), new ParallelOptions
       {
         MaxDegreeOfParallelism = maxConcurrency,
@@ -113,6 +137,15 @@ namespace Core.MarketAnalyzer.MarketData
             .ToList();
 
           _store.UpsertCandles(matchingCandles);
+
+          // Saving never changes fetch success or configuration decisions.
+          // Per-market compressed files are atomically replaced and throttled.
+          if (matchingCandles.Count > 0 && _warmStartCache != null
+            && !String.IsNullOrWhiteSpace(cacheExchange))
+          {
+            _warmStartCache.TrySave(cacheExchange, symbol, interval,
+              refreshStartedUtc, _store, log);
+          }
 
           statuses[index] = new MarketDataRefreshStatus
           {
@@ -157,25 +190,24 @@ namespace Core.MarketAnalyzer.MarketData
         return targetHistoryCandles;
       }
 
-      // A current latest candle is not enough to declare the series complete. Refill the
-      // full requested window whenever retention was increased, an earlier fetch was
-      // incomplete, or a gap exists anywhere in the retained series.
-      if (snapshot.SampleCount < targetHistoryCandles || snapshot.HasDetectedGaps)
-      {
+      // A gap within retained history still requires a complete backfill.
+      // A disk snapshot intentionally stores only closed candles, so it can
+      // hold one fewer than the live target (which includes the forming bar).
+      // Count the bars missing since its last close before deciding whether
+      // the *historical* window is insufficient.
+      if (snapshot.HasDetectedGaps)
         return targetHistoryCandles;
-      }
 
       MarketCandle latestCandle = snapshot.Candles[snapshot.Candles.Count - 1];
-
-      // Binance includes the currently forming candle. If the retained window is complete
-      // and that candle has not yet reached its exchange close timestamp, no request is needed.
       if (latestCandle.CloseTimeUtc > refreshStartedUtc)
-      {
-        return 0;
-      }
+        return snapshot.SampleCount >= targetHistoryCandles ? 0 : targetHistoryCandles;
 
       TimeSpan ageSinceClose = refreshStartedUtc - latestCandle.CloseTimeUtc;
-      int missingIntervals = (int)Math.Floor(ageSinceClose.TotalMilliseconds / interval.TotalMilliseconds) + 1;
+      int missingIntervals = (int)Math.Min(targetHistoryCandles,
+        Math.Max(1, Math.Floor(ageSinceClose.TotalMilliseconds / interval.TotalMilliseconds) + 1));
+      if ((long)snapshot.SampleCount + missingIntervals < targetHistoryCandles)
+        return targetHistoryCandles;
+
       int requested = missingIntervals + RefreshOverlapCandles;
       return Math.Min(targetHistoryCandles, Math.Max(RefreshOverlapCandles, requested));
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,7 +43,9 @@ namespace Core.MarketAnalyzer.MarketData
     private const int RefreshConcurrency = 2;
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
-    private static readonly MarketDataService DataServiceInstance = new MarketDataService(new MarketDataStore(2));
+    private static readonly MarketDataService DataServiceInstance = new MarketDataService(
+      new MarketDataStore(2),
+      new MarketDataWarmStartCache(Path.Combine(Environment.CurrentDirectory, "_data", "NormalizedOhlcvCache")));
     private static AnalyzerUniverseSnapshot _currentUniverse;
     private static MarketAnalysisSnapshot _currentAnalysis;
     private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> _currentTrendAnalyses =
@@ -214,7 +217,8 @@ namespace Core.MarketAnalyzer.MarketData
         log,
         RefreshConcurrency,
         cancellationToken,
-        refreshAsOfUtc).ConfigureAwait(false);
+        refreshAsOfUtc,
+        exchangeName).ConfigureAwait(false);
 
       MarketDataRefreshStatus[] statusSnapshot = statuses.ToArray();
       lock (SnapshotLock)

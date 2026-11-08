@@ -124,7 +124,7 @@ namespace Core.MarketAnalyzer.MarketData
       _series.Clear();
     }
 
-    private static void ValidateCandle(MarketCandle candle)
+    internal static void ValidateCandle(MarketCandle candle)
     {
       if (candle == null)
       {
