@@ -25,6 +25,7 @@ internal static class Program
       TestExchangeAndSymbolIsolation(root);
       await TestIncrementalRestart(root);
       await TestIncompleteCacheBackfills(root);
+      await TestIncompleteMemoryBackfills();
       TestCorruptionFailOpen(root);
       TestBoundedRestoration(root);
       TestFileSaveThrottle(root);
@@ -123,6 +124,25 @@ internal static class Program
         return Task.FromResult(Candles(symbol, count));
       }, Log, maxConcurrency: 1, refreshAsOfUtc: Boundary, cacheExchange: "BinanceFutures");
     Assert(requested == 10, "Gaps must force full anchored backfill.");
+    _passed++;
+  }
+
+  private static async Task TestIncompleteMemoryBackfills()
+  {
+    MarketDataStore store = new MarketDataStore(10);
+    // No disk restoration: a short, otherwise contiguous in-memory response
+    // must retain the pre-existing conservative full-backfill behavior.
+    store.UpsertCandles(Candles("LTCUSDT", 9));
+    MarketDataService service = new MarketDataService(store);
+    int requested = 0;
+    await service.RefreshAtAsync(new[] { "LTCUSDT" }, Interval, 10,
+      (symbol, count, logger, ct, asOf) =>
+      {
+        requested = count;
+        return Task.FromResult(Candles(symbol, count));
+      }, Log, maxConcurrency: 1, refreshAsOfUtc: Boundary);
+    Assert(requested == 10,
+      "Incomplete ordinary in-memory history must request full backfill.");
     _passed++;
   }
 

@@ -28,11 +28,11 @@ The foundation began at [`4153fb8`][foundation], before the application was rena
 
 ### Persistent normalized OHLCV warm start
 
-- Added a versioned, per-exchange, per-symbol compressed disk cache for **completed normalized five-minute OHLCV candles** under `_data/NormalizedOhlcvCache`. The active runtime restores validated observations before its normal pinned refresh, so a short restart can fetch only the missing candles plus a small overlapping window rather than rebuilding the complete normalized history.
+- Added a versioned, per-exchange, per-symbol compressed disk cache for **completed normalized five-minute OHLCV candles** under `_data/NormalizedOhlcvCache`. The active runtime restores validated observations before its normal pinned refresh, so a short restart can fetch only the missing candles plus a small overlapping window rather than rebuilding the complete normalized history. Ordinary incomplete in-memory series retain conservative full backfill.
 - Snapshots have normalized exchange/market identity, a strict candle-count bound, UTC-aligned timestamp and OHLCV validation, a complete-file marker, and gzip integrity checks. Cache files are written to a temporary path and atomically replaced. A corrupt, missing, incompatible or incomplete cache never makes unavailable metrics valid: the normal refresh requests missing/full history and keeps its existing readiness rules.
 - Files are bounded by `StoreDataMaxHours`/per-series capacity when restored, and saves are throttled to avoid rewriting each market on every raid. Cache I/O failures produce warnings, not false trade or configuration acknowledgements.
 - This persistent cache applies **only to normalized OHLCV**. The separate legacy market-tick reconstruction, first-seen data and older MarketData files are unchanged.
-- A new seven-group offline regression harness exercises restoration, incremental restart, corruption, gaps, exchange isolation, retention and write throttling. **Source implementation is published; native build and runtime verification of this addition remain pending.** Earlier 272 passing checks belong to the earlier exact revisions.
+- A new eight-group offline regression harness exercises restoration, incremental restart, corruption, gaps, exchange isolation, retention and write throttling. **Source implementation is published; native build and runtime verification of this addition remain pending.** Earlier 272 passing checks belong to the earlier exact revisions.
 
 
 Sources: [observation store][store], [refresh service][service], [shared exchange runtime][runtime] and [snapshot models][snapshots].

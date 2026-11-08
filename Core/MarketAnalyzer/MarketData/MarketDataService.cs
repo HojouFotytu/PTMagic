@@ -81,6 +81,7 @@ namespace Core.MarketAnalyzer.MarketData
 
       // The cache is only an optional seed. All restored series still pass the
       // normal pinned-window completeness and freshness checks below.
+      HashSet<string> diskRestoredSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       if (_warmStartCache != null && !String.IsNullOrWhiteSpace(cacheExchange))
       {
         int restoredSeries = 0;
@@ -91,6 +92,7 @@ namespace Core.MarketAnalyzer.MarketData
             refreshStartedUtc, _store, log);
           if (count > 0)
           {
+            diskRestoredSymbols.Add(symbol);
             restoredSeries++;
             restoredCandles += count;
           }
@@ -108,7 +110,7 @@ namespace Core.MarketAnalyzer.MarketData
       }, async (index, ct) =>
       {
         string symbol = distinctSymbols[index];
-        int requestedCandleCount = GetRequiredCandleCount(symbol, interval, targetHistoryCandles, refreshStartedUtc);
+        int requestedCandleCount = GetRequiredCandleCount(symbol, interval, targetHistoryCandles, refreshStartedUtc, diskRestoredSymbols.Contains(symbol));
 
         if (requestedCandleCount == 0)
         {
@@ -182,7 +184,7 @@ namespace Core.MarketAnalyzer.MarketData
       return Array.AsReadOnly(statuses);
     }
 
-    private int GetRequiredCandleCount(string symbol, TimeSpan interval, int targetHistoryCandles, DateTimeOffset refreshStartedUtc)
+    private int GetRequiredCandleCount(string symbol, TimeSpan interval, int targetHistoryCandles, DateTimeOffset refreshStartedUtc, bool restoredFromDisk)
     {
       MarketDataSeriesSnapshot snapshot = _store.GetSnapshot(symbol, interval, refreshStartedUtc);
       if (!snapshot.IsAvailable)
@@ -196,6 +198,12 @@ namespace Core.MarketAnalyzer.MarketData
       // Count the bars missing since its last close before deciding whether
       // the *historical* window is insufficient.
       if (snapshot.HasDetectedGaps)
+        return targetHistoryCandles;
+
+      // Keep the established conservative full-backfill rule for ordinary
+      // incomplete in-memory series. Only a validated disk restoration may
+      // legitimately omit the currently forming source candle.
+      if (!restoredFromDisk && snapshot.SampleCount < targetHistoryCandles)
         return targetHistoryCandles;
 
       MarketCandle latestCandle = snapshot.Candles[snapshot.Candles.Count - 1];

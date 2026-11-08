@@ -128,6 +128,11 @@ namespace Core.MarketAnalyzer.MarketData
       {
         log.DoLogWarn("Normalized warm-start cache ignored for '" + symbol +
           "' (" + exception.GetType().Name + "); exchange backfill will repair the series.");
+        // A damaged checkpoint must not block its first successful replacement
+        // merely because the file was modified inside the save throttle window.
+        try { File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
         return 0;
       }
     }
