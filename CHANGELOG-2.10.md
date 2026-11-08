@@ -180,6 +180,12 @@ Release has separate acknowledgement and retry state. A failed release preserves
 
 Sources: [SOM transport][som-api], [guard checkpoint][som-state], [startup orchestration][orchestration] and [accepted endpoint/ownership contract][som-decision].
 
+### Unified TestMode console highlighting
+
+All PTMagic and Monitor console messages containing `TestMode` (case-insensitive)—including startup warning, startup SOM previews, configuration-delivery previews and RAID SUMMARY lines—use the same **magenta/purple** foreground as the initial `TESTMODE ENABLED` warning. NLog `ColoredConsole` highlights these messages independent of INFO/WARN severity. The ordinary severity levels, file-log text, and coloring of unrelated messages do not change. The main PTMagic console, Monitor console and packaged default NLog configuration share this rule. The user's installed `nlog.config` must be updated for the running process to reflect it.
+
+**Verification:** source/configuration review only at publication; .NET build and real console-color acceptance on the user's Windows environment remain pending. A color-rendering configuration is not proof of live PT delivery.
+
 ## 6. Monitor inspection and editing
 
 The Market Metrics page and `MarketTrendAnalytics.json` expose the configured metrics with values, scope, units, selected populations, coverage, source endpoints, unavailable reasons and history requirements. Existing PriceTrend summaries and Market Analyzer views consume normalized outputs. Unavailable results stay blank or explicitly unavailable instead of becoming fabricated values or revived stale history.
