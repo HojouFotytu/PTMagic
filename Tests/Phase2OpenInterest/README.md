@@ -45,5 +45,5 @@ dotnet run --project .\Tests\Phase2OpenInterest\Phase2OpenInterest.csproj
 if ($LASTEXITCODE -ne 0) { throw "Phase 2 OI harness failed" }
 \`\`\`
 
-Expected case inventory: 18 offline groups; user-local results pending. No
+Expected case inventory: 18 offline groups; tests are required before Phase 2 source acceptance and have not yet been executed. No
 live exchange, PT API, or Monitor access is required for these tests.

@@ -10,10 +10,9 @@ scheduling, empty and missing provider periods, repeated-raid reuse, disk cache
 restoration/corruption, no symbol mixing, quantity versus reported-value
 change, Spot/US unavailable, and separate OI history requirements.
 
-**Status:** authored; user-local build/test results pending by owner decision to
-defer runtime acceptance. New feature code is not claimed as compiled.
+**Status:** authored; Phase 2 build, this harness, and affected regressions are required and pending. The owner's deferral covered only remaining Phase 1 configured integration tests. The new feature is not claimed as compiled or validated.
 
-In the PTMagic development repository:
+Run the entire offline suite with the checked-in `Run-Phase2Validation.ps1`. In the PTMagic development repository:
 
 \`\`\`powershell
 git switch phase1/market-data-foundation
