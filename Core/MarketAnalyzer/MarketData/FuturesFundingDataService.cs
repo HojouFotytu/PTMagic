@@ -135,10 +135,11 @@ namespace Core.MarketAnalyzer.MarketData
               long last = pending.Count == 0 ? from - 1 : pending.Last().Key.At;
               bool exhausted = returned.Count < PageSize;
               if (!exhausted && last < from) throw new InvalidOperationException("Invalid full funding page.");
-              // If a full page ended at a timestamp with multiple types, the
-              // next page could omit more records at that timestamp.
-              if (!exhausted && pending.Keys.Count(key => key.At == last) > 1)
-                throw new InvalidOperationException("Ambiguous same-timestamp funding page boundary.");
+              // The final timestamp of a full page may have additional
+              // Regular/Special rows on the next page. Only certify history
+              // strictly BEFORE that timestamp, then query again inclusively.
+              // If a provider never makes progress, the bounded page budget
+              // keeps the series UNAVAILABLE rather than skipping events.
 
               lock (_sync)
               {
@@ -151,7 +152,7 @@ namespace Core.MarketAnalyzer.MarketData
                 }
                 foreach (var entry in pending) state.Rows[entry.Key] = entry.Value;
                 if (exhausted) state.Complete.Add((from, end));
-                else state.Complete.Add((from, last));
+                else if (last > from) state.Complete.Add((from, last - 1));
               }
               if (exhausted) break;
             }
