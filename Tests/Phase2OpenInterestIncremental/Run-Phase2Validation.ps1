@@ -28,6 +28,7 @@ try {
     Assert-NativeExit "dotnet build"
 
     $Checks = @(
+        "Phase2Funding",
         "Phase2OpenInterest",
         "Phase2OpenInterestIncremental",
         "Phase1AReadiness",
