@@ -38,6 +38,8 @@ internal static class Program
       await TestNativeVsValueChange();
       await TestExchangeScopeAndOptIn();
       await TestHistoryRequirementsIndependent();
+      TestHistoryDerivedFromEnabledTrends();
+      await TestLongTrendDoesNotGetTruncated();
       Console.WriteLine("PASS: Phase 2 incremental OI, " + _passed + " case groups.");
       Console.WriteLine("LIMIT: Offline harness only; no live Binance/ProfitTrailer/Monitor requests.");
       return 0;
@@ -215,7 +217,7 @@ internal static class Program
     var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60 * 48, Pin, 2,
       (s, e, n, ct) => { ends.Add(e); return FullPage(s, e, n, ct); }, Log);
     Check(report.Requests == 2 && ends.Count == 2 && ends[1] < ends[0] &&
-      service.Snapshot("AAAUSDT", Pin, 60).Count >= 500, "Long OI horizon must use bounded older pagination.");
+      service.Snapshot("AAAUSDT", Pin, 60 * 48).Count >= 500, "Long OI horizon must use bounded older pagination.");
     _passed++;
   }
 
@@ -292,6 +294,47 @@ internal static class Program
       r[0].HasAllAlignmentCapacity == null && r[0].RequiredStoreDataMaxHours == 0 &&
       r[0].CalculationWindowMinutes == 60,
       "Independent OI history must not be constrained by StoreDataMaxHours.");
+    _passed++;
+  }
+
+  private static void TestHistoryDerivedFromEnabledTrends()
+  {
+    var a = new MarketTrend { Name = "M30", Platform = "Exchange", TrendMinutes = 30,
+      Metrics = MarketTrendMetrics.OpenInterestChange };
+    var b = new MarketTrend { Name = "H8", Platform = "Exchange", TrendMinutes = 480,
+      Metrics = MarketTrendMetrics.OpenInterestValueChange };
+    var irrelevant = new MarketTrend { Name = "H24", Platform = "Exchange", TrendMinutes = 1440,
+      Metrics = MarketTrendMetrics.PriceTrend };
+    var other = new MarketTrend { Name = "NotExchange", Platform = "Other", TrendMinutes = 4320,
+      Metrics = MarketTrendMetrics.OpenInterestChange };
+    Check(FuturesOpenInterestDataService.RequiredHorizonMinutes(new[] { a, b, irrelevant, other }) == 480,
+      "Longest eligible OI MarketTrend must control cache history, not PriceTrend/other platform.");
+    b.TrendMinutes = 60 * 24 * 35;
+    Check(FuturesOpenInterestDataService.RequiredHorizonMinutes(new[] { a, b }) == 60 * 24 * 35,
+      "Application must not silently truncate a user-configured long trend to 72h or 672h.");
+    Check(FuturesOpenInterestDataService.RequiredHorizonMinutes(new[] { irrelevant }) == 0,
+      "Zero explicit OI trends must require no OI data.");
+    _passed++;
+  }
+
+  private static async Task TestLongTrendDoesNotGetTruncated()
+  {
+    var service = NewService("longdynamic");
+    const int horizon = 60 * 24 * 4;
+    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, horizon, Pin, 1, FullPage, Log);
+    Check(report.Requests == 1 && report.AvailableSymbols == 0,
+      "A partially downloaded four-day history must not be considered available.");
+    var snapshot = service.Snapshot("AAAUSDT", Pin, horizon);
+    Check(snapshot.Count > 400 && snapshot[0].TimestampUtc >= Pin.AddDays(-4).AddMinutes(-5),
+      "Long user-defined horizon must retain available history without a 72-hour ceiling.");
+    var r = MarketTrendHistoryRequirements.Describe(
+      new MarketTrend { Name = "FourDays", Platform = "Exchange", TrendMinutes = horizon,
+        Metrics = MarketTrendMetrics.OpenInterestChange },
+      new[] { MarketTrendMetrics.OpenInterestChange }, TimeSpan.FromMinutes(5), Pin, 1);
+    Check(r.Single().CalculationWindowMinutes == horizon &&
+      r.Single().SourceDataFamily == "BinanceFuturesOpenInterest" &&
+      r.Single().RequiredStoreDataMaxHours == 0 && r.Single().ConfiguredStoreDataMaxHours == null,
+      "OI requirements must not inherit the independent OHLCV retention setting.");
     _passed++;
   }
 }
