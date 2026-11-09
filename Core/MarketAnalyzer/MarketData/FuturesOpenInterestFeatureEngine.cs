@@ -43,9 +43,11 @@ namespace Core.MarketAnalyzer.MarketData
             ? "Open-interest metrics are available only on Binance USD-M Futures, not Binance Spot or Binance US."
             : dataService == null
               ? "Open-interest collection was not initialized for this raid."
-              : trendMinutes > retentionHours * 60
-                ? "TrendMinutes exceeds OpenInterestRetentionHours."
-                : "";
+              : retentionHours < 1 || retentionHours > FuturesOpenInterestDataService.MaximumRetentionHours
+                ? "OpenInterestRetentionHours is outside its supported range."
+                : (long)trendMinutes > (long)retentionHours * 60
+                  ? "TrendMinutes exceeds OpenInterestRetentionHours."
+                  : "";
           if (reason.Length > 0)
           {
             values[metric] = new FeatureValueSnapshot { CalculatedAtUtc = asOfUtc, InvalidReason = reason };

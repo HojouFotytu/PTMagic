@@ -88,8 +88,11 @@ internal static class Program
     string symbol, DateTimeOffset end, int limit, CancellationToken ct)
   {
     // Synthetic provider respects pinned endTime and its record limit.
+    long periodMs = (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+    long endMs = end.ToUnixTimeMilliseconds();
+    DateTimeOffset aligned = DateTimeOffset.FromUnixTimeMilliseconds(endMs - endMs % periodMs);
     IReadOnlyList<FuturesOpenInterestObservation> history = Enumerable.Range(0, limit)
-      .Select(i => Row(symbol, end.AddMinutes(-5 * (limit - i - 1)),
+      .Select(i => Row(symbol, aligned.AddMinutes(-5 * (limit - i - 1)),
         native: 100m + i, value: 500m + 2m * i)).ToArray();
     return Task.FromResult(history);
   }
