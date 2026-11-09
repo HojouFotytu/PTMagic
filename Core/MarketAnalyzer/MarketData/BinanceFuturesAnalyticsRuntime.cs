@@ -530,7 +530,8 @@ namespace Core.MarketAnalyzer.MarketData
           enabledMetrics,
           "BTC" + universe.MainMarket,
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
-          OpenInterestDataServiceInstance, universe.Exchange,
+          OpenInterestDataServiceInstance,
+          systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.OpenInterestRetentionHours
             ?? FuturesOpenInterestDataService.DefaultRetentionHours);
         analyses[marketTrend.Name] = analysis;
