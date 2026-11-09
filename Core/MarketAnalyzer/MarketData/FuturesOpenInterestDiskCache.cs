@@ -64,8 +64,9 @@ namespace Core.MarketAnalyzer.MarketData
             long milliseconds = reader.ReadInt64();
             string native = reader.ReadString();
             string value = reader.ReadString();
-            if (milliseconds <= previous || milliseconds > asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds())
-              throw new InvalidDataException("OI cache is unordered or has a future timestamp.");
+            if (milliseconds <= previous || milliseconds > asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds() ||
+                milliseconds % (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds != 0)
+              throw new InvalidDataException("OI cache is unordered, unaligned or has a future timestamp.");
             decimal quantity = ParseDecimal(native);
             decimal reported = ParseDecimal(value);
             rows.Add(new FuturesOpenInterestObservation
@@ -116,8 +117,9 @@ namespace Core.MarketAnalyzer.MarketData
             !row.ReportedOpenInterestValue.HasValue || row.ReportedOpenInterestValue.Value < 0 ||
             !String.Equals(row.Symbol, FuturesOpenInterest.NormalizeSymbol(symbol), StringComparison.Ordinal) ||
             !String.Equals(row.Exchange, "BinanceFutures", StringComparison.Ordinal) ||
-            row.TimestampUtc.ToUnixTimeMilliseconds() <= previous)
-            throw new InvalidDataException("OI cache save received invalid rows.");
+            row.TimestampUtc.ToUnixTimeMilliseconds() <= previous ||
+            row.TimestampUtc.ToUnixTimeMilliseconds() % (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds != 0)
+            throw new InvalidDataException("OI cache save received invalid or unaligned rows.");
           previous = row.TimestampUtc.ToUnixTimeMilliseconds();
         }
 

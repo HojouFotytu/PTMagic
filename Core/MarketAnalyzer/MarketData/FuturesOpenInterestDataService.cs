@@ -108,6 +108,23 @@ namespace Core.MarketAnalyzer.MarketData
       await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
       try
       {
+        // Keep in-memory state bounded to the current selected population and
+        // configured historical horizon; persisted cache retains other symbols.
+        HashSet<string> active = new HashSet<string>(symbols, StringComparer.OrdinalIgnoreCase);
+        lock (_sync)
+        {
+          foreach (string symbol in _cache.Keys.Where(key => !active.Contains(key)).ToArray())
+            _cache.Remove(symbol);
+          _restored.RemoveWhere(symbol => !active.Contains(symbol));
+          foreach (string symbol in _lastAttemptBucket.Keys.Where(key => !active.Contains(key)).ToArray())
+            _lastAttemptBucket.Remove(symbol);
+          long cutoff = pinnedAsOfUtc.ToUniversalTime().AddHours(-retentionHours)
+            .ToUnixTimeMilliseconds() - (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+          foreach (var rows in _cache.Values)
+            foreach (long time in rows.Keys.Where(time => time < cutoff).ToArray())
+              rows.Remove(time);
+        }
+
         long intervalMs = (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
         long pinMs = pinnedAsOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
         long endpointMs = pinMs - pinMs % intervalMs;
@@ -236,30 +253,42 @@ namespace Core.MarketAnalyzer.MarketData
     private void Insert(string symbol, IReadOnlyList<FuturesOpenInterestObservation> observations,
       DateTimeOffset pinnedAsOfUtc, int retentionHours)
     {
+      // Validate the complete page BEFORE applying any of its observations.
+      // A malformed response must not partially advance the accepted history.
+      long min = pinnedAsOfUtc.ToUniversalTime().AddHours(-retentionHours)
+        .ToUnixTimeMilliseconds() - (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+      long max = pinnedAsOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
+      long interval = (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+      var accepted = new SortedDictionary<long, FuturesOpenInterestObservation>();
+      foreach (var row in observations)
+      {
+        if (row == null || !row.IsHistoricalStatistic ||
+          row.Period != FuturesOpenInterest.SourcePeriod ||
+          !String.Equals(row.Exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase) ||
+          !String.Equals(row.Symbol, symbol, StringComparison.OrdinalIgnoreCase) ||
+          row.NativeOpenInterest < 0 || !row.ReportedOpenInterestValue.HasValue ||
+          row.ReportedOpenInterestValue.Value < 0)
+          throw new InvalidOperationException("Mixed or invalid historical OI response.");
+        long time = row.TimestampUtc.ToUnixTimeMilliseconds();
+        if (time % interval != 0)
+          throw new InvalidOperationException("Historical OI timestamps must be UTC-aligned to the provider interval.");
+        if (time < min || time > max) continue;
+        if (accepted.TryGetValue(time, out var duplicate) &&
+          (duplicate.NativeOpenInterest != row.NativeOpenInterest ||
+           duplicate.ReportedOpenInterestValue != row.ReportedOpenInterestValue))
+          throw new InvalidOperationException("Conflicting duplicate historical OI observations.");
+        accepted[time] = row;
+      }
       lock (_sync)
       {
         if (!_cache.TryGetValue(symbol, out var rows))
           _cache[symbol] = rows = new SortedDictionary<long, FuturesOpenInterestObservation>();
-        long min = pinnedAsOfUtc.ToUniversalTime().AddHours(-retentionHours)
-          .ToUnixTimeMilliseconds() - (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
-        long max = pinnedAsOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
-        foreach (var row in observations)
-        {
-          if (row == null || !row.IsHistoricalStatistic ||
-            row.Period != FuturesOpenInterest.SourcePeriod ||
-            !String.Equals(row.Exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase) ||
-            !String.Equals(row.Symbol, symbol, StringComparison.OrdinalIgnoreCase) ||
-            row.NativeOpenInterest < 0 || !row.ReportedOpenInterestValue.HasValue ||
-            row.ReportedOpenInterestValue.Value < 0)
-            throw new InvalidOperationException("Mixed or invalid historical OI response.");
-          long time = row.TimestampUtc.ToUnixTimeMilliseconds();
-          if (time < min || time > max) continue;
-          if (rows.TryGetValue(time, out var existing) &&
-            (existing.NativeOpenInterest != row.NativeOpenInterest ||
-             existing.ReportedOpenInterestValue != row.ReportedOpenInterestValue))
-            throw new InvalidOperationException("Conflicting historical OI values share a timestamp.");
-          rows[time] = row;
-        }
+        foreach (var row in accepted)
+          if (rows.TryGetValue(row.Key, out var existing) &&
+            (existing.NativeOpenInterest != row.Value.NativeOpenInterest ||
+             existing.ReportedOpenInterestValue != row.Value.ReportedOpenInterestValue))
+            throw new InvalidOperationException("Conflicting cached historical OI observation.");
+        foreach (var row in accepted) rows[row.Key] = row.Value;
         foreach (long old in rows.Keys.Where(time => time < min || time > max).ToArray())
           rows.Remove(old);
       }
