@@ -252,6 +252,31 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestPartialPageFailsClosed()
+  {
+    var service = new FuturesFundingDataService();
+    int calls = 0;
+    FundingHistoryLoader provider = (symbol, from, to, limit, ct) =>
+    {
+      calls++;
+      int count = calls == 1 ? 1000 : 1;
+      IReadOnlyList<FuturesFundingObservation> rows = Enumerable.Range(0,count)
+        .Select(index => Event(symbol,100000 - (calls-1)*1000 - index,0.0001m))
+        .ToArray();
+      return Task.FromResult(rows);
+    };
+    const int trend = 120000;
+    var first = await service.RefreshAsync(new[]{"BTCUSDT"},trend,Pin,1,provider,Log);
+    Assert(first.Requests==1 && first.CompleteSymbols==0 &&
+      !service.TrySnapshot("BTCUSDT",trend,Pin,out _),
+      "One full page is only partial evidence and must never publish a funding metric.");
+    var second = await service.RefreshAsync(new[]{"BTCUSDT"},trend,Pin,1,provider,Log);
+    Assert(second.Requests==1 && second.CompleteSymbols==1 &&
+      service.TrySnapshot("BTCUSDT",trend,Pin,out _),
+      "The following raid must resume and complete the remaining funding history.");
+    _passed++;
+  }
+
   private static void TestSpotUnavailable()
   {
     var result=FuturesFundingFeatureEngine.Calculate(new[]{"BTCUSDT"},
@@ -290,6 +315,7 @@ internal static class Program
       await TestWrongSymbolAtomic();
       await TestPinnedAndReused();
       await TestBeyondOnePage();
+      await TestPartialPageFailsClosed();
       TestSpotUnavailable();
       TestHistoryRequirements();
       Console.WriteLine("PASS: Phase 2 funding history and metrics, " + _passed + " offline case groups.");
