@@ -37,7 +37,7 @@ internal static class Program
       TestCorruptCacheFailsOpen();
       await TestNativeVsValueChange();
       await TestExchangeScopeAndOptIn();
-      await TestHistoryRequirementsIndependent();
+      TestHistoryRequirementsIndependent();
       TestHistoryDerivedFromEnabledTrends();
       await TestLongTrendDoesNotGetTruncated();
       Console.WriteLine("PASS: Phase 2 incremental OI, " + _passed + " case groups.");
