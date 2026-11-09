@@ -59,6 +59,8 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static MarketDataService DataService => DataServiceInstance;
     public static FuturesOpenInterestDataService OpenInterestDataService => OpenInterestDataServiceInstance;
+    private static readonly FuturesFundingDataService FundingDataServiceInstance = new FuturesFundingDataService();
+    public static FuturesFundingDataService FundingDataService => FundingDataServiceInstance;
 
     public static DateTimeOffset? CurrentRaidAsOfUtc
     {
@@ -435,6 +437,67 @@ namespace Core.MarketAnalyzer.MarketData
         "Missing/unpolled data remain unavailable.");
     }
 
+
+    /// <summary>
+    /// Opt-in and pinned Binance USD-M regular funding settlements. History
+    /// requirement is the longest user-enabled funding TrendMinutes, not 8h
+    /// or any independent cache retention setting.
+    /// </summary>
+    public static async Task RefreshFundingAsync(PTMagicConfiguration configuration, LogHelper log,
+      IReadOnlyDictionary<string, Market> recentMarkets = null, CancellationToken cancellationToken = default)
+    {
+      if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+      if (log == null) throw new ArgumentNullException(nameof(log));
+      var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? new List<MarketTrend>()).Where(t => t != null &&
+          String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase) &&
+          FuturesFundingFeatureEngine.HasMetrics(MarketTrendMetricSelection.Select(
+            t, configuration.AnalyzerSettings))).ToArray();
+      if (trends.Length == 0) return;
+      if (!String.Equals(configuration.GeneralSettings?.Application?.Exchange, "BinanceFutures",
+        StringComparison.OrdinalIgnoreCase))
+      {
+        log.DoLogWarn("Funding metrics are only supported on Binance USD-M Futures.");
+        return;
+      }
+
+      AnalyzerUniverseSnapshot universe;
+      DateTimeOffset? pin;
+      lock (SnapshotLock) { universe = _currentUniverse; pin = _currentRaidAsOfUtc; }
+      if (universe == null || !pin.HasValue)
+      {
+        log.DoLogWarn("Funding history unavailable: analyzer universe/raid pin missing.");
+        return;
+      }
+      int budget = configuration.AnalyzerSettings.MarketAnalyzer.FundingMaxRequestsPerRaid;
+      if (budget < 0 || budget > FuturesFundingDataService.MaximumRequestsPerRaid)
+      {
+        log.DoLogWarn("Funding request budget is outside allowed bounds.");
+        return;
+      }
+      var enabled = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
+      int horizon = FuturesFundingDataService.RequiredHorizonMinutes(enabled);
+      if (horizon <= 0) return;
+      var assets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var trend in enabled)
+      {
+        var population = MarketTrendPopulationSelector.Select(trend,
+          recentMarkets ?? new Dictionary<string, Market>(),
+          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
+        assets.UnionWith(population.AssetSymbols);
+      }
+
+      FundingRefreshReport report = await FundingDataServiceInstance.RefreshAsync(
+        assets, horizon, pin.Value, budget,
+        (symbol, from, until, limit, ct) => BinanceFuturesFundingClient.GetHistoryPageAsync(
+          symbol, from, until, limit, log, ct),
+        log, cancellationToken).ConfigureAwait(false);
+      log.DoLogInfo("Phase 2 funding: " + report.Requests + "/" + budget +
+        " page requests; " + report.Failures + " failed; " +
+        report.CompleteSymbols + "/" + report.SelectedSymbols + " selected markets have verified " +
+        horizon + "m funding history. Missing/pending history is UNAVAILABLE.");
+    }
+
     /// <summary>
     /// Calculates explicitly configured normalized metrics for Exchange MarketTrends after
     /// the legacy PTMagic trend pipeline has resolved each trend's market population.
@@ -528,11 +591,18 @@ namespace Core.MarketAnalyzer.MarketData
           "BTC" + universe.MainMarket,
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
           OpenInterestDataServiceInstance,
-          systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures");
+          systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
+          FundingDataServiceInstance);
         analyses[marketTrend.Name] = analysis;
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)
         {
+          if (requirement.SourceDataFamily == "BinanceFuturesFunding")
+          {
+            log.DoLogDebug("Phase 2 funding history for '" + marketTrend.Name + "' / " +
+              requirement.Metric + ": " + requirement.Basis + " " + requirement.Diagnostic);
+            continue;
+          }
           if (requirement.SourceDataFamily == "BinanceFuturesOpenInterest")
           {
             log.DoLogDebug("Phase 2 OI history for '" + marketTrend.Name + "' / " +

@@ -45,6 +45,8 @@ namespace Core.MarketAnalyzer.MarketData
     // changes are separate percentage metrics; no arbitrary notional inference.
     public const string OpenInterestChange = "OpenInterestChange";
     public const string OpenInterestValueChange = "OpenInterestValueChange";
+    public const string FundingRate = "FundingRate";
+    public const string FundingSum = "FundingSum";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -72,7 +74,9 @@ namespace Core.MarketAnalyzer.MarketData
         [MeanCorrelationToBTC] = MarketTrendMetricScope.Global,
         [MedianCorrelationToBTC] = MarketTrendMetricScope.Global,
         [OpenInterestChange] = MarketTrendMetricScope.Asset,
-        [OpenInterestValueChange] = MarketTrendMetricScope.Asset
+        [OpenInterestValueChange] = MarketTrendMetricScope.Asset,
+        [FundingRate] = MarketTrendMetricScope.Asset,
+        [FundingSum] = MarketTrendMetricScope.Asset
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();

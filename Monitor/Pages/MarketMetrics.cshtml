@@ -62,11 +62,11 @@
                   <tr class="@(requirement.HasAllAlignmentCapacity == false ? "text-warning" : "")">
                     <td>@trend.Name / @Model.MetricTitle(requirement.Metric)</td>
                     <td>@requirement.Basis</td>
-                    <td class="text-right">@(requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "2 OI endpoints" : requirement.MinimumClosedSourceCandles.ToString())</td>
-                    <td class="text-right">@(requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? (requirement.CalculationWindowMinutes / 60.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " h" : requirement.RequiredStoreDataMaxHours + " h")</td>
-                    <td class="text-right">@(requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "MarketTrend-derived" : requirement.RecommendedStoreDataMaxHours + " h")</td>
-                    <td class="text-right">@(requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "Automatic" : requirement.ConfiguredStoreDataMaxHours.HasValue ? requirement.ConfiguredStoreDataMaxHours.Value + " h" : "--")</td>
-                    <td>@(requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "Provider availability and exact endpoints required" : String.IsNullOrEmpty(requirement.Diagnostic) ? "Capacity sufficient" : requirement.Diagnostic)</td>
+                    <td class="text-right">@(requirement.SourceDataFamily == "BinanceFuturesFunding" ? "Settlement events" : requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "2 OI endpoints" : requirement.MinimumClosedSourceCandles.ToString())</td>
+                    <td class="text-right">@((requirement.SourceDataFamily == "BinanceFuturesFunding" || requirement.SourceDataFamily == "BinanceFuturesOpenInterest") ? (requirement.CalculationWindowMinutes / 60.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " h" : requirement.RequiredStoreDataMaxHours + " h")</td>
+                    <td class="text-right">@((requirement.SourceDataFamily == "BinanceFuturesFunding" || requirement.SourceDataFamily == "BinanceFuturesOpenInterest") ? "MarketTrend-derived" : requirement.RecommendedStoreDataMaxHours + " h")</td>
+                    <td class="text-right">@((requirement.SourceDataFamily == "BinanceFuturesFunding" || requirement.SourceDataFamily == "BinanceFuturesOpenInterest") ? "Automatic" : requirement.ConfiguredStoreDataMaxHours.HasValue ? requirement.ConfiguredStoreDataMaxHours.Value + " h" : "--")</td>
+                    <td>@(requirement.SourceDataFamily == "BinanceFuturesFunding" ? "Complete settlement history required" : requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "Provider availability and exact endpoints required" : String.IsNullOrEmpty(requirement.Diagnostic) ? "Capacity sufficient" : requirement.Diagnostic)</td>
                   </tr>
                 }
               }

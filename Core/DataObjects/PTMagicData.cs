@@ -137,6 +137,10 @@ namespace Core.Main.DataObjects.PTMagicData
     // 0 disables OI network acquisition; exact-endpoint metrics stay unavailable.
     // The bounded per-raid budget protects Binance's shared API rate limits.
     public int OpenInterestMaxRequestsPerRaid { get; set; } = 60;
+
+    // Funding history spans the longest enabled Funding MarketTrend;
+    // no fixed retention hours. This separate knob only caps API calls.
+    public int FundingMaxRequestsPerRaid { get; set; } = 60;
   }
 
   public class MarketTrend

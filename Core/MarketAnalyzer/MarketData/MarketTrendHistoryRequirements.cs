@@ -51,6 +51,23 @@ namespace Core.MarketAnalyzer.MarketData
         .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase))
       {
         if (!MarketTrendMetrics.IsKnown(metric)) continue;
+        if (FuturesFundingFeatureEngine.IsMetric(metric))
+        {
+          result.Add(new MarketTrendHistoryRequirement
+          {
+            Metric = metric, SourceDataFamily = "BinanceFuturesFunding",
+            Basis = "Fully paginated historical regular funding settlements from the exact " +
+              trend.TrendMinutes + " minute MarketTrend window, with the provider's own " +
+              "settlement timestamps and variable funding schedule. A complete provider " +
+              "query is required; no hardcoded 8h interval or separate retention hours.",
+            CalculationWindowMinutes = trend.TrendMinutes,
+            MinimumClosedSourceCandles = 0, RequiredStoredSourceCandles = 0,
+            RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
+            ConfiguredStoreDataMaxHours = null, HasCurrentRaidCapacity = null,
+            HasAllAlignmentCapacity = null, Diagnostic = ""
+          });
+          continue;
+        }
         if (FuturesOpenInterestFeatureEngine.IsMetric(metric))
         {
           result.Add(new MarketTrendHistoryRequirement
