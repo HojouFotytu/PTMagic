@@ -34,7 +34,7 @@ At application commit `314214b1a20bcddd1643b8fa8df032db5463b04d`, optional Binan
 
 ## Release overview
 
-PTMagic 2.10 adds a shared normalized market-data foundation, 22 selectable metric names, explicit data readiness, three-valued trigger evaluation, acknowledged configuration delivery, native startup global Sell Only Mode (SOM), safer Monitor editing, and bounded decision history. Binance Spot, Binance Futures and Binance US use the normalized analysis path. Existing PriceTrend configurations use that path too.
+PTMagic 2.10 adds a shared normalized market-data foundation, 26 selectable metric names, explicit data readiness, three-valued trigger evaluation, acknowledged configuration delivery, native startup global Sell Only Mode (SOM), safer Monitor editing, and bounded decision history. Binance Spot, Binance Futures and Binance US use the normalized analysis path. Existing PriceTrend configurations use that path too.
 
 The foundation began at [`4153fb8`][foundation], before the application was renamed 2.10. Completed 2.9 framework, HTTP and performance modernization is the inherited baseline. The changes below concern the 2.10 application and its configuration-management behavior.
 
