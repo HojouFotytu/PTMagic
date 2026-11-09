@@ -10,6 +10,14 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Phase 2 — Incremental open-interest collector and metric integration (November 10)
+
+Published application source `b723f76664aa0de6b76de3f5ddf281c036c32275` integrates the optional Binance USD-M historical OI source into the existing normalized analyzer. New `OpenInterestChange` and `OpenInterestValueChange` asset metrics use exact historical 5m timestamps over configured `TrendMinutes` and preserve separate native quantity and provider-reported value semantics. Missing or inconsistent source observations remain unavailable. No metric is enabled implicitly.
+
+The bounded per-symbol collection uses the existing shared Binance HTTP limiter, incremental pages, request fairness, and a versioned persistent cache. Settings `MarketAnalyzer.OpenInterestRetentionHours` (default 72; allowed 1–672) and `MarketAnalyzer.OpenInterestMaxRequestsPerRaid` (default 60; allowed 0–400) are explicitly independent of OHLCV retention, and zero requests disable acquisition. The request cap is 500 source rows per page, up to two pages per selected market in one raid. No Futures OI is collected on Binance Spot or Binance US.
+
+The existing metric registry, normalized engine, trigger resolver, history requirements, runtime logs, MarketTrendAnalytics export and Monitor metric snapshot are extended through the current shared path. Existing configurations without an explicit OI metric perform no additional OI API requests. A new 15-group offline integration harness was authored; the original 18 raw OI offline cases remain. **No .NET build, local harness or live integration acceptance has yet been executed for this checkpoint**, per the owner's test deferral. This is published source only, not a new verified release.
+
 ## Phase 2 — First open-interest source foundation (November 10)
 
 At application commit `314214b1a20bcddd1643b8fa8df032db5463b04d`, optional Binance USD-M futures current and historical open-interest observation models and a bounded single-page HTTP client were added. The new model preserves original native quantity and reported value separately, rejects invalid source symbols/timestamps/amounts, and calculates percentage change only from exact five-minute historical endpoints. Source can be requested explicitly by callers and uses PTMagic's established HTTP/rate-limit/retry transport.
