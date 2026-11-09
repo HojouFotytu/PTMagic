@@ -43,11 +43,16 @@ namespace Core.MarketAnalyzer.MarketData
         if (futures && data != null)
           valid = data.TrySnapshot(symbol, trendMinutes, asOfUtc, out history);
         var regular = history.Where(row => row.IsRegular).OrderBy(row => row.FundingTimeUtc).ToArray();
+        // Older/partial payloads can omit rateType. Do not turn an
+        // unclassified settlement into a fabricated zero regular rate.
+        bool unclassified = history.Any(row =>
+          !row.IsRegular && !String.Equals(row.RateType, "Special", StringComparison.OrdinalIgnoreCase));
 
         foreach (string metric in metrics)
         {
           string error = !futures ? "Funding metrics require BinanceFutures, not Spot/BinanceUS."
             : !valid ? "Funding history is not completely verified over this MarketTrend window."
+            : unclassified ? "Funding history includes an unclassified rateType; cannot infer Regular or Special."
             : metric == MarketTrendMetrics.FundingRate && regular.Length == 0
               ? "No regular funding settlement occurred inside the configured MarketTrend window."
               : "";
