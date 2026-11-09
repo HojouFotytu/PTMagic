@@ -159,6 +159,19 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestUnknownTypeFailsClosed()
+  {
+    var service = new FuturesFundingDataService();
+    await service.RefreshAsync(new[]{"BTCUSDT"},180,Pin,1,
+      (symbol,from,to,limit,ct) => Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+        new[]{Event(symbol,60,0.0002m,"Unknown")}),Log);
+    var metrics = FuturesFundingFeatureEngine.Calculate(new[]{"BTCUSDT"},
+      new[]{"FundingRate","FundingSum"},180,Pin,"BinanceFutures",service)["BTCUSDT"];
+    Assert(!metrics["FundingRate"].IsValid && !metrics["FundingSum"].IsValid,
+      "An unclassified historical funding event cannot be ignored or counted as zero.");
+    _passed++;
+  }
+
   private static async Task TestZeroAndMissing()
   {
     var service=new FuturesFundingDataService();
@@ -271,6 +284,7 @@ internal static class Program
       TestRegistryAndDerivedHorizon();
       await TestCompleteWindowAndUnits();
       await TestSpecialExcluded();
+      await TestUnknownTypeFailsClosed();
       await TestZeroAndMissing();
       await TestBudgetFairness();
       await TestWrongSymbolAtomic();
