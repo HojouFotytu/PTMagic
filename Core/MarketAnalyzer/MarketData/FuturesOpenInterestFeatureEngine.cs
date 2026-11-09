@@ -24,7 +24,7 @@ namespace Core.MarketAnalyzer.MarketData
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> Calculate(
       IEnumerable<string> assetSymbols, IReadOnlyCollection<string> enabledMetrics,
       int trendMinutes, DateTimeOffset asOfUtc, string exchange,
-      FuturesOpenInterestDataService dataService, int retentionHours)
+      FuturesOpenInterestDataService dataService)
     {
       if (!HasMetrics(enabledMetrics))
         return new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
@@ -43,11 +43,7 @@ namespace Core.MarketAnalyzer.MarketData
             ? "Open-interest metrics are available only on Binance USD-M Futures, not Binance Spot or Binance US."
             : dataService == null
               ? "Open-interest collection was not initialized for this raid."
-              : retentionHours < 1 || retentionHours > FuturesOpenInterestDataService.MaximumRetentionHours
-                ? "OpenInterestRetentionHours is outside its supported range."
-                : (long)trendMinutes > (long)retentionHours * 60
-                  ? "TrendMinutes exceeds OpenInterestRetentionHours."
-                  : "";
+              : "";
           if (reason.Length > 0)
           {
             values[metric] = new FeatureValueSnapshot { CalculatedAtUtc = asOfUtc, InvalidReason = reason };
@@ -55,7 +51,7 @@ namespace Core.MarketAnalyzer.MarketData
           }
 
           IReadOnlyList<FuturesOpenInterestObservation> observations =
-            dataService.Snapshot(symbol, asOfUtc, retentionHours);
+            dataService.Snapshot(symbol, asOfUtc, trendMinutes);
           FeatureValueSnapshot feature = FuturesOpenInterest.CalculateChangePercent(
             observations, symbol, trendMinutes, asOfUtc,
             useReportedValue: metric == MarketTrendMetrics.OpenInterestValueChange);
@@ -65,7 +61,7 @@ namespace Core.MarketAnalyzer.MarketData
               CalculatedAtUtc = asOfUtc, SampleCount = feature.SampleCount, IsValid = false,
               SourceDataTimestampUtc = feature.SourceDataTimestampUtc,
               InvalidReason = feature.InvalidReason + " " +
-                dataService.ExplainUnavailable(symbol, trendMinutes, asOfUtc, retentionHours)
+                dataService.ExplainUnavailable(symbol, trendMinutes, asOfUtc)
             };
           values[metric] = feature;
         }

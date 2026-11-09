@@ -133,11 +133,9 @@ namespace Core.Main.DataObjects.PTMagicData
     public List<string> IncludedUnderlyingTypes { get; set; } = new List<string>();
     public List<MarketTrend> MarketTrends { get; set; }
 
-    // Phase 2 OI is independent of normalized OHLCV StoreDataMaxHours.
-    // No OI requests occur without an explicitly enabled OI metric.
-    public int OpenInterestRetentionHours { get; set; } = 72;
+    // Phase 2 OI derives its required history from OI-enabled MarketTrends.
     // 0 disables OI network acquisition; exact-endpoint metrics stay unavailable.
-    // The bounded per-raid budget protects Binance's 1000 requests/5m IP limit.
+    // The bounded per-raid budget protects Binance's shared API rate limits.
     public int OpenInterestMaxRequestsPerRaid { get; set; } = 60;
   }
 

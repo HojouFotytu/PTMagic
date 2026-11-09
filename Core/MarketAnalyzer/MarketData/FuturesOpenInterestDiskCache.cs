@@ -19,7 +19,9 @@ namespace Core.MarketAnalyzer.MarketData
     private const int Magic = 0x4F494348;
     private const int Version = 1;
     private const int EndMarker = 0x4843494F;
-    private const int MaximumRows = 8066; // Max configured 672h + overlap; smaller than provider month.
+    // Defensive corruption/size limit, NOT a retention horizon. Actual history
+    // retention is derived from user-configured MarketTrend requirements.
+    private const int MaximumRows = 500000;
     private const long MaximumCompressedBytes = 4L * 1024 * 1024;
     private readonly string _directory;
 
@@ -102,7 +104,8 @@ namespace Core.MarketAnalyzer.MarketData
         FuturesOpenInterestObservation[] rows = (history ?? Array.Empty<FuturesOpenInterestObservation>())
           .OrderBy(row => row.TimestampUtc).ToArray();
         if (rows.Length == 0) return false;
-        if (rows.Length > MaximumRows) rows = rows.Skip(rows.Length - MaximumRows).ToArray();
+        if (rows.Length > MaximumRows)
+          throw new InvalidDataException("OI cache row count exceeds the defensive file limit.");
 
         // Save at most every 10 minutes; the in-memory store remains current.
         if (File.Exists(path) &&

@@ -400,20 +400,18 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
       var options = configuration.AnalyzerSettings.MarketAnalyzer;
-      int retained = options.OpenInterestRetentionHours;
       int budget = options.OpenInterestMaxRequestsPerRaid;
-      if (retained < 1 || retained > FuturesOpenInterestDataService.MaximumRetentionHours ||
-          budget < 0 || budget > FuturesOpenInterestDataService.MaximumRequestsPerRaid)
+      if (budget < 0 || budget > FuturesOpenInterestDataService.MaximumRequestsPerRaid)
       {
-        log.DoLogWarn("Phase 2 open-interest configuration is outside allowed retention/request bounds.");
+        log.DoLogWarn("Phase 2 open-interest request budget is outside allowed bounds.");
         return;
       }
 
-      var usable = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0 &&
-        (long)t.TrendMinutes <= (long)retained * 60).ToArray();
-      if (usable.Length == 0)
+      var usable = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
+      int maximumHorizon = FuturesOpenInterestDataService.RequiredHorizonMinutes(usable);
+      if (maximumHorizon == 0)
       {
-        log.DoLogWarn("Phase 2 open-interest requests skipped: every enabled OI trend exceeds its OI retention window.");
+        log.DoLogWarn("Phase 2 open-interest requests skipped: no valid OI-enabled MarketTrend duration.");
         return;
       }
       var assets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -424,9 +422,8 @@ namespace Core.MarketAnalyzer.MarketData
           universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
         assets.UnionWith(selected.AssetSymbols);
       }
-      int maximumHorizon = usable.Max(t => t.TrendMinutes);
       OpenInterestRefreshReport report = await OpenInterestDataServiceInstance.RefreshAsync(
-        assets, maximumHorizon, pin.Value, retained, budget,
+        assets, maximumHorizon, pin.Value, budget,
         (symbol, end, limit, ct) => BinanceFuturesOpenInterestClient.GetHistoryPageAsync(
           symbol, FuturesOpenInterest.SourcePeriod, end, limit, log, ct),
         log, cancellationToken).ConfigureAwait(false);
@@ -434,7 +431,7 @@ namespace Core.MarketAnalyzer.MarketData
         " page requests; " + report.SuccessfulPages + " succeeded, " + report.FailedPages +
         " failed; " + report.AvailableSymbols + "/" + report.EligibleSymbols +
         " selected assets have exact " + maximumHorizon +
-        "m endpoints; " + report.RestoredSymbols + " restored from disk. " +
+        "m endpoints (derived from enabled MarketTrends); " + report.RestoredSymbols + " restored from disk. " +
         "Missing/unpolled data remain unavailable.");
     }
 
@@ -531,9 +528,7 @@ namespace Core.MarketAnalyzer.MarketData
           "BTC" + universe.MainMarket,
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
           OpenInterestDataServiceInstance,
-          systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
-          systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.OpenInterestRetentionHours
-            ?? FuturesOpenInterestDataService.DefaultRetentionHours);
+          systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures");
         analyses[marketTrend.Name] = analysis;
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)

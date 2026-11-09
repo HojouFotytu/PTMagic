@@ -4,8 +4,8 @@ This harness is synthetic/offline. The new OI collector and feature registry
 are independent of the existing normalized OHLCV source and ProfitTrailer
 configuration-delivery lifecycle.
 
-15 case groups cover explicit opt-in, zero request budget, request/retention
-bounds, 5m exact endpoints, bounded page size, pagination, fair request
+15 case groups cover explicit opt-in, zero request budget, user-derived
+MarketTrend history horizons, 5m exact endpoints, bounded page size, pagination, fair request
 scheduling, empty and missing provider periods, repeated-raid reuse, disk cache
 restoration/corruption, no symbol mixing, quantity versus reported-value
 change, Spot/US unavailable, and separate OI history requirements.

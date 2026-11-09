@@ -23,8 +23,7 @@ namespace Core.MarketAnalyzer.MarketData
       IReadOnlyCollection<string> selectedMetrics = null,
       string benchmarkSymbol = "BTCUSDT",
       int? configuredStoreDataMaxHours = null,
-      FuturesOpenInterestDataService openInterestData = null, string exchangeName = "BinanceFutures",
-      int openInterestRetentionHours = FuturesOpenInterestDataService.DefaultRetentionHours)
+      FuturesOpenInterestDataService openInterestData = null, string exchangeName = "BinanceFutures")
     {
       if (marketTrend == null)
       {
@@ -282,8 +281,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (FuturesOpenInterestFeatureEngine.HasMetrics(enabledMetrics))
       {
         var phase2 = FuturesOpenInterestFeatureEngine.Calculate(assetUniverse, enabledMetrics,
-          marketTrend.TrendMinutes, calculatedAtUtc, exchangeName, openInterestData,
-          openInterestRetentionHours);
+          marketTrend.TrendMinutes, calculatedAtUtc, exchangeName, openInterestData);
         foreach (var asset in phase2)
         {
           Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
@@ -321,7 +319,7 @@ namespace Core.MarketAnalyzer.MarketData
         AssetSymbols = Array.AsReadOnly(assetUniverse),
         EnabledMetrics = Array.AsReadOnly(enabledMetrics.ToArray()),
         HistoryRequirements = MarketTrendHistoryRequirements.Describe(marketTrend, enabledMetrics,
-          interval, calculatedAtUtc, configuredStoreDataMaxHours, openInterestRetentionHours),
+          interval, calculatedAtUtc, configuredStoreDataMaxHours),
         MarketMetrics = new ReadOnlyDictionary<string, FeatureValueSnapshot>(marketMetrics),
         AssetMetrics = new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(assetMetrics)
       };

@@ -31,7 +31,7 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public static IReadOnlyList<MarketTrendHistoryRequirement> Describe(MarketTrend trend,
       IReadOnlyCollection<string> metrics, TimeSpan sourceInterval, DateTimeOffset asOfUtc,
-      int? configuredStoreDataMaxHours = null, int? openInterestRetentionHours = null)
+      int? configuredStoreDataMaxHours = null)
     {
       if (trend == null) throw new ArgumentNullException(nameof(trend));
       MarketTrendTimeframe.Validate(trend, sourceInterval);
@@ -53,19 +53,18 @@ namespace Core.MarketAnalyzer.MarketData
         if (!MarketTrendMetrics.IsKnown(metric)) continue;
         if (FuturesOpenInterestFeatureEngine.IsMetric(metric))
         {
-          int oiHours = openInterestRetentionHours ?? FuturesOpenInterestDataService.DefaultRetentionHours;
-          bool enough = oiHours >= 1 && oiHours <= FuturesOpenInterestDataService.MaximumRetentionHours
-            && (long)trend.TrendMinutes <= (long)oiHours * 60;
           result.Add(new MarketTrendHistoryRequirement
           {
             Metric = metric, SourceDataFamily = "BinanceFuturesOpenInterest",
-            Basis = "Independent Binance USD-M 5m open-interest history; two exact provider endpoints; " +
-              "OpenInterestRetentionHours=" + oiHours +
-              ", independent of StoreDataMaxHours and OHLCV candle retention.",
+            Basis = "Two exact historical OI observations " + trend.TrendMinutes +
+              " minutes apart, as specified by this MarketTrend. OI cache history is derived " +
+              "from the longest enabled OI MarketTrend, independently of StoreDataMaxHours. " +
+              "Exchange history availability is a separate source constraint.",
             CalculationWindowMinutes = trend.TrendMinutes, MinimumClosedSourceCandles = 2,
             RequiredStoredSourceCandles = 2,
             RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
-            Diagnostic = enough ? "" : "OI TrendMinutes exceeds the configured OpenInterestRetentionHours."
+            ConfiguredStoreDataMaxHours = null, HasCurrentRaidCapacity = null,
+            HasAllAlignmentCapacity = null, Diagnostic = ""
           });
           continue;
         }

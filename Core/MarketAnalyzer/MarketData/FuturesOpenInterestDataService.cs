@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Helper;
+using Core.Main.DataObjects.PTMagicData;
 
 namespace Core.MarketAnalyzer.MarketData
 {
@@ -30,8 +31,8 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public sealed class FuturesOpenInterestDataService
   {
-    public const int DefaultRetentionHours = 72;
-    public const int MaximumRetentionHours = 672; // <= 28d, less than provider's ~1mo limit.
+    // Historical coverage is calculated from OI-enabled MarketTrends, not a
+    // separate fixed hour setting. Provider availability is independent.
     public const int DefaultRequestsPerRaid = 60;
     public const int MaximumRequestsPerRaid = 400;
     private const int MaxPagesPerSymbolPerRaid = 2;
@@ -52,16 +53,15 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     public IReadOnlyList<FuturesOpenInterestObservation> Snapshot(string symbol, DateTimeOffset asOfUtc,
-      int retentionHours = DefaultRetentionHours)
+      int requiredTrendMinutes)
     {
-      ValidateRetention(retentionHours);
+      ValidateHorizon(requiredTrendMinutes);
       string normalized = FuturesOpenInterest.NormalizeSymbol(symbol);
       lock (_sync)
       {
         if (!_cache.TryGetValue(normalized, out var rows))
           return Array.Empty<FuturesOpenInterestObservation>();
-        long cutoff = asOfUtc.ToUniversalTime().AddHours(-retentionHours).ToUnixTimeMilliseconds()
-          - (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+        long cutoff = HistoryCutoff(asOfUtc, requiredTrendMinutes);
         long maximum = asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
         return new ReadOnlyCollection<FuturesOpenInterestObservation>(rows
           .Where(pair => pair.Key >= cutoff && pair.Key <= maximum)
@@ -69,10 +69,31 @@ namespace Core.MarketAnalyzer.MarketData
       }
     }
 
-    public static void ValidateRetention(int hours)
+    public static void ValidateHorizon(int trendMinutes)
     {
-      if (hours < 1 || hours > MaximumRetentionHours)
-        throw new ArgumentOutOfRangeException(nameof(hours), "OI retention must be between 1 and 672 hours.");
+      if (trendMinutes < 5 || trendMinutes % 5 != 0)
+        throw new ArgumentOutOfRangeException(nameof(trendMinutes),
+          "OI history must follow a positive, 5-minute-aligned MarketTrend.TrendMinutes.");
+    }
+
+    public static int RequiredHorizonMinutes(IEnumerable<MarketTrend> marketTrends)
+    {
+      int[] horizons = (marketTrends ?? Enumerable.Empty<MarketTrend>())
+        .Where(trend => trend != null &&
+          String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase) &&
+          FuturesOpenInterestFeatureEngine.HasMetrics(MarketTrendMetrics.ParseEnabled(trend)) &&
+          trend.TrendMinutes >= 5 && trend.TrendMinutes % 5 == 0)
+        .Select(trend => trend.TrendMinutes).ToArray();
+      return horizons.Length == 0 ? 0 : horizons.Max();
+    }
+
+    private static long HistoryCutoff(DateTimeOffset asOfUtc, int horizonMinutes)
+    {
+      long step = (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+      long now = asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
+      long pinnedEndpoint = now - now % step;
+      // Preserve the exact reference and one overlap interval for repairs.
+      return pinnedEndpoint - (long)horizonMinutes * 60000L - step;
     }
 
     public static void ValidateBudget(int requestsPerRaid)
@@ -88,20 +109,18 @@ namespace Core.MarketAnalyzer.MarketData
     /// </summary>
     public async Task<OpenInterestRefreshReport> RefreshAsync(
       IEnumerable<string> eligibleSymbols, int maximumTrendMinutes,
-      DateTimeOffset pinnedAsOfUtc, int retentionHours, int requestsPerRaid,
+      DateTimeOffset pinnedAsOfUtc, int requestsPerRaid,
       OpenInterestHistoryLoader loader, LogHelper log, CancellationToken cancellationToken = default)
     {
       if (loader == null) throw new ArgumentNullException(nameof(loader));
       if (log == null) throw new ArgumentNullException(nameof(log));
       ValidateBudget(requestsPerRaid);
-      ValidateRetention(retentionHours);
-      if (maximumTrendMinutes < 5 || maximumTrendMinutes % 5 != 0)
-        throw new ArgumentOutOfRangeException(nameof(maximumTrendMinutes));
+      ValidateHorizon(maximumTrendMinutes);
       string[] symbols = (eligibleSymbols ?? Array.Empty<string>())
         .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
         .Select(FuturesOpenInterest.NormalizeSymbol)
         .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(symbol => symbol, StringComparer.Ordinal).ToArray();
-      if (symbols.Length == 0 || requestsPerRaid == 0 || maximumTrendMinutes > retentionHours * 60)
+      if (symbols.Length == 0 || requestsPerRaid == 0)
         return new OpenInterestRefreshReport { EligibleSymbols = symbols.Length,
           DeferredSymbols = symbols.Length };
 
@@ -118,8 +137,7 @@ namespace Core.MarketAnalyzer.MarketData
           _restored.RemoveWhere(symbol => !active.Contains(symbol));
           foreach (string symbol in _lastAttemptBucket.Keys.Where(key => !active.Contains(key)).ToArray())
             _lastAttemptBucket.Remove(symbol);
-          long cutoff = pinnedAsOfUtc.ToUniversalTime().AddHours(-retentionHours)
-            .ToUnixTimeMilliseconds() - (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+          long cutoff = HistoryCutoff(pinnedAsOfUtc, maximumTrendMinutes);
           foreach (var rows in _cache.Values)
             foreach (long time in rows.Keys.Where(time => time < cutoff).ToArray())
               rows.Remove(time);
@@ -140,7 +158,7 @@ namespace Core.MarketAnalyzer.MarketData
           if (!shouldRestore) continue;
           IReadOnlyList<FuturesOpenInterestObservation> saved = _disk.TryRestore(symbol, pinnedAsOfUtc, log);
           if (saved.Count == 0) continue;
-          Insert(symbol, saved, pinnedAsOfUtc, retentionHours);
+          Insert(symbol, saved, pinnedAsOfUtc, maximumTrendMinutes);
           restored++;
         }
 
@@ -175,12 +193,12 @@ namespace Core.MarketAnalyzer.MarketData
               // Honor both the raid pin and the individual pagination end.
               FuturesOpenInterestObservation[] accepted = received
                 .Where(row => row != null && row.TimestampUtc.ToUnixTimeMilliseconds() <= plan.Value.end).ToArray();
-              Insert(symbol, accepted, pinnedAsOfUtc, retentionHours);
+              Insert(symbol, accepted, pinnedAsOfUtc, maximumTrendMinutes);
               succeeded++;
               // No more data in this window: leave missing rows missing and
               // retry only on a different pinned close, not in a tight loop.
               if (accepted.Length == 0) break;
-              _disk.TrySave(symbol, Snapshot(symbol, pinnedAsOfUtc, retentionHours), log);
+              _disk.TrySave(symbol, Snapshot(symbol, pinnedAsOfUtc, maximumTrendMinutes), log);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -208,17 +226,16 @@ namespace Core.MarketAnalyzer.MarketData
       finally { _refreshGate.Release(); }
     }
 
-    public string ExplainUnavailable(string symbol, int trendMinutes, DateTimeOffset asOfUtc,
-      int retentionHours = DefaultRetentionHours)
+    public string ExplainUnavailable(string symbol, int trendMinutes, DateTimeOffset asOfUtc)
     {
-      if (trendMinutes > retentionHours * 60)
-        return "Open-interest horizon exceeds OpenInterestRetentionHours; increase the OI cache limit.";
+      ValidateHorizon(trendMinutes);
       long ms = asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
       long step = (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
       long end = ms - ms % step, start = end - trendMinutes * 60000L;
       return "Historical Binance futures OI has no exact " +
         (HasTimestamp(symbol, end) ? "reference" : "current") +
-        " endpoint for this pinned trend. Source polling is budgeted; missing provider buckets are not interpolated.";
+        " endpoint over the configured " + trendMinutes +
+        " minute MarketTrend. Source polling is budgeted; provider history availability and missing buckets are not interpolated.";
     }
 
     private (long end, int limit)? Plan(string symbol, long endpointMs, long referenceMs, int trendMinutes)
@@ -251,12 +268,11 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     private void Insert(string symbol, IReadOnlyList<FuturesOpenInterestObservation> observations,
-      DateTimeOffset pinnedAsOfUtc, int retentionHours)
+      DateTimeOffset pinnedAsOfUtc, int requiredTrendMinutes)
     {
       // Validate the complete page BEFORE applying any of its observations.
       // A malformed response must not partially advance the accepted history.
-      long min = pinnedAsOfUtc.ToUniversalTime().AddHours(-retentionHours)
-        .ToUnixTimeMilliseconds() - (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
+      long min = HistoryCutoff(pinnedAsOfUtc, requiredTrendMinutes);
       long max = pinnedAsOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
       long interval = (long)FuturesOpenInterest.SourcePeriod.TotalMilliseconds;
       var accepted = new SortedDictionary<long, FuturesOpenInterestObservation>();

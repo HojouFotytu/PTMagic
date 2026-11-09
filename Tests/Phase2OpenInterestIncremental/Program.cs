@@ -109,8 +109,8 @@ internal static class Program
       .SequenceEqual(new[] { MarketTrendMetrics.PriceTrend }),
       "OI must not be selected by default.");
     MarketAnalyzer cfg = new MarketAnalyzer();
-    Check(cfg.OpenInterestRetentionHours == 72 && cfg.OpenInterestMaxRequestsPerRaid == 60,
-      "New configuration properties must have independent safe defaults.");
+    Check(cfg.OpenInterestMaxRequestsPerRaid == 60,
+      "Only the OI request budget is configured; historical depth comes from MarketTrends.");
     Check(FuturesOpenInterestFeatureEngine.HasMetrics(new[] { "OpenInterestChange" }) &&
       !FuturesOpenInterestFeatureEngine.HasMetrics(new[] { "PriceTrend" }),
       "Only explicit OI metric selection triggers collection.");
@@ -121,14 +121,15 @@ internal static class Program
   {
     FuturesOpenInterestDataService.ValidateBudget(0);
     FuturesOpenInterestDataService.ValidateBudget(400);
-    FuturesOpenInterestDataService.ValidateRetention(1);
-    FuturesOpenInterestDataService.ValidateRetention(672);
+    FuturesOpenInterestDataService.ValidateHorizon(5);
+    FuturesOpenInterestDataService.ValidateHorizon(2880);
+    FuturesOpenInterestDataService.ValidateHorizon(60 * 24 * 40);
     Throws<ArgumentOutOfRangeException>(() => FuturesOpenInterestDataService.ValidateBudget(-1),
       "Negative budget must be rejected.");
     Throws<ArgumentOutOfRangeException>(() => FuturesOpenInterestDataService.ValidateBudget(401),
       "Oversized budget must be rejected.");
-    Throws<ArgumentOutOfRangeException>(() => FuturesOpenInterestDataService.ValidateRetention(673),
-      "Retention beyond exchange period must be rejected.");
+    Throws<ArgumentOutOfRangeException>(() => FuturesOpenInterestDataService.ValidateHorizon(7),
+      "OI horizon must follow the user-defined 5m-aligned TrendMinutes.");
     _passed++;
   }
 
@@ -136,7 +137,7 @@ internal static class Program
   {
     int calls = 0;
     var service = NewService("disabled");
-    var report = await service.RefreshAsync(new[] { "BTCUSDT" }, 60, Pin, 72, 0,
+    var report = await service.RefreshAsync(new[] { "BTCUSDT" }, 60, Pin, 0,
       (s, e, n, ct) => { calls++; return FullPage(s, e, n, ct); }, Log);
     Check(calls == 0 && report.Requests == 0 && report.DeferredSymbols == 1,
       "Zero budget must disable only OI network requests.");
@@ -146,11 +147,11 @@ internal static class Program
   private static async Task TestSingleSymbolExactEndpoints()
   {
     var service = NewService("single");
-    var report = await service.RefreshAsync(new[] { "BTCUSDT" }, 60, Pin, 72, 2, FullPage, Log);
+    var report = await service.RefreshAsync(new[] { "BTCUSDT" }, 60, Pin, 2, FullPage, Log);
     Check(report.AvailableSymbols == 1 && report.SuccessfulPages == 1 &&
       report.Requests == 1 && report.FailedPages == 0,
       "One bounded page must cover exact 60-minute OI.");
-    Check(service.Snapshot("BTCUSDT", Pin).Count >= 13, "Source history must be retained.");
+    Check(service.Snapshot("BTCUSDT", Pin, 60).Count >= 13, "Source history must be retained.");
     _passed++;
   }
 
@@ -159,9 +160,9 @@ internal static class Program
     var service = NewService("fairness");
     List<string> first = new(), second = new();
     string[] universe = { "AAAUSDT", "BBBUSDT", "CCCUSDT" };
-    var a = await service.RefreshAsync(universe, 60, Pin, 72, 1,
+    var a = await service.RefreshAsync(universe, 60, Pin, 1,
       (symbol, end, n, ct) => { first.Add(symbol); return FullPage(symbol, end, n, ct); }, Log);
-    var b = await service.RefreshAsync(universe, 60, Pin, 72, 1,
+    var b = await service.RefreshAsync(universe, 60, Pin, 1,
       (symbol, end, n, ct) => { second.Add(symbol); return FullPage(symbol, end, n, ct); }, Log);
     Check(first.Count == 1 && second.Count == 1 &&
       first[0] == "AAAUSDT" && second[0] == "BBBUSDT" &&
@@ -172,11 +173,11 @@ internal static class Program
   private static async Task TestEmptyResponseNotFabricated()
   {
     var service = NewService("empty");
-    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 3,
+    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 3,
       (s, e, n, ct) => Task.FromResult<IReadOnlyList<FuturesOpenInterestObservation>>(
         Array.Empty<FuturesOpenInterestObservation>()), Log);
     Check(report.Requests == 1 && report.AvailableSymbols == 0 &&
-      service.Snapshot("AAAUSDT", Pin).Count == 0,
+      service.Snapshot("AAAUSDT", Pin, 60).Count == 0,
       "A provider no-trades gap must not become a valid OI sample.");
     _passed++;
   }
@@ -184,11 +185,11 @@ internal static class Program
   private static async Task TestMissingEndpointUnavailable()
   {
     var service = NewService("missing");
-    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 2,
+    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 2,
       (s, e, n, ct) => Task.FromResult<IReadOnlyList<FuturesOpenInterestObservation>>(
         new[] { Row(s, Pin) }), Log);
     var feature = FuturesOpenInterestFeatureEngine.Calculate(new[] { "AAAUSDT" },
-      new[] { MarketTrendMetrics.OpenInterestChange }, 60, Pin, "BinanceFutures", service, 72);
+      new[] { MarketTrendMetrics.OpenInterestChange }, 60, Pin, "BinanceFutures", service);
     Check(report.AvailableSymbols == 0 &&
       !feature["AAAUSDT"][MarketTrendMetrics.OpenInterestChange].IsValid,
       "One endpoint or a missing provider period must remain unavailable.");
@@ -198,9 +199,9 @@ internal static class Program
   private static async Task TestIncrementalReuseWhenCurrent()
   {
     var service = NewService("reuse");
-    await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 2, FullPage, Log);
+    await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 2, FullPage, Log);
     int called = 0;
-    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 2,
+    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 2,
       (s, e, n, ct) => { called++; return FullPage(s, e, n, ct); }, Log);
     Check(report.AvailableSymbols == 1 && called == 0 && report.Requests == 0,
       "Current exact endpoints must be reused without extra HTTP calls.");
@@ -211,17 +212,17 @@ internal static class Program
   {
     var service = NewService("pagination");
     List<DateTimeOffset> ends = new();
-    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60 * 48, Pin, 72, 2,
+    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60 * 48, Pin, 2,
       (s, e, n, ct) => { ends.Add(e); return FullPage(s, e, n, ct); }, Log);
     Check(report.Requests == 2 && ends.Count == 2 && ends[1] < ends[0] &&
-      service.Snapshot("AAAUSDT", Pin).Count >= 500, "Long OI horizon must use bounded older pagination.");
+      service.Snapshot("AAAUSDT", Pin, 60).Count >= 500, "Long OI horizon must use bounded older pagination.");
     _passed++;
   }
 
   private static async Task TestInvalidSourceIsUnavailable()
   {
     var service = NewService("invalid");
-    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 1,
+    var report = await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 1,
       (s, e, n, ct) => Task.FromResult<IReadOnlyList<FuturesOpenInterestObservation>>(
         new[] { Row("WRONGUSDT", Pin) }), Log);
     Check(report.FailedPages == 1 && report.AvailableSymbols == 0,
@@ -233,10 +234,10 @@ internal static class Program
   {
     var s1 = NewService("disk");
     var old = Pin.AddMinutes(-20);
-    await s1.RefreshAsync(new[] { "BTCUSDT" }, 60, old, 72, 2, FullPage, Log);
+    await s1.RefreshAsync(new[] { "BTCUSDT" }, 60, old, 2, FullPage, Log);
     var s2 = NewService("disk");
     int requested = 0;
-    var report = await s2.RefreshAsync(new[] { "BTCUSDT" }, 60, old, 72, 2,
+    var report = await s2.RefreshAsync(new[] { "BTCUSDT" }, 60, old, 2,
       (s, e, n, ct) => { requested++; return FullPage(s, e, n, ct); }, Log);
     Check(report.RestoredSymbols == 1 && report.AvailableSymbols == 1 &&
       requested == 0, "Persisted OI cache should avoid duplicate full requests.");
@@ -257,12 +258,12 @@ internal static class Program
   private static async Task TestNativeVsValueChange()
   {
     var service = NewService("separate");
-    await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 1,
+    await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 1,
       (s, e, n, ct) => Task.FromResult<IReadOnlyList<FuturesOpenInterestObservation>>(
         new[] { Row(s, Pin.AddMinutes(-60), 100m, 1000m), Row(s, Pin, 120m, 2000m) }), Log);
     var result = FuturesOpenInterestFeatureEngine.Calculate(new[] { "AAAUSDT" },
       new[] { MarketTrendMetrics.OpenInterestChange, MarketTrendMetrics.OpenInterestValueChange },
-      60, Pin, "BinanceFutures", service, 72);
+      60, Pin, "BinanceFutures", service);
     Near(result["AAAUSDT"][MarketTrendMetrics.OpenInterestChange].Value, 20, "Native OI change must be 20%.");
     Near(result["AAAUSDT"][MarketTrendMetrics.OpenInterestValueChange].Value, 100,
       "Provider-reported value change must be 100%.");
@@ -272,9 +273,9 @@ internal static class Program
   private static async Task TestExchangeScopeAndOptIn()
   {
     var service = NewService("scope");
-    await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 72, 1, FullPage, Log);
+    await service.RefreshAsync(new[] { "AAAUSDT" }, 60, Pin, 1, FullPage, Log);
     var result = FuturesOpenInterestFeatureEngine.Calculate(new[] { "AAAUSDT" },
-      new[] { MarketTrendMetrics.OpenInterestChange }, 60, Pin, "BinanceUS", service, 72);
+      new[] { MarketTrendMetrics.OpenInterestChange }, 60, Pin, "BinanceUS", service);
     Check(!result["AAAUSDT"][MarketTrendMetrics.OpenInterestChange].IsValid &&
       result["AAAUSDT"][MarketTrendMetrics.OpenInterestChange].InvalidReason.Contains("Futures"),
       "Spot/BinanceUS cannot inherit USD-M OI cache by accident.");
@@ -286,9 +287,10 @@ internal static class Program
     var trend = new MarketTrend { Name = "OI", Platform = "Exchange", TrendMinutes = 60,
       Metrics = MarketTrendMetrics.OpenInterestChange };
     var r = MarketTrendHistoryRequirements.Describe(trend, MarketTrendMetrics.ParseEnabled(trend),
-      TimeSpan.FromMinutes(5), Pin, configuredStoreDataMaxHours: 1, openInterestRetentionHours: 72);
+      TimeSpan.FromMinutes(5), Pin, configuredStoreDataMaxHours: 1);
     Check(r.Count == 1 && r[0].SourceDataFamily == "BinanceFuturesOpenInterest" &&
-      r[0].HasAllAlignmentCapacity == null && r[0].RequiredStoreDataMaxHours == 0,
+      r[0].HasAllAlignmentCapacity == null && r[0].RequiredStoreDataMaxHours == 0 &&
+      r[0].CalculationWindowMinutes == 60,
       "Independent OI history must not be constrained by StoreDataMaxHours.");
     _passed++;
   }
