@@ -45,5 +45,5 @@ dotnet run --project .\Tests\Phase2OpenInterest\Phase2OpenInterest.csproj
 if ($LASTEXITCODE -ne 0) { throw "Phase 2 OI harness failed" }
 \`\`\`
 
-Expected case inventory: 18 offline groups; tests are required before Phase 2 source acceptance and have not yet been executed. No
+**Verified November 10, 2026:** 18/18 offline groups PASS at exact source `5f51faaa0db928cf33c52f6f93ca6f1b301735fb`. The same run compiled the .NET solution and completed all 315 groups across 15 harnesses. These fixtures do not call the live exchange or test configured PT/Monitor actions. No
 live exchange, PT API, or Monitor access is required for these tests.
