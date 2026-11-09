@@ -186,6 +186,13 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
+      if (FuturesOpenInterestFeatureEngine.IsMetric(normalizedMetric) &&
+        !String.Equals(configuration.GeneralSettings.Application.Exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase))
+      {
+        error = "Metric '" + normalizedMetric + "' requires BinanceFutures; Futures OI is unavailable on Spot/BinanceUS.";
+        return false;
+      }
+
       if (!BinanceFuturesAnalyticsRuntime.ValidateMetricReference(marketTrend, metric, globalSettingContext, out error))
       {
         error += " (MarketTrend='" + marketTrend.Name + "', requested metric='" + normalizedMetric +

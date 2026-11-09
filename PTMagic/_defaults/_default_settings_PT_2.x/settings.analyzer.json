@@ -11,6 +11,8 @@
   "AnalyzerSettings": {
     "MarketAnalyzer": {
       "StoreDataMaxHours": 48, // Number of hours to store market data
+      "OpenInterestRetentionHours": 72, // Separate Binance Futures OI cache depth; never uses OHLCV StoreDataMaxHours
+      "OpenInterestMaxRequestsPerRaid": 60, // Optional OI requests only when an OI metric is enabled; 0 disables acquisition
       "IntervalMinutes": 2, // Interval in minutes for PTMagic to check market trends and triggers
       "ExcludeMainCurrency": true, // Excludes the main currency (for example BTC, if you are trading against BTC) from market trend analysis
       "UseProfitTrailerEnabledPairs": false, // false = analyze all exchange markets matching PT's MARKET; true = restrict analysis to PT's enabled_pairs

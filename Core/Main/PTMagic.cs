@@ -978,6 +978,8 @@ namespace Core.Main
 
               if (normalizedExchange)
               {
+                await BinanceFuturesAnalyticsRuntime.RefreshOpenInterestAsync(
+                  this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots).ConfigureAwait(false);
                 BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
                   this.GlobalMarketTrendChanges, this.SingleMarketTrendChanges,
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots);

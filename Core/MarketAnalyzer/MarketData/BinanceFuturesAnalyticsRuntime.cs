@@ -46,6 +46,8 @@ namespace Core.MarketAnalyzer.MarketData
     private static readonly MarketDataService DataServiceInstance = new MarketDataService(
       new MarketDataStore(2),
       new MarketDataWarmStartCache(Path.Combine(Environment.CurrentDirectory, "_data", "NormalizedOhlcvCache")));
+    private static readonly FuturesOpenInterestDataService OpenInterestDataServiceInstance =
+      new FuturesOpenInterestDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesOpenInterestCache"));
     private static AnalyzerUniverseSnapshot _currentUniverse;
     private static MarketAnalysisSnapshot _currentAnalysis;
     private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> _currentTrendAnalyses =
@@ -56,6 +58,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static DateTimeOffset? _currentRaidAsOfUtc;
 
     public static MarketDataService DataService => DataServiceInstance;
+    public static FuturesOpenInterestDataService OpenInterestDataService => OpenInterestDataServiceInstance;
 
     public static DateTimeOffset? CurrentRaidAsOfUtc
     {
@@ -360,6 +363,81 @@ namespace Core.MarketAnalyzer.MarketData
         " cached exchange markets eligible" + (String.IsNullOrWhiteSpace(typeCounts) ? "." : " (" + typeCounts + ")."));
     }
 
+
+    /// <summary>
+    /// Optional Phase 2 acquisition after the frozen universe exists and
+    /// before synchronous metric evaluation. Only explicit OI metrics cause
+    /// requests. The request budget is global to this raid/instance.
+    /// </summary>
+    public static async Task RefreshOpenInterestAsync(
+      PTMagicConfiguration configuration, LogHelper log,
+      IReadOnlyDictionary<string, Market> recentMarkets = null,
+      CancellationToken cancellationToken = default)
+    {
+      if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+      if (log == null) throw new ArgumentNullException(nameof(log));
+      var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? new List<MarketTrend>())
+        .Where(t => t != null &&
+          String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase) &&
+          FuturesOpenInterestFeatureEngine.HasMetrics(MarketTrendMetricSelection.Select(
+            t, configuration.AnalyzerSettings))).ToArray();
+      if (trends.Length == 0) return;
+      string exchange = configuration.GeneralSettings?.Application?.Exchange ?? "";
+      if (!exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+      {
+        log.DoLogWarn("Phase 2 OI metrics requested on " + exchange +
+          "; these per-asset derivatives metrics are only available for Binance USD-M Futures.");
+        return;
+      }
+
+      AnalyzerUniverseSnapshot universe;
+      DateTimeOffset? pin;
+      lock (SnapshotLock) { universe = _currentUniverse; pin = _currentRaidAsOfUtc; }
+      if (universe == null || !pin.HasValue)
+      {
+        log.DoLogWarn("Phase 2 open-interest acquisition deferred: frozen universe or pinned raid time is unavailable.");
+        return;
+      }
+      var options = configuration.AnalyzerSettings.MarketAnalyzer;
+      int retained = options.OpenInterestRetentionHours;
+      int budget = options.OpenInterestMaxRequestsPerRaid;
+      if (retained < 1 || retained > FuturesOpenInterestDataService.MaximumRetentionHours ||
+          budget < 0 || budget > FuturesOpenInterestDataService.MaximumRequestsPerRaid)
+      {
+        log.DoLogWarn("Phase 2 open-interest configuration is outside allowed retention/request bounds.");
+        return;
+      }
+
+      var usable = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0 &&
+        (long)t.TrendMinutes <= (long)retained * 60).ToArray();
+      if (usable.Length == 0)
+      {
+        log.DoLogWarn("Phase 2 open-interest requests skipped: every enabled OI trend exceeds its OI retention window.");
+        return;
+      }
+      var assets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var trend in usable)
+      {
+        MarketTrendSelectedPopulation selected = MarketTrendPopulationSelector.Select(
+          trend, recentMarkets ?? new Dictionary<string, Market>(),
+          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
+        assets.UnionWith(selected.AssetSymbols);
+      }
+      int maximumHorizon = usable.Max(t => t.TrendMinutes);
+      OpenInterestRefreshReport report = await OpenInterestDataServiceInstance.RefreshAsync(
+        assets, maximumHorizon, pin.Value, retained, budget,
+        (symbol, end, limit, ct) => BinanceFuturesOpenInterestClient.GetHistoryPageAsync(
+          symbol, FuturesOpenInterest.SourcePeriod, end, limit, log, ct),
+        log, cancellationToken).ConfigureAwait(false);
+      log.DoLogInfo("Phase 2 OI: " + report.Requests + "/" + budget +
+        " page requests; " + report.SuccessfulPages + " succeeded, " + report.FailedPages +
+        " failed; " + report.AvailableSymbols + "/" + report.EligibleSymbols +
+        " selected assets have exact " + maximumHorizon +
+        "m endpoints; " + report.RestoredSymbols + " restored from disk. " +
+        "Missing/unpolled data remain unavailable.");
+    }
+
     /// <summary>
     /// Calculates explicitly configured normalized metrics for Exchange MarketTrends after
     /// the legacy PTMagic trend pipeline has resolved each trend's market population.
@@ -451,11 +529,20 @@ namespace Core.MarketAnalyzer.MarketData
           analysisAsOfUtc,
           enabledMetrics,
           "BTC" + universe.MainMarket,
-          systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0);
+          systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
+          OpenInterestDataServiceInstance, universe.Exchange,
+          systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.OpenInterestRetentionHours
+            ?? FuturesOpenInterestDataService.DefaultRetentionHours);
         analyses[marketTrend.Name] = analysis;
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)
         {
+          if (requirement.SourceDataFamily == "BinanceFuturesOpenInterest")
+          {
+            log.DoLogDebug("Phase 2 OI history for '" + marketTrend.Name + "' / " +
+              requirement.Metric + ": " + requirement.Basis + " " + requirement.Diagnostic);
+            continue;
+          }
           string detail = "BinanceFutures analytics - history requirement for '" + marketTrend.Name +
             "' / " + requirement.Metric + ": " + requirement.MinimumClosedSourceCandles +
             " closed source candles minimum; " + requirement.RequiredStoredSourceCandles +

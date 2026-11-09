@@ -24,6 +24,18 @@ namespace Core.Helper
         return errors;
       }
 
+      bool hasOpenInterestMetric = settings.MarketAnalyzer.MarketTrends.Any(trend =>
+        trend != null && FuturesOpenInterestFeatureEngine.HasMetrics(MarketTrendMetrics.ParseEnabled(trend)));
+      if (hasOpenInterestMetric)
+      {
+        if (settings.MarketAnalyzer.OpenInterestRetentionHours < 1 ||
+          settings.MarketAnalyzer.OpenInterestRetentionHours > FuturesOpenInterestDataService.MaximumRetentionHours)
+          errors.Add("MarketAnalyzer.OpenInterestRetentionHours must be between 1 and 672.");
+        if (settings.MarketAnalyzer.OpenInterestMaxRequestsPerRaid < 0 ||
+          settings.MarketAnalyzer.OpenInterestMaxRequestsPerRaid > FuturesOpenInterestDataService.MaximumRequestsPerRaid)
+          errors.Add("MarketAnalyzer.OpenInterestMaxRequestsPerRaid must be between 0 and 400.");
+      }
+
       Dictionary<string, MarketTrend> trends = new Dictionary<string, MarketTrend>(StringComparer.OrdinalIgnoreCase);
       foreach (MarketTrend trend in settings.MarketAnalyzer.MarketTrends)
       {

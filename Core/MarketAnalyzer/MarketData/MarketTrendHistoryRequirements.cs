@@ -12,6 +12,8 @@ namespace Core.MarketAnalyzer.MarketData
   public sealed class MarketTrendHistoryRequirement
   {
     public string Metric { get; init; } = "";
+    // Derivatives are not constrained by the separate normalized OHLCV store.
+    public string SourceDataFamily { get; init; } = "NormalizedOHLCV";
     public string Basis { get; init; } = "";
     public long CalculationWindowMinutes { get; init; }
     public long MinimumClosedSourceCandles { get; init; }
@@ -29,7 +31,7 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public static IReadOnlyList<MarketTrendHistoryRequirement> Describe(MarketTrend trend,
       IReadOnlyCollection<string> metrics, TimeSpan sourceInterval, DateTimeOffset asOfUtc,
-      int? configuredStoreDataMaxHours = null)
+      int? configuredStoreDataMaxHours = null, int? openInterestRetentionHours = null)
     {
       if (trend == null) throw new ArgumentNullException(nameof(trend));
       MarketTrendTimeframe.Validate(trend, sourceInterval);
@@ -49,6 +51,24 @@ namespace Core.MarketAnalyzer.MarketData
         .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase))
       {
         if (!MarketTrendMetrics.IsKnown(metric)) continue;
+        if (FuturesOpenInterestFeatureEngine.IsMetric(metric))
+        {
+          int oiHours = openInterestRetentionHours ?? FuturesOpenInterestDataService.DefaultRetentionHours;
+          bool enough = oiHours >= 1 && oiHours <= FuturesOpenInterestDataService.MaximumRetentionHours
+            && (long)trend.TrendMinutes <= (long)oiHours * 60;
+          result.Add(new MarketTrendHistoryRequirement
+          {
+            Metric = metric, SourceDataFamily = "BinanceFuturesOpenInterest",
+            Basis = "Independent Binance USD-M 5m open-interest history; two exact provider endpoints; " +
+              "OpenInterestRetentionHours=" + oiHours +
+              ", independent of StoreDataMaxHours and OHLCV candle retention.",
+            CalculationWindowMinutes = trend.TrendMinutes, MinimumClosedSourceCandles = 2,
+            RequiredStoredSourceCandles = 2,
+            RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
+            Diagnostic = enough ? "" : "OI TrendMinutes exceeds the configured OpenInterestRetentionHours."
+          });
+          continue;
+        }
         bool alignedTrendPeriods = false;
         long windowPeriods = 1;
         long minimumSourceCount = trendSourceCount + 1;

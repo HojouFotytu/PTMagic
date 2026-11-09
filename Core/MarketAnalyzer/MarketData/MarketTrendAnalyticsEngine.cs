@@ -22,7 +22,9 @@ namespace Core.MarketAnalyzer.MarketData
       DateTimeOffset calculatedAtUtc,
       IReadOnlyCollection<string> selectedMetrics = null,
       string benchmarkSymbol = "BTCUSDT",
-      int? configuredStoreDataMaxHours = null)
+      int? configuredStoreDataMaxHours = null,
+      FuturesOpenInterestDataService openInterestData = null, string exchangeName = "BinanceFutures",
+      int openInterestRetentionHours = FuturesOpenInterestDataService.DefaultRetentionHours)
     {
       if (marketTrend == null)
       {
@@ -277,6 +279,22 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
+      if (FuturesOpenInterestFeatureEngine.HasMetrics(enabledMetrics))
+      {
+        var phase2 = FuturesOpenInterestFeatureEngine.Calculate(assetUniverse, enabledMetrics,
+          marketTrend.TrendMinutes, calculatedAtUtc, exchangeName, openInterestData,
+          openInterestRetentionHours);
+        foreach (var asset in phase2)
+        {
+          Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
+              out IReadOnlyDictionary<string, FeatureValueSnapshot> existing)
+            ? new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
+          assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+      }
+
       Dictionary<string, int> globalIssues = needsGlobalReturns
         ? CountInvalidReturnReasons(globalUniverse, returns)
         : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -303,7 +321,7 @@ namespace Core.MarketAnalyzer.MarketData
         AssetSymbols = Array.AsReadOnly(assetUniverse),
         EnabledMetrics = Array.AsReadOnly(enabledMetrics.ToArray()),
         HistoryRequirements = MarketTrendHistoryRequirements.Describe(marketTrend, enabledMetrics,
-          interval, calculatedAtUtc, configuredStoreDataMaxHours),
+          interval, calculatedAtUtc, configuredStoreDataMaxHours, openInterestRetentionHours),
         MarketMetrics = new ReadOnlyDictionary<string, FeatureValueSnapshot>(marketMetrics),
         AssetMetrics = new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(assetMetrics)
       };
