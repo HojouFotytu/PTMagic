@@ -1,6 +1,6 @@
 # PTMagic 2.10 — Cumulative release changes
 
-**Updated:** November 9, 2026
+**Updated:** November 10, 2026
 
 **Application version:** 2.10.0, in development
 
@@ -9,6 +9,12 @@
 This is the cumulative record of **2.10 changes that remain in effect**. It covers the normalized market-analysis foundation begun on November 2, 2026, through the current implementation. Entries describe the resulting behavior and are consolidated when that behavior changes. Planned features, superseded implementations, reversed changes and personal trading-strategy work are outside this record.
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
+
+## Phase 2 — First open-interest source foundation (November 10)
+
+At application commit `314214b1a20bcddd1643b8fa8df032db5463b04d`, optional Binance USD-M futures current and historical open-interest observation models and a bounded single-page HTTP client were added. The new model preserves original native quantity and reported value separately, rejects invalid source symbols/timestamps/amounts, and calculates percentage change only from exact five-minute historical endpoints. Source can be requested explicitly by callers and uses PTMagic's established HTTP/rate-limit/retry transport.
+
+**This release increment does not register new MarketTrend metrics, start background acquisition, change existing raids, or alter PT configuration behavior.** The 18 new offline test groups are authored but **not executed**, and no .NET build was performed on the published commit in this turn. Phase 1 configured acceptance remains deferred by owner instruction and was not reclassified as passing.
 
 ## Release overview
 
