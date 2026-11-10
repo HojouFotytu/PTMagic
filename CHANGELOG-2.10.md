@@ -10,6 +10,14 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Monitor — simpler metrics and complete Global Settings log (November 10)
+
+The Market Metrics page no longer renders its **History Requirements** explanation/table. Analytical history requirements, actual collection, retention limits, completeness checks, warnings, and UNAVAILABLE behavior remain unchanged.
+
+Every newly created Global Settings Log entry now stores an **activation-time snapshot** of all configured market-wide normalized metrics across all configured MarketTrends, including explicit unavailable values. White rows denote metrics referenced by the selected setting's trigger set **regardless of TRUE/FALSE/UNAVAILABLE outcome**; gray rows are not referenced. The separate Activation Triggers audit retains its Boolean expressions, bounds and states. Asset-only metrics are not mislabeled as global aggregates. Historical entries without metric snapshots are not backfilled from a newer raid, and preserve their legacy display where available. Retained DEFAULT entries without evaluated matching triggers correctly show no highlighted metrics. No changes to regime-selection logic, trading commands, SOM, data acquisition, or storage retention.
+
+**Source:** existing application branch `phase1/market-data-foundation`; new snapshot helper, summary record, selection-time capture and both Monitor view updates; two deterministic regression groups appended to `ConfigurationLifecycle`. **Status:** source published, local .NET build, full offline regressions, and browser check **not yet executed**.
+
 ## Startup global SOM — Enable-only safety and two-raid warning (November 10)
 
 PTMagic startup global SOM is now **enable-only**: when StartupSellOnlyMode is configured and initial bootstrap requires the guard, it sends `enabled=true` and never sends `enabled=false`. The user manually disables SOM in ProfitTrailer when ready to resume buying. The API helper refuses all automatic disable requests. Successful normal settings delivery is independent of global SOM release. Legacy v1 PendingRelease checkpoints migrate to v2 manual review and cannot disable SOM. Uncertain enable blocks unsafe bootstrap; TestMode sends no PT command.
