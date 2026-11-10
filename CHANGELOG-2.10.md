@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Dashboard — retain Possible Buys count when list is disabled (November 10)
+
+When `Monitor.MaxDashboardBuyEntries=0`, the DashboardTop partial now renders a **compact full-width Possible Buys (N) heading** above the Positions panel, retaining the actual ProfitTrailer buy-log count and the existing Buy Analyzer `more` link. The buy-entry table and its empty-state content remain hidden; Positions moves into its own **full-width row**. When the buy-entry limit is positive, the original side-by-side Possible Buys and Positions cards and existing list-limit behavior remain intact. This change modifies only the dashboard Razor layout, not the analyzer or PT execution.
+
+**Source:** `Monitor/Pages/_get/DashboardTop.cshtml`, plus one focused `ConfigurationLifecycle` source check for the two layout states. **Validation pending:** local .NET build, focused harness execution, and actual browser layout inspection. Earlier 337/337 results do not verify this newer source.
+
 ## Monitor — compact Global Setting header tooltip (November 10)
 
 The `(i)` tooltip beside the selected Global Setting now contains the unlabeled instance name and full selected GlobalSetting name, followed by a single delivery result: **Delivered to PT** only when the current selected setting has a matching confirmed applied setting and the latest delivery is `Applied` or `Unchanged`; otherwise **Not Delivered to PT**. A fourth `Startup SOM` line appears only if PTMagic's recorded startup global-SOM enable was acknowledged. As before, that recorded flag is **not live ProfitTrailer SOM readback**. The status/summary page retains detailed technical delivery and SOM diagnostics. The compact tooltip uses no field-label prefixes; a scoped CSS class prevents long setting names from wrapping.
