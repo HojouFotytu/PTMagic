@@ -394,8 +394,10 @@ internal static class Program
           Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
         Require(fixture.Sent.Count == 0 && !fixture.Bot.ConfigurationDelivery.Pending);
         fixture.SomNext = ConfigurationDeliveryResult.Applied();
-        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
+        bool blocked = false;
+        try { Call(fixture.Bot, "EnsureStartupSellOnlyMode"); }
+        catch (InvalidOperationException) { blocked = true; }
+        Require(blocked && fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
         Call(fixture.Bot, "SaveProfitTrailerProperties");
         Require(fixture.Sent.Count == 0 &&
           fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
