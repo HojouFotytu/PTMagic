@@ -32,6 +32,9 @@ namespace Core.ProfitTrailer
     public static ConfigurationDeliveryResult Set(PTMagicConfiguration configuration, bool enabled,
       LogHelper log, Func<HttpClient> clientFactory = null, Func<bool> canSend = null)
     {
+      // No reliable ownership/readback: only the user may disable global SOM.
+      if (!enabled)
+        return Failure("disable", "Automatic SOM disabling is prohibited; release manually in ProfitTrailer.", false);
       bool attempted = false;
       HttpClient client = null;
       string action = enabled ? "enable" : "disable";

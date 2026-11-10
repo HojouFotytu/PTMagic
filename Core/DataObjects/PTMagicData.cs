@@ -354,6 +354,8 @@ namespace Core.Main.DataObjects.PTMagicData
     public string ConfigurationDeliveryStatus { get; set; } = "";
     public bool StartupSellOnlyModeActive { get; set; } = false;
     public bool StartupSellOnlyModePending { get; set; } = false;
+    public bool StartupSellOnlyModeManualReviewRequired { get; set; } = false;
+    public bool StartupSellOnlyModeNoticeVisible { get; set; } = false;
     public string StartupSellOnlyModeStatus { get; set; } = "";
     public DateTimeOffset? AnalysisAsOfUtc { get; set; }
     public string SourceRevision { get; set; } = "";

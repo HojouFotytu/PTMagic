@@ -62,11 +62,11 @@
               </div>
 
               <div class="form-group row">
-                <label for="Application_StartupSellOnlyMode" class="col-md-4 col-form-label">Startup Global SOM <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="PTM enables global SOM before loading startup data, then disables it after a fresh conclusive raid and acknowledged settings delivery."></i></label>
+                <label for="Application_StartupSellOnlyMode" class="col-md-4 col-form-label">Startup Global SOM <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="PTMagic enables startup global SOM when configured but never switches it off. Release SOM manually in ProfitTrailer when ready."></i></label>
                 <div class="col-md-8">
                   <input type="hidden" name="Application_StartupSellOnlyModePresent" value="true" />
                   <input type="checkbox" id="Application_StartupSellOnlyMode" name="Application_StartupSellOnlyMode" checked="@(Model.PTMagicConfiguration.GeneralSettings.Application.StartupSellOnlyMode)" aria-describedby="StartupSellOnlyModeHelp" data-plugin="switchery" data-color="#81c868" data-size="small" />
-                  <small id="StartupSellOnlyModeHelp" class="form-text text-muted">Pauses new buys and DCA buys during startup; sells continue. In Test Mode, this is simulated and ProfitTrailer's SOM flag is unchanged.</small>
+                  <small id="StartupSellOnlyModeHelp" class="form-text text-muted">PTMagic enables global SOM before startup analysis and leaves it unchanged afterward. New/DCA buys remain blocked while SOM is on. Manually disable SOM in ProfitTrailer when ready; sells continue. Test Mode makes no SOM API request.</small>
                 </div>
               </div>
 
