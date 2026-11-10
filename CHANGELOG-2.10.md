@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Dashboard — full rollback to pre-change behavior (November 11)
+
+**Owner-directed rollback:** Following failed runtime refresh and coloring attempts, the DashboardTop view and ProfitTrailerData class have been restored **byte-for-byte** to their state at the earlier source baseline `438acbe8e40241cd190e45385dffbee5637b3eb8`. The original Monitor `Index.cshtml` refresh script had already been restored and its blob matches that same baseline. The experimental separate PBL count endpoint and background count cache had already been deleted. The last dashboard-specific ConfigurationLifecycle source test was removed. **All experimental zero-limit Possible Buys card/count/full-width layout changes are withdrawn**: the original behavior at `MaxDashboardBuyEntries=0` again hides the Possible Buys card, and the original BuyLog getter skips PT PBL retrieval in that mode. Non-dashboard Monitor changes are not reverted.
+
+**Validation:** GitHub confirms matching original file blobs for `DashboardTop.cshtml`, `ProfitTrailerData.cs`, and `Index.cshtml`. No new local solution build or live Monitor browser validation has been supplied after the rollback. The user has also requested that further changes not be treated as production-correct solely because source tests pass.
+
 ## Dashboard — reverted PBL refresh experiment; simple card-only hide (November 11)
 
 **Owner-directed replacement supersedes the two earlier asynchronous-dashboard fixes below.** The experimental dedicated `PossibleBuysCount` Razor endpoint, async-count cache, and custom `Index.cshtml` AJAX/timeout/retry replacement were **removed/reverted**. Original `DashboardTop` jQuery `.load()` refresh, tooltips, and profit-value autocoloring are restored.
