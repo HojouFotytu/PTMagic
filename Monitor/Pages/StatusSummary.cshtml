@@ -197,7 +197,7 @@
                     ? ": " + metric.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (metric.Unit ?? "")
                     : ": UNAVAILABLE";
                 <div class="@metricClass" title="@(metric.IsAssetMetric ? "Asset-level metric; no market-wide value" : metric.UnavailableReason)">
-                  @metricName@metricValue
+                  @(metricName + metricValue)
                 </div>
               }
             } else {
