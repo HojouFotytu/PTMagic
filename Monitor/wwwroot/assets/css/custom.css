@@ -308,3 +308,11 @@ a:active {
   line-height: 20px;
   white-space: nowrap;
 }
+
+
+/* Compact global-setting ticker tooltip: preserve full setting names on one line. */
+.tooltip-global-setting {
+  max-width: none;
+  min-width: max-content;
+  white-space: nowrap;
+}
