@@ -530,6 +530,27 @@ internal static class Program
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 1 &&
           Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
+      Check("market-wide metric headers have two centered rows with clear hierarchy", () =>
+      {
+        string root = Directory.GetCurrentDirectory();
+        string viewPath = Path.Combine(root, "Monitor", "Pages", "MarketMetrics.cshtml");
+        string cssPath = Path.Combine(root, "Monitor", "wwwroot", "assets", "css", "custom.css");
+        if (!File.Exists(viewPath) || !File.Exists(cssPath))
+          throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
+        string view = File.ReadAllText(viewPath);
+        string css = File.ReadAllText(cssPath);
+        Require(view.Contains("market-wide-group-titles", StringComparison.Ordinal)
+          && view.Contains("market-wide-subheadings", StringComparison.Ordinal)
+          && view.Contains("rowspan=\"2\"", StringComparison.Ordinal)
+          && view.Contains("Model.GlobalMetricGroups", StringComparison.Ordinal)
+          && view.Contains("Model.GlobalMetricSubheading(metric)", StringComparison.Ordinal)
+          && view.Contains("Model.FormatMetric(metric, feature)", StringComparison.Ordinal)
+          && css.Contains(".market-wide-grouped th,", StringComparison.Ordinal)
+          && css.Contains("text-align: center !important", StringComparison.Ordinal)
+          && css.Contains("text-transform: uppercase", StringComparison.Ordinal)
+          && css.Contains(".market-wide-grouped thead .market-wide-group-line", StringComparison.Ordinal)
+          && css.Contains("color: #8f9fb3", StringComparison.Ordinal));
+      });
       Check("dashboard zero buy-entry limit preserves count above full-width positions", () =>
       {
         string root = Directory.GetCurrentDirectory();
