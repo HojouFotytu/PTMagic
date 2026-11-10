@@ -285,3 +285,26 @@ a:active {
     opacity: 1;
   }
 }
+
+
+/* Market Metrics: keep each group's subheadings aligned with its values.
+   Only affects the market-wide table; per-market metrics are unchanged. */
+.market-wide-grouped th.market-wide-group,
+.market-wide-grouped td.market-wide-group {
+  min-width: 135px;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.market-wide-grouped .market-wide-group-heading {
+  min-height: 27px;
+  font-weight: 700;
+  line-height: 18px;
+  padding-bottom: 9px;
+}
+
+.market-wide-grouped .market-wide-group-line {
+  min-height: 20px;
+  line-height: 20px;
+  white-space: nowrap;
+}
