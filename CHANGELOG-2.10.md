@@ -10,6 +10,14 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Startup global SOM — Enable-only safety and two-raid warning (November 10)
+
+PTMagic startup global SOM is now **enable-only**: when StartupSellOnlyMode is configured and initial bootstrap requires the guard, it sends `enabled=true` and never sends `enabled=false`. The user manually disables SOM in ProfitTrailer when ready to resume buying. The API helper refuses all automatic disable requests. Successful normal settings delivery is independent of global SOM release. Legacy v1 PendingRelease checkpoints migrate to v2 manual review and cannot disable SOM. Uncertain enable blocks unsafe bootstrap; TestMode sends no PT command.
+
+The first two startup RAID SUMMARY reports warn about manual SOM release. A red `PT: SOM` top Monitor ticker next to Selected Global Setting, SMS and PT health appears only on those first two raids. Its information tooltip describes the enable-only operation, manual release and the fact the indicator does **not** read the actual global SOM state. The ticker disappears after raid 2; it does not turn SOM off. SettingsGeneral help text and Status Summary metadata are updated accordingly.
+
+**Published source:** `8b6ad114ff86f3468f84f0adf2f1bbf2d69d3b24`. Updated lifecycle regression tests are authored; **no .NET build or new regression execution is yet claimed**. Prior 332/332 PASS is on the earlier source `49f2aab`. This supersedes the prior automatic-release behavior documented in D-025/D-037.
+
 ## Phase 2 — Funding/OI offline acceptance (November 10)
 
 **User-executed at exact application source `49f2aab66592b6e2922097ca5242b5a614090602`:** .NET 10.0.403 solution build PASS in **11.0s**; Core/PTMagic/Monitor all compiled; **16/16 offline projects and 332/332 test case groups PASS**. Funding 17/17, OI 35/35, existing regression 280/280. Eight nullable warnings in older test fixtures were nonfatal. The source includes the additional Monitor Global Settings activation-trigger capture feature, compiled successfully and covered by existing 28 Monitor roundtrip checks; its actual browser rendering remains unverified.
