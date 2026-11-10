@@ -30,6 +30,7 @@
     var dashboardTopTimer = null;
     var possibleBuysTimer = null;
     var possibleBuysRequestRunning = false;
+    var lastPossibleBuysCount = '—';
     var dashboardBottomTimer = null;
     var dashboardTopRequestRunning = false;
     var dashboardBottomRequestRunning = false;
@@ -74,12 +75,15 @@
           window.location.replace('@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Login');
           return;
         }
-        if (/^\\d+$/.test(count)) {
+        if (/^\d+$/.test(count)) {
+          lastPossibleBuysCount = count;
           $('#possible-buys-count').text(count);
         } else {
+          lastPossibleBuysCount = '—';
           $('#possible-buys-count').text('—');
         }
       }).fail(function () {
+        lastPossibleBuysCount = '—';
         $('#possible-buys-count').text('—');
       }).always(function () {
         possibleBuysRequestRunning = false;
@@ -113,6 +117,7 @@
             return;
           }
           $('#dashboardTop').html(responseText);
+          $('#possible-buys-count').text(lastPossibleBuysCount);
           cleanupOrphanedTooltips();
           $('[data-toggle="tooltip"]').tooltip();
           $('.text-autocolor').autocolor(false);
