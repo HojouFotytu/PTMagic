@@ -10,6 +10,14 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Market Metrics — seven grouped market-wide columns (November 10)
+
+The read-only **Market-Wide Metrics** table now groups its original 17 metric values into seven comparative columns: **Price Direction** (PriceTrend, MedianPriceTrend, MeanMedianSpread), **Market Structure** (Breadth, Dispersion, Concentration), **Volatility** (MedianATRP, VolatilityBreadth), **Volume Expansion** (MedianVolumeExpansion, VolumeExpansionBreadth, StrongVolumeExpansionBreadth), **Volume Concentration** (VolumeConcentration, TopNVolumeShare), **BTC / ETH Volume Share** (BTCVolumeShare, BTCETHVolumeShare), and **BTC Correlation** (MeanCorrelationToBTC, MedianCorrelationToBTC). Each column shows a bold group name, stacked metric labels, and correspondingly aligned values per configured MarketTrend.
+
+**No analytics semantics changed:** the existing Trend, Timeframe and Markets columns, metric value formatting/colors, tooltip definitions, unavailability behavior, and the separate Per-Market Metrics table remain intact. CSS is limited to the grouped market-wide table. The grouping inventory was source-inspected: seven groups, all 17 metrics present once, headings and values driven by the same ordered group definitions.
+
+**Implementation:** existing PTMagic `phase1/market-data-foundation` branch, `Monitor/Pages/MarketMetrics.cshtml.cs`, `Monitor/Pages/MarketMetrics.cshtml`, and `Monitor/wwwroot/assets/css/custom.css`. **Status:** committed; local .NET solution build and actual Monitor browser rendering not yet verified on this new revision. Previous 71/71 lifecycle results belong to the earlier change.
+
 ## Global Settings Log — positive Market Trends are green (November 10)
 
 The Market Trends column now shows the recorded normalized PriceTrend value when available. **Positive PriceTrend (> 0) is green**, regardless of whether the trend was referenced by the selected setting; otherwise referenced trends are white and unreferenced trends are gray. A missing PriceTrend does not become zero or green. The Market Metrics column retains its separate gray/white/green trigger-result rules. This is a Monitor-only formatting update; no analyzer or exchange calculation changed. **Local build and focused checks pending** for this newer source.
