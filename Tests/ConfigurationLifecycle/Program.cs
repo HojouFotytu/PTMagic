@@ -551,6 +551,25 @@ internal static class Program
           && css.Contains(".market-wide-grouped thead .market-wide-group-line", StringComparison.Ordinal)
           && css.Contains("color: #8f9fb3", StringComparison.Ordinal));
       });
+      Check("zero dashboard buy rows still refreshes the complete PT PBL for the count", () =>
+      {
+        string root = Directory.GetCurrentDirectory();
+        string dataPath = Path.Combine(root, "Core", "DataObjects", "ProfitTrailerData.cs");
+        string viewPath = Path.Combine(root, "Monitor", "Pages", "_get", "DashboardTop.cshtml");
+        if (!File.Exists(dataPath) || !File.Exists(viewPath))
+          throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
+        string source = File.ReadAllText(dataPath);
+        string dashboard = File.ReadAllText(viewPath);
+        int getter = source.IndexOf("public List<BuyLogData> BuyLog", StringComparison.Ordinal);
+        int next = source.IndexOf("public TransactionData TransactionData", getter, StringComparison.Ordinal);
+        Require(getter >= 0 && next > getter);
+        string buyGetter = source.Substring(getter, next - getter);
+        Require(!buyGetter.Contains("MaxDashboardBuyEntries", StringComparison.Ordinal)
+          && buyGetter.Contains("GetDataFromProfitTrailer(\"/api/v2/data/pbl\", true)", StringComparison.Ordinal)
+          && buyGetter.Contains("_buyLogRefresh", StringComparison.Ordinal)
+          && dashboard.Contains("Possible Buys (@Model.PTData.BuyLog.Count)", StringComparison.Ordinal)
+          && dashboard.Contains("Take(Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries)", StringComparison.Ordinal));
+      });
       Check("dashboard zero buy-entry limit preserves count above full-width positions", () =>
       {
         string root = Directory.GetCurrentDirectory();
