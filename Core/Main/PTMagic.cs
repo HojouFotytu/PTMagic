@@ -2419,7 +2419,10 @@ namespace Core.Main
       _startupGuardManualReviewRequired = guardState?.ManualReviewRequired == true ||
         _startupGuardPending || guardState?.EnabledAcknowledged == true;
       _startupGuardActive = guardState?.EnabledAcknowledged == true;
-      _startupGuardNoticeRaidCount = Math.Clamp(guardState?.NoticeRaidCount ?? 0, 0, 3);
+      // The user-facing notice belongs to THIS process startup, not to
+      // a previous process. The checkpoint continues to record manual review.
+      _startupGuardNoticeRaidCount = _startupEnableAttemptedThisProcess
+        ? _startupGuardNoticeRaidCount : 0;
       _startupGuardStatus = _startupGuardPending
         ? "SOM enable uncertain; inspect PT manually"
         : _startupGuardManualReviewRequired ? "SOM left to user; review manually in PT" : "Inactive";
@@ -2535,13 +2538,16 @@ namespace Core.Main
       }
       // A previous successful or uncertain command is never replayed on
       // restart or later raids: it could overwrite the user's manual choice.
-      if (_startupGuardManualReviewRequired || _startupEnableAttemptedThisProcess)
+      if (_startupEnableAttemptedThisProcess)
       {
-        _startupGuardStatus = _startupGuardPending
-          ? "Previous SOM enable uncertain; inspect PT before buying"
-          : "Previous SOM enable left unchanged; manual PT release";
         this.UpdateDeliverySummary();
         return;
+      }
+      if (_startupGuardPending)
+      {
+        _startupGuardStatus = "Previous SOM enable uncertain; inspect PT manually";
+        this.UpdateDeliverySummary();
+        throw new InvalidOperationException("Prior startup SOM enable is unconfirmed; manually inspect PT before continuing.");
       }
 
       _startupGuardPending = true;
@@ -2638,10 +2644,12 @@ namespace Core.Main
         this.DCALines, this.IndicatorsLines, DestinationFingerprint());
       _desiredPayloadHash = desired.PayloadHash;
       _decisionFresh = this.IsRaidFresh(out string freshnessReason);
-      if (!_decisionFresh || ((_firstSuccessfulRaidPending || _startupGuardPending) && _selectionIndeterminate))
+      if (!_decisionFresh || _startupGuardPending ||
+          ((_firstSuccessfulRaidPending || _startupGuardManualReviewRequired) && _selectionIndeterminate))
       {
         _raidDelivery = ConfigurationDeliveryResult.Deferred(!_decisionFresh ? freshnessReason :
-          "Initial selection is indeterminate; the confirmed startup guard or prior configuration remains in place.");
+          _startupGuardPending ? "Startup SOM enable is unconfirmed; manually inspect PT before configuration delivery." :
+          "Initial selection is indeterminate; retain the confirmed configuration.");
         this.RestoreRaidState();
         this.UpdateDeliverySummary();
         this.Log.DoLogWarn("PT configuration deferred: " + _raidDelivery.Error);
