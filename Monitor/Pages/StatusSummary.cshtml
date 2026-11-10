@@ -151,7 +151,7 @@
         <th data-toggle="tooltip" data-placement="top" title="Time the setting got activated.">Activation Time</th>
         <th data-toggle="tooltip" data-placement="top" title="Name of the global setting.">Setting</th>
         <th data-toggle="tooltip" data-placement="top" title="Amount of time the setting is or was active">Active Time</th>
-        <th data-toggle="tooltip" data-placement="top" title="All configured MarketTrends at activation. White trends were referenced by the selected setting; gray trends were not.">Market Trends</th>
+        <th data-toggle="tooltip" data-placement="top" title="All configured MarketTrends at activation. Green: positive recorded PriceTrend; otherwise white if referenced by the selected setting, gray if not referenced.">Market Trends</th>
         <th data-toggle="tooltip" data-placement="top" title="All configured MarketTrend metrics at activation. Gray: not referenced; white: referenced but not TRUE; green: at least one matching TRUE condition.">Market Metrics</th>
       </tr>
     </thead>
@@ -176,9 +176,15 @@
             @if (gss.MarketMetricSnapshots != null && gss.MarketMetricSnapshots.Count > 0) {
               foreach (var trendGroup in gss.MarketMetricSnapshots.GroupBy(metric => metric.MarketTrendName, StringComparer.OrdinalIgnoreCase)) {
                 bool used = trendGroup.Any(metric => metric.UsedInTriggerSet);
-                <div class="@(used ? "text-white" : "text-muted")">
-                  @Core.Helper.SystemHelper.SplitCamelCase(trendGroup.Key)
-                </div>
+                var priceTrend = trendGroup.FirstOrDefault(metric => String.Equals(metric.Metric, "PriceTrend", StringComparison.OrdinalIgnoreCase));
+                double? trendValue = priceTrend?.Value;
+                string trendClass = trendValue.HasValue && trendValue.Value > 0
+                  ? "text-success" : used ? "text-white" : "text-muted";
+                string trendText = Core.Helper.SystemHelper.SplitCamelCase(trendGroup.Key)
+                  + (trendValue.HasValue
+                    ? ": " + trendValue.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + "%"
+                    : "");
+                <div class="@trendClass"> @trendText </div>
               }
             } else if (!String.IsNullOrEmpty(marketTrendsSummary)) {
               <div class="text-muted" title="Legacy entry: full metrics were not recorded.">@Html.Raw(marketTrendsSummary)</div>
