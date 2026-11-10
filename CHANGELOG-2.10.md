@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Monitor — compact Global Setting header tooltip (November 10)
+
+The `(i)` tooltip beside the selected Global Setting now contains the unlabeled instance name and full selected GlobalSetting name, followed by a single delivery result: **Delivered to PT** only when the current selected setting has a matching confirmed applied setting and the latest delivery is `Applied` or `Unchanged`; otherwise **Not Delivered to PT**. A fourth `Startup SOM` line appears only if PTMagic's recorded startup global-SOM enable was acknowledged. As before, that recorded flag is **not live ProfitTrailer SOM readback**. The status/summary page retains detailed technical delivery and SOM diagnostics. The compact tooltip uses no field-label prefixes; a scoped CSS class prevents long setting names from wrapping.
+
+**Scope:** Monitor-only presentation. PT API/SOM commands, delivery acknowledgement semantics, detailed status reporting and trading logic are unchanged. One focused ConfigurationLifecycle source-regression check was added. **Local .NET build, focused test execution and browser rendering have not yet been verified** on this update.
+
 ## Market Metrics — seven grouped market-wide columns (November 10)
 
 The read-only **Market-Wide Metrics** table now groups its original 17 metric values into seven comparative columns: **Price Direction** (PriceTrend, MedianPriceTrend, MeanMedianSpread), **Market Structure** (Breadth, Dispersion, Concentration), **Volatility** (MedianATRP, VolatilityBreadth), **Volume Expansion** (MedianVolumeExpansion, VolumeExpansionBreadth, StrongVolumeExpansionBreadth), **Volume Concentration** (VolumeConcentration, TopNVolumeShare), **BTC / ETH Volume Share** (BTCVolumeShare, BTCETHVolumeShare), and **BTC Correlation** (MeanCorrelationToBTC, MedianCorrelationToBTC). Each column shows a bold group name, stacked metric labels, and correspondingly aligned values per configured MarketTrend.
