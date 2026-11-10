@@ -640,11 +640,6 @@ namespace Core.Main.DataObjects
     {
       get
       {
-          if (_systemConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries == 0)
-          {
-              return _buyLog;
-          }
-
           if (_buyLog == null || (DateTime.UtcNow > _buyLogRefresh))
           {
               lock (_buyLock)
