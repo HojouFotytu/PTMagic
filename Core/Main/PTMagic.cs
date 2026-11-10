@@ -2903,6 +2903,10 @@ namespace Core.Main
         gss.TriggerConnection = _selectedGlobalTriggerConnection;
         gss.SelectionBasis = _selectedGlobalSelectionBasis;
         gss.TriggerDetails = new List<GlobalSettingTriggerSummary>(_selectedGlobalTriggerDetails);
+        gss.MarketMetricSnapshots = GlobalSettingMetricLogSnapshotBuilder.Capture(
+          this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends,
+          BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses,
+          _selectedGlobalTriggerDetails);
 
         if (this.LastRuntimeSummary.GlobalSettingSummary.Count > 0)
         {
