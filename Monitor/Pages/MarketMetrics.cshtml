@@ -11,6 +11,44 @@
 
 @section Styles {
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/tablesaw/css/tablesaw.css" rel="stylesheet" type="text/css" />
+  <style>
+    /* Page-local rules avoid stale cached custom.css during Monitor development. */
+    .market-wide-grouped th,
+    .market-wide-grouped td,
+    .market-wide-grouped .market-wide-group-heading,
+    .market-wide-grouped .market-wide-group-line {
+      text-align: center !important;
+      vertical-align: middle !important;
+    }
+    .market-wide-grouped th.market-wide-group,
+    .market-wide-grouped td.market-wide-group {
+      min-width: 145px;
+      white-space: nowrap;
+    }
+    .market-wide-grouped .market-wide-group-heading {
+      display: block;
+      width: 100%;
+      color: #ffffff !important;
+      text-transform: uppercase !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .market-wide-grouped thead .market-wide-subheadings .market-wide-group-line {
+      display: block;
+      width: 100%;
+      color: #8f9fb3 !important;
+      font-weight: 400 !important;
+      white-space: nowrap;
+    }
+    .market-wide-grouped .market-wide-group-line {
+      display: block;
+      width: 100%;
+      min-height: 20px;
+      line-height: 20px;
+      white-space: nowrap;
+    }
+  </style>
 }
 
 <div class="row">
@@ -62,7 +100,7 @@
                 @foreach (MarketMetricsModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
                 {
                   <th scope="col" class="market-wide-group">
-                    <div class="market-wide-group-heading">@group.Heading</div>
+                    <div class="market-wide-group-heading">@group.Heading.ToUpperInvariant()</div>
                   </th>
                 }
               </tr>
@@ -72,7 +110,7 @@
                   <th scope="col" class="market-wide-group">
                     @foreach (string metric in group.Metrics)
                     {
-                      <div class="market-wide-group-line" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">
+                      <div class="market-wide-group-line text-muted" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">
                         @Model.GlobalMetricSubheading(metric)
                       </div>
                     }
