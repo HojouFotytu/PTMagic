@@ -10,6 +10,10 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Monitor — enforce centered market-wide headings and gray labels (November 10)
+
+The grouped Market-Wide Metrics page now includes scoped page-local styling to ensure that all column headings, stacked labels, and values render **centered**, while metric labels are **muted gray** and the seven group titles are **white uppercase**. The group titles are emitted uppercase by Razor, not dependent solely on a stylesheet transform. The page-local CSS prevents stale cached `custom.css` from overriding the intended display. Per-Market Metrics, metric values and calculations are unchanged. The focused source check was extended. **Local .NET build and browser confirmation of this latest revision are pending.**
+
 ## Dashboard — PT-reported Possible Buys count independent of list limit (November 10)
 
 The `ProfitTrailerData.BuyLog` accessor previously returned a cached/empty list without contacting ProfitTrailer whenever `MaxDashboardBuyEntries=0`. That defeated the compact `Possible Buys (N)` heading: it could show zero even when PT reported available PBL entries. The zero-limit early return is now removed. The existing refresh-cache and native `/api/v2/data/pbl` retrieval populate the **full PT PBL**, independent of how many dashboard rows are displayed. `MaxDashboardBuyEntries` now controls only dashboard row visibility/Take count, not acquisition or count. The compact heading remains above full-width Positions at zero, and nonzero limits retain the original side-by-side layout.
