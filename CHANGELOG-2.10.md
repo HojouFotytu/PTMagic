@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Dashboard — independent PBL endpoint and resilient top refresh (November 11)
+
+The first nonblocking count attempt did not resolve the owner's report that DashboardTop stopped refreshing. This follow-up separates **all zero-entry PBL count reads** into a dedicated authenticated `_get/PossibleBuysCount` partial and removes the count accessor entirely from `DashboardTop.cshtml`. The main DashboardTop AJAX request has a **10-second timeout**, error handling and an unconditional completion path that clears the in-flight flag and schedules the next refresh even after an HTTP error. The independent count request has a **5-second client timeout** and uses the preexisting bounded asynchronous PBL count cache. The browser preserves the last displayed count across top-panel re-renders; missing count data is shown as `—` rather than fabricated zero.
+
+**Unchanged:** The compact Possible Buys count line stays above a full-width Positions card when `MaxDashboardBuyEntries=0`, and the normal positive-limit display remains side-by-side with its full PBL table. The DashboardBottom refresh remains separate. Source-level `ConfigurationLifecycle` checks were updated to verify the independent endpoint, updated fragment, bounded AJAX calls, and retry scheduler. No PT configuration, trades, SOM, or market-analysis decisions changed. **Local .NET build, focused test execution and actual browser refresh behavior on this new source remain unverified.**
+
 ## Dashboard — restore nonblocking top-panel refresh with PBL count (November 11)
 
 The previous change that removed the `MaxDashboardBuyEntries=0` PBL short-circuit caused the whole DashboardTop HTML response to wait for the native ProfitTrailer `/api/v2/data/pbl` request. A slow or failing PBL endpoint could therefore hold up the **Positions** widget and make the dashboard appear not to refresh.
