@@ -28,9 +28,6 @@
     var errCountIndex = [];
 
     var dashboardTopTimer = null;
-    var possibleBuysTimer = null;
-    var possibleBuysRequestRunning = false;
-    var lastPossibleBuysCount = '—';
     var dashboardBottomTimer = null;
     var dashboardTopRequestRunning = false;
     var dashboardBottomRequestRunning = false;
@@ -54,91 +51,35 @@
       }
     };
 
-    // The PBL count has an independent endpoint and timeout. It never waits
-    // on, replaces, or stops the Positions/DashboardTop request.
-    var loadPossibleBuysCount = function () {
-      if (document.hidden || possibleBuysRequestRunning ||
-          $('#possible-buys-count').length === 0) {
-        return;
-      }
-
-      possibleBuysRequestRunning = true;
-      $.ajax({
-        url: '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)_get/PossibleBuysCount',
-        type: 'GET',
-        dataType: 'text',
-        timeout: 5000,
-        cache: false
-      }).done(function (countText) {
-        var count = $.trim(countText);
-        if (count === 'returntologin') {
-          window.location.replace('@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Login');
-          return;
-        }
-        if (/^\d+$/.test(count)) {
-          lastPossibleBuysCount = count;
-          $('#possible-buys-count').text(count);
-        } else {
-          lastPossibleBuysCount = '—';
-          $('#possible-buys-count').text('—');
-        }
-      }).fail(function () {
-        lastPossibleBuysCount = '—';
-        $('#possible-buys-count').text('—');
-      }).always(function () {
-        possibleBuysRequestRunning = false;
-        clearTimeout(possibleBuysTimer);
-        if (!document.hidden) {
-          possibleBuysTimer = setTimeout(loadPossibleBuysCount, dashboardTopRefreshMilliseconds);
-        }
-      });
-    };
-
     var loadDashboardTop = function () {
       if (document.hidden || dashboardTopRequestRunning) {
         return;
       }
 
       dashboardTopRequestRunning = true;
-      $('#baglist-refresh-icon, #buylist-refresh-icon').html(
-        '<i class="fa fa-circle-o-notch fa-spin fa-fw" title="Loading fresh data..."></i>'
-      );
+      $("#baglist-refresh-icon").html('<i class="fa fa-circle-o-notch fa-spin fa-fw" data-toggle="tooltip" data-placement="top" title="Loading fresh data..."></i>');
+      $("#buylist-refresh-icon").html('<i class="fa fa-circle-o-notch fa-spin fa-fw" data-toggle="tooltip" data-placement="top" title="Loading fresh data..."></i>');
 
-      $.ajax({
-        url: '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)_get/DashboardTop',
-        type: 'GET',
-        dataType: 'html',
-        timeout: 10000,
-        cache: false
-      }).done(function (responseText) {
-        try {
-          if ($.trim(responseText) === 'returntologin') {
-            window.location.replace('@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Login');
-            return;
+      $("#dashboardTop").load('@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)_get/DashboardTop', '', function (responseText, textStatus, XMLHttpRequest) {
+        $("#baglist-refresh-icon").html('');
+        $("#buylist-refresh-icon").html('');
+        cleanupOrphanedTooltips();
+        $('[data-toggle="tooltip"]').tooltip();
+        $('.text-autocolor').autocolor(false);
+
+        if (textStatus == 'error') {
+          errCountIndex["DashboardTop"]++;
+          if (errCountIndex["DashboardTop"] > 2) {
+            $.Notification.notify('error', 'top left', 'Dashboard (Top) update failed!', 'PTMagic Monitor failed to update data. If this error does not go away by itself, please check the connection to your hosting PC.')
           }
-          $('#dashboardTop').html(responseText);
-          $('#possible-buys-count').text(lastPossibleBuysCount);
-          cleanupOrphanedTooltips();
-          $('[data-toggle="tooltip"]').tooltip();
-          $('.text-autocolor').autocolor(false);
-          // Count retrieval does not delay the main dashboard's next refresh.
-          if ($('#possible-buys-count').length) {
-            loadPossibleBuysCount();
-          }
-          errCountIndex['DashboardTop'] = 0;
-        } catch (error) {
-          console.error('DashboardTop render error:', error);
-          errCountIndex['DashboardTop']++;
+        } else if (responseText == 'returntologin') {
+          window.location.replace("@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Login");
+          return;
+        } else {
+          errCountIndex["DashboardTop"] = 0;
         }
-      }).fail(function (_xhr, status) {
-        errCountIndex['DashboardTop']++;
-        if (errCountIndex['DashboardTop'] > 2) {
-          $.Notification.notify('error', 'top left', 'Dashboard (Top) update failed!',
-            'Top dashboard request failed (' + status + '). Checking again automatically.');
-        }
-      }).always(function () {
+
         dashboardTopRequestRunning = false;
-        $('#baglist-refresh-icon, #buylist-refresh-icon').html('');
         scheduleDashboardTop();
       });
     };
@@ -183,7 +124,6 @@
       document.addEventListener("visibilitychange", function () {
         clearTimeout(dashboardTopTimer);
         clearTimeout(dashboardBottomTimer);
-        clearTimeout(possibleBuysTimer);
 
         if (!document.hidden) {
           if (!dashboardTopRequestRunning) {
@@ -192,9 +132,6 @@
 
           if (!dashboardBottomRequestRunning) {
             loadDashboardBottom();
-          }
-          if (!possibleBuysRequestRunning) {
-            loadPossibleBuysCount();
           }
         }
       });
