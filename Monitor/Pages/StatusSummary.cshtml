@@ -186,7 +186,7 @@
                   @name: @valueText
                 </div>
               }
-            } else if (gss.MarketMetricSnapshots == null && !String.IsNullOrEmpty(marketTrendsSummary)) {
+            } else if ((gss.MarketMetricSnapshots == null || gss.MarketMetricSnapshots.Count == 0) && !String.IsNullOrEmpty(marketTrendsSummary)) {
               <div class="text-muted" title="Legacy historical entry: full per-metric snapshot was not recorded.">@Html.Raw(marketTrendsSummary)</div>
             } else if (gss.MarketMetricSnapshots == null) {
               <small class="text-muted">Historical metrics not recorded.</small>
