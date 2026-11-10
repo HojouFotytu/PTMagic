@@ -55,14 +55,21 @@
         <div class="table-responsive">
           <table class="table table-sm m-b-0 market-wide-grouped">
             <thead>
-              <tr>
-                <th>Trend</th>
-                <th class="text-right">Timeframe</th>
-                <th class="text-right">Markets</th>
+              <tr class="market-wide-group-titles">
+                <th rowspan="2" scope="col">Trend</th>
+                <th rowspan="2" scope="col">Timeframe</th>
+                <th rowspan="2" scope="col">Markets</th>
                 @foreach (MarketMetricsModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
                 {
-                  <th class="text-right market-wide-group">
+                  <th scope="col" class="market-wide-group">
                     <div class="market-wide-group-heading">@group.Heading</div>
+                  </th>
+                }
+              </tr>
+              <tr class="market-wide-subheadings">
+                @foreach (MarketMetricsModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                {
+                  <th scope="col" class="market-wide-group">
                     @foreach (string metric in group.Metrics)
                     {
                       <div class="market-wide-group-line" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">
@@ -78,12 +85,11 @@
               {
                 <tr>
                   <td>@Core.Helper.SystemHelper.SplitCamelCase(trend.Name)</td>
-                  <td class="text-right">@Model.FormatTimeframe(trend.TrendMinutes)</td>
-                  <td class="text-right">@trend.GlobalSymbols.Count</td>
+                  <td>@Model.FormatTimeframe(trend.TrendMinutes)</td>
+                  <td>@trend.GlobalSymbols.Count</td>
                   @foreach (MarketMetricsModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
                   {
-                    <td class="text-right market-wide-group">
-                      <div class="market-wide-group-heading" aria-hidden="true">&nbsp;</div>
+                    <td class="market-wide-group">
                       @foreach (string metric in group.Metrics)
                       {
                         Core.MarketAnalyzer.MarketData.FeatureValueSnapshot feature = Model.GetGlobalMetric(trend, metric);
