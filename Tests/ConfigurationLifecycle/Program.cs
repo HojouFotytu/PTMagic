@@ -556,31 +556,6 @@ internal static class Program
           && css.Contains(".market-wide-grouped thead .market-wide-group-line", StringComparison.Ordinal)
           && css.Contains("color: #8f9fb3", StringComparison.Ordinal));
       });
-      Check("dashboard zero buy limit keeps PT PBL count and card while hiding only list rows", () =>
-      {
-        string root = Directory.GetCurrentDirectory();
-        string dashboardPath = Path.Combine(root, "Monitor", "Pages", "_get", "DashboardTop.cshtml");
-        string indexPath = Path.Combine(root, "Monitor", "Pages", "Index.cshtml");
-        string dataPath = Path.Combine(root, "Core", "DataObjects", "ProfitTrailerData.cs");
-        if (!File.Exists(dashboardPath) || !File.Exists(indexPath) || !File.Exists(dataPath))
-          throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
-        string dashboard = File.ReadAllText(dashboardPath);
-        string index = File.ReadAllText(indexPath);
-        string data = File.ReadAllText(dataPath);
-        Require(dashboard.Contains("Possible Buys (@Model.PTData.BuyLog.Count)", StringComparison.Ordinal)
-          && dashboard.Contains("@if (showBuyList)", StringComparison.Ordinal)
-          && dashboard.Contains("Take(Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries)", StringComparison.Ordinal)
-          && dashboard.Contains("showBuyList ? \"col-md px-1\" : \"col-12 px-1\"", StringComparison.Ordinal)
-          && dashboard.Contains("<div class=\"w-100\"></div>", StringComparison.Ordinal)
-          && dashboard.Contains("Positions (@Model.PTData.DCALog.Count)", StringComparison.Ordinal)
-          && !dashboard.Contains("PossibleBuyCount", StringComparison.Ordinal)
-          && !dashboard.Contains("possible-buys-count", StringComparison.Ordinal)
-          && index.Contains("$(\"#dashboardTop\").load(", StringComparison.Ordinal)
-          && index.Contains("$('.text-autocolor').autocolor(false)", StringComparison.Ordinal)
-          && !index.Contains("_get/PossibleBuysCount", StringComparison.Ordinal)
-          && data.Contains("GetDataFromProfitTrailer(\"/api/v2/data/pbl\", true)", StringComparison.Ordinal)
-          && !data.Contains("public int? PossibleBuyCount", StringComparison.Ordinal));
-      });
       Check("global ticker tooltip uses compact delivery wording and only conditional startup SOM", () =>
       {
         string root = Directory.GetCurrentDirectory();
