@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Global Settings Log — owner-directed two-column correction (November 10)
+
+The Global Settings Log now uses **Market Trends** and **Market Metrics** as its only two market-data columns. The unrequested **Activation Triggers** column, Boolean expression, TRUE/FALSE text, and trigger diagnostics were removed **from the Monitor display**. Every configured MarketTrend appears in the Market Trends list: **white** if referenced in the selected GlobalSetting trigger set, **gray** otherwise. Every configured metric is displayed in the Market Metrics list, including asset-scoped metric names (without inventing a global value): **gray** if unused, **white** if referenced but not TRUE, **green** if an applicable trigger condition is TRUE. The source still retains historical trigger metadata for internal decision snapshots; analyzer decisions, PT configuration, and SOM are unaffected.
+
+**Status:** source committed on the existing `phase1/market-data-foundation` branch; existing prior 337/337 validation applies only to `fb94373`, **not this newer UI correction**. A new local build/browser check is pending.
+
 ## SOM and Monitor changes — verified offline (November 10)
 
 **User validation at exact source `fb94373d8928b681e3ebe1f7209bd1439db42e72`:** the .NET 10.0.403 Core/PTMagic/Monitor solution built successfully twice (15.6s, then 10.3s); all **16/16 offline harnesses and 337/337 test groups PASSED twice**. New Global Settings Log metric snapshot tests, SOM enable-only API and lifecycle tests, and two-raid red ticker assertions were included. The first run reported eight nonfatal existing nullable-source warnings in test projects; the second printed none. This is deterministic development acceptance only: actual Binance/ProfitTrailer API integration, configured runtime raids, and browser-visible Monitor behavior are still independently unverified.
