@@ -485,22 +485,41 @@ internal static class Program
         Require(fixture.SomCalls.SequenceEqual(new[] { true }));
         Require(StartupSellOnlyModeState.Load(fixture.GuardCheckpoint).NoticeRaidCount == 3);
       });
-      Check("legacy release checkpoint migration never sends SOM false", () =>
+      Check("legacy release checkpoint migrates into review-only without disabling SOM", () =>
       {
         using var fixture = new Fixture();
-        var state = new StartupSellOnlyModeState
+        var fingerprint = typeof(Engine).GetMethod("StartupGuardDestinationFingerprint",
+          BindingFlags.Instance | BindingFlags.NonPublic);
+        string destination = (string)fingerprint.Invoke(fixture.Bot, null);
+        File.WriteAllText(fixture.GuardCheckpoint, JsonConvert.SerializeObject(new
         {
-          SchemaVersion = 1, DestinationHash = "",
+          SchemaVersion = 1, DestinationHash = destination,
           PendingRelease = true, EnabledAcknowledged = true
-        };
-        File.WriteAllText(fixture.GuardCheckpoint, "{\"SchemaVersion\":1,\"DestinationHash\":\"\",\"PendingRelease\":true,\"EnabledAcknowledged\":true}");
+        }));
         var restored = StartupSellOnlyModeState.Load(fixture.GuardCheckpoint);
         Require(restored.SchemaVersion == 2 && restored.ManualReviewRequired &&
-          !restored.EnableIntentPending && !restored.PendingRelease);
+          !restored.EnableIntentPending);
+        fixture.Configuration.GeneralSettings.Application.StartupSellOnlyMode = false;
         Call(fixture.Bot, "InitializeDeliveryTracking");
-        Require(fixture.SomCalls.Count == 0);
+        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        Require(fixture.SomCalls.Count == 0 &&
+          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
-      Check("TestMode startup guard and release perform no API calls or live checkpoint writes", () =>
+      Check("a new process can enable the next startup without any automatic release", () =>
+      {
+        using var fixture = new Fixture();
+        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        Call(fixture.Bot, "CountStartupSomNoticeRaid");
+        // Simulate process restart with a matching previous enable checkpoint.
+        Set(fixture.Bot, "_startupEnableAttemptedThisProcess", false);
+        Call(fixture.Bot, "InitializeDeliveryTracking");
+        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        Call(fixture.Bot, "CountStartupSomNoticeRaid");
+        Require(fixture.SomCalls.SequenceEqual(new[] { true, true }) &&
+          fixture.Bot.LastRuntimeSummary.StartupSellOnlyModeNoticeVisible &&
+          StartupSellOnlyModeState.Load(fixture.GuardCheckpoint).NoticeRaidCount == 1);
+      });
+      Check("TestMode previews startup enable without PT API calls or live checkpoint writes", () =>
       {
         using var fixture = new Fixture(); fixture.Configuration.GeneralSettings.Application.TestMode = true; Call(fixture.Bot, "EnsureDeliveryContext");
         Call(fixture.Bot, "EnsureStartupSellOnlyMode"); Call(fixture.Bot, "SaveProfitTrailerProperties");
