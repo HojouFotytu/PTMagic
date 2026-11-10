@@ -89,17 +89,12 @@
       }
     </div>
   </div>
-  </div>
-
   @if (!showBuyList)
   {
-    <div class="row">
-      <div class="col-12 px-1">
+    <div class="w-100"></div>
   }
-  else
-  {
-    <div class="col-md px-1">
-  }    
+
+  <div class="@(showBuyList ? "col-md px-1" : "col-12 px-1")">
     <div class="card-box px-2">
       <h4 class="m-t-0 m-b-20 header-title"><b>Positions (@Model.PTData.DCALog.Count)</b><small id="baglist-refresh-icon"></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BagAnalyzer">more</a></small></h4>
 
@@ -277,10 +272,6 @@
       }
     </div>
   </div>
-  @if (!showBuyList)
-  {
-    </div>
-  }
 </div>
 
 <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/jquery.nicescroll.js"></script>
