@@ -50,6 +50,12 @@ namespace Core.Main.DataObjects
     private DateTime _monthlyStatsRefresh = DateTime.UtcNow;
     private DateTime _statsRefresh = DateTime.UtcNow;
     private DateTime _buyLogRefresh = DateTime.UtcNow;
+    // Independent, nonblocking dashboard PBL count. A slow/failed PT PBL
+    // request must not stall the DashboardTop response or the Positions widget.
+    private readonly object _possibleBuyCountLock = new object();
+    private int? _possibleBuyCount = null;
+    private DateTime _possibleBuyCountNextRefresh = DateTime.MinValue;
+    private Task _possibleBuyCountRefreshTask = null;
     //private DateTime _sellLogRefresh = DateTime.UtcNow;
     private DateTime _dcaLogRefresh = DateTime.UtcNow;
     private DateTime _miscRefresh = DateTime.UtcNow;
@@ -636,6 +642,52 @@ namespace Core.Main.DataObjects
       }
     }
     
+    // Dashboard header only. Never waits for the remote PBL endpoint.
+    // A null count means PT has not yet returned a valid PBL count, not zero.
+    public int? PossibleBuyCount
+    {
+      get
+      {
+        lock (_possibleBuyCountLock)
+        {
+          if (DateTime.UtcNow >= _possibleBuyCountNextRefresh &&
+            (_possibleBuyCountRefreshTask == null || _possibleBuyCountRefreshTask.IsCompleted))
+          {
+            // Only one request at a time, paced by the configured PBL interval.
+            _possibleBuyCountNextRefresh = DateTime.UtcNow.AddSeconds(
+              Math.Max(1, _systemConfiguration.GeneralSettings.Monitor.BuyAnalyzerRefreshSeconds));
+            _possibleBuyCountRefreshTask = RefreshPossibleBuyCountAsync();
+          }
+
+          return _possibleBuyCount;
+        }
+      }
+    }
+
+    private async Task RefreshPossibleBuyCountAsync()
+    {
+      try
+      {
+        // This request is independent of the DashboardTop HTTP response.
+        using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        JArray pbl = await GetDataFromProfitTrailerAsync("/api/v2/data/pbl", true, timeout.Token)
+          .ConfigureAwait(false);
+        lock (_possibleBuyCountLock)
+        {
+          _possibleBuyCount = pbl.Count;
+        }
+      }
+      catch (Exception ex)
+      {
+        // Do not display a stale count as current after a failed PT read.
+        lock (_possibleBuyCountLock)
+        {
+          _possibleBuyCount = null;
+        }
+        Debug.WriteLine("Possible buys count unavailable: " + ex.GetType().Name);
+      }
+    }
+
     public List<BuyLogData> BuyLog
     {
       get
