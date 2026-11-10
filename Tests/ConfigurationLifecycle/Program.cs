@@ -556,7 +556,7 @@ internal static class Program
           && css.Contains(".market-wide-grouped thead .market-wide-group-line", StringComparison.Ordinal)
           && css.Contains("color: #8f9fb3", StringComparison.Ordinal));
       });
-      Check("zero dashboard buy rows still refreshes the complete PT PBL for the count", () =>
+      Check("dashboard PBL count refresh does not block positions when the buy list is hidden", () =>
       {
         string root = Directory.GetCurrentDirectory();
         string dataPath = Path.Combine(root, "Core", "DataObjects", "ProfitTrailerData.cs");
@@ -565,14 +565,21 @@ internal static class Program
           throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
         string source = File.ReadAllText(dataPath);
         string dashboard = File.ReadAllText(viewPath);
-        int getter = source.IndexOf("public List<BuyLogData> BuyLog", StringComparison.Ordinal);
-        int next = source.IndexOf("public TransactionData TransactionData", getter, StringComparison.Ordinal);
-        Require(getter >= 0 && next > getter);
-        string buyGetter = source.Substring(getter, next - getter);
-        Require(!buyGetter.Contains("MaxDashboardBuyEntries", StringComparison.Ordinal)
-          && buyGetter.Contains("GetDataFromProfitTrailer(\"/api/v2/data/pbl\", true)", StringComparison.Ordinal)
-          && buyGetter.Contains("_buyLogRefresh", StringComparison.Ordinal)
-          && dashboard.Contains("Possible Buys (@Model.PTData.BuyLog.Count)", StringComparison.Ordinal)
+        int countGetter = source.IndexOf("public int? PossibleBuyCount", StringComparison.Ordinal);
+        int buyGetter = source.IndexOf("public List<BuyLogData> BuyLog", StringComparison.Ordinal);
+        int next = source.IndexOf("public TransactionData TransactionData", buyGetter, StringComparison.Ordinal);
+        Require(countGetter >= 0 && buyGetter > countGetter && next > buyGetter);
+        string countSource = source.Substring(countGetter, buyGetter - countGetter);
+        string fullBuyGetter = source.Substring(buyGetter, next - buyGetter);
+        Require(countSource.Contains("RefreshPossibleBuyCountAsync()", StringComparison.Ordinal)
+          && countSource.Contains("GetDataFromProfitTrailerAsync(\"/api/v2/data/pbl\", true, timeout.Token)", StringComparison.Ordinal)
+          && countSource.Contains("TimeSpan.FromSeconds(8)", StringComparison.Ordinal)
+          && countSource.Contains("_possibleBuyCount = null", StringComparison.Ordinal)
+          && countSource.Contains("return _possibleBuyCount;", StringComparison.Ordinal)
+          && !countSource.Contains("GetAwaiter().GetResult()", StringComparison.Ordinal)
+          && fullBuyGetter.Contains("GetDataFromProfitTrailer(\"/api/v2/data/pbl\", true)", StringComparison.Ordinal)
+          && dashboard.Contains("Model.PTData.PossibleBuyCount?.ToString()", StringComparison.Ordinal)
+          && dashboard.Contains("Model.PTData.BuyLog.Count.ToString()", StringComparison.Ordinal)
           && dashboard.Contains("Take(Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries)", StringComparison.Ordinal));
       });
       Check("dashboard zero buy-entry limit preserves count above full-width positions", () =>
@@ -585,8 +592,7 @@ internal static class Program
         Require(dashboard.Contains("MaxDashboardBuyEntries > 0", StringComparison.Ordinal)
           && dashboard.Contains("@if (!showBuyList)", StringComparison.Ordinal)
           && dashboard.Contains("@if (showBuyList)", StringComparison.Ordinal)
-          && dashboard.Contains("Possible Buys (@Model.PTData.BuyLog.Count)", StringComparison.Ordinal)
-          && dashboard.Contains("Take(Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries)", StringComparison.Ordinal)
+          && dashboard.Contains("Possible Buys (@possibleBuysCount)", StringComparison.Ordinal)
           && dashboard.Contains("showBuyList ? \"col-md px-1\" : \"col-12 px-1\"", StringComparison.Ordinal)
           && dashboard.Contains("Positions (@Model.PTData.DCALog.Count)", StringComparison.Ordinal));
       });
