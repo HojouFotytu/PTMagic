@@ -10,6 +10,14 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Dashboard — restore nonblocking top-panel refresh with PBL count (November 11)
+
+The previous change that removed the `MaxDashboardBuyEntries=0` PBL short-circuit caused the whole DashboardTop HTML response to wait for the native ProfitTrailer `/api/v2/data/pbl` request. A slow or failing PBL endpoint could therefore hold up the **Positions** widget and make the dashboard appear not to refresh.
+
+**Correction:** for `MaxDashboardBuyEntries=0`, the compact Possible Buys heading reads an independently cached, asynchronously refreshed **full PT PBL count**. It does not synchronously wait for PT. The count refresh uses the existing BuyAnalyzer refresh interval, one in-flight request and an eight-second timeout; a missing/failed count displays `—` rather than a fabricated zero. A positive dashboard buy-row limit continues to use the normal complete PBL list. The separate full Buy Analyzer list remains unchanged. The normal DashboardTop 5-second AJAX scheduling and full-width Positions layout are unchanged. Added source assertions for the nonblocking count and retained layout.
+
+**Scope:** Core PBL count accessor, DashboardTop markup, focused ConfigurationLifecycle source checks. The asynchronous count may generate an independent PT PBL request while the hidden list is off. No changes to PT configuration, trades, SOM, or market analysis. **Local build and new focused checks remain pending.**
+
 ## Monitor formatting — focused validation PASS (November 11)
 
 The user successfully built the .NET solution (Core, PTMagic, Monitor) in **15.7 seconds** and ran **75/75 ConfigurationLifecycle checks PASS**, including the latest Market-Wide Metrics page-local styling assertions, dashboard PBL count, ticker and SOM regression checks. No warnings or errors were reported. The local output did not print a source SHA; the repository branch head inspected afterward was `44dd757e29808eaa8662fbdf8a63835efb02378a`, not an independently locally stamped revision. This supersedes the prior "local build pending" status for the latest Monitor styling correction. Browser appearance remains unverified. [Validation record](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-monitor-market-wide-formatting-validation.md).
