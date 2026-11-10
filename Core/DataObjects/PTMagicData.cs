@@ -437,6 +437,8 @@ namespace Core.Main.DataObjects.PTMagicData
     public string Unit { get; set; } = "";
     // Membership in the selected setting's trigger set, independent of TRUE/FALSE.
     public bool UsedInTriggerSet { get; set; } = false;
+    public bool TriggerConditionTrue { get; set; } = false;
+    public bool IsAssetMetric { get; set; } = false;
     public string UnavailableReason { get; set; } = "";
   }
 
