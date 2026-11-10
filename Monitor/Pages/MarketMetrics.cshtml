@@ -53,15 +53,23 @@
       <div class="card-box">
         <h4 class="m-t-0 m-b-20 header-title"><b>Market-Wide Metrics</b></h4>
         <div class="table-responsive">
-          <table class="table table-sm m-b-0">
+          <table class="table table-sm m-b-0 market-wide-grouped">
             <thead>
               <tr>
                 <th>Trend</th>
                 <th class="text-right">Timeframe</th>
                 <th class="text-right">Markets</th>
-                @foreach (string metric in Model.GlobalMetricNames)
+                @foreach (MarketMetricsModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
                 {
-                  <th class="text-right" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">@Model.MetricTitle(metric)</th>
+                  <th class="text-right market-wide-group">
+                    <div class="market-wide-group-heading">@group.Heading</div>
+                    @foreach (string metric in group.Metrics)
+                    {
+                      <div class="market-wide-group-line" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">
+                        @Model.GlobalMetricSubheading(metric)
+                      </div>
+                    }
+                  </th>
                 }
               </tr>
             </thead>
@@ -72,11 +80,17 @@
                   <td>@Core.Helper.SystemHelper.SplitCamelCase(trend.Name)</td>
                   <td class="text-right">@Model.FormatTimeframe(trend.TrendMinutes)</td>
                   <td class="text-right">@trend.GlobalSymbols.Count</td>
-                  @foreach (string metric in Model.GlobalMetricNames)
+                  @foreach (MarketMetricsModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
                   {
-                    Core.MarketAnalyzer.MarketData.FeatureValueSnapshot feature = Model.GetGlobalMetric(trend, metric);
-                    <td class="text-right text-autocolor" data-toggle="tooltip" data-placement="top" title="@Model.FeatureTooltip(feature)">
-                      @Model.FormatMetric(metric, feature)
+                    <td class="text-right market-wide-group">
+                      <div class="market-wide-group-heading" aria-hidden="true">&nbsp;</div>
+                      @foreach (string metric in group.Metrics)
+                      {
+                        Core.MarketAnalyzer.MarketData.FeatureValueSnapshot feature = Model.GetGlobalMetric(trend, metric);
+                        <div class="market-wide-group-line text-autocolor" data-toggle="tooltip" data-placement="top" title="@Model.FeatureTooltip(feature)">
+                          @Model.FormatMetric(metric, feature)
+                        </div>
+                      }
                     </td>
                   }
                 </tr>
