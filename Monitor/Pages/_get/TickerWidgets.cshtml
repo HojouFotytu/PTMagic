@@ -17,10 +17,22 @@
     globalIconColor = "text-danger";
   }
 
-  string globalSettingInfoTooltip = "<b>Instance: </b>" + Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName;
-  globalSettingInfoTooltip += "<br /><b>Applied: </b>" + System.Net.WebUtility.HtmlEncode(String.IsNullOrEmpty(Model.Summary.AppliedGlobalSettingName) ? "Not confirmed" : Model.Summary.AppliedGlobalSettingName);
-  globalSettingInfoTooltip += "<br /><b>Delivery: </b>" + System.Net.WebUtility.HtmlEncode(String.IsNullOrEmpty(Model.Summary.ConfigurationDeliveryStatus) ? "Not recorded" : Model.Summary.ConfigurationDeliveryStatus);
-  if (!String.IsNullOrEmpty(Model.Summary.StartupSellOnlyModeStatus)) globalSettingInfoTooltip += "<br /><b>Startup global SOM: </b>" + System.Net.WebUtility.HtmlEncode(Model.Summary.StartupSellOnlyModeStatus);
+  string selectedGlobalSetting = String.IsNullOrWhiteSpace(Model.Summary.DesiredGlobalSettingName)
+    ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected"
+    : Model.Summary.DesiredGlobalSettingName;
+  bool deliveredToPT = (String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Applied", StringComparison.OrdinalIgnoreCase)
+      || String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Unchanged", StringComparison.OrdinalIgnoreCase))
+    && !String.IsNullOrWhiteSpace(Model.Summary.AppliedGlobalSettingName)
+    && String.Equals(Model.Summary.AppliedGlobalSettingName, selectedGlobalSetting, StringComparison.OrdinalIgnoreCase);
+
+  // Only the four requested compact lines; absent SOM is not listed.
+  // StartupSellOnlyModeActive records PTMagic's acknowledged enable, not
+  // a live ProfitTrailer SOM readback.
+  string globalSettingInfoTooltip = System.Net.WebUtility.HtmlEncode(Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName)
+    + "<br />" + System.Net.WebUtility.HtmlEncode(selectedGlobalSetting)
+    + "<br />" + (deliveredToPT ? "Delivered to PT" : "Not Delivered to PT");
+  if (Model.Summary.StartupSellOnlyModeActive)
+    globalSettingInfoTooltip += "<br />Startup SOM";
 
   DateTime lastRuntime = Model.Summary.LastRuntime;
   double elapsedSecondsSinceRuntime = DateTime.UtcNow.Subtract(lastRuntime).TotalSeconds;
@@ -47,7 +59,7 @@
 }
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined @globalIconColor" data-ticker-role="global-card">
-  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Selected global setting; see details for confirmed delivery">Selected: @Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-100 text-left'></div></div>"></i></a></span>
+  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Selected global setting; see details for confirmed delivery">Selected: @Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-global-setting text-left'></div></div>"></i></a></span>
 </div>
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined" data-ticker-role="sms-card">
