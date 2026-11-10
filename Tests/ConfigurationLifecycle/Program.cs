@@ -493,7 +493,7 @@ internal static class Program
           SchemaVersion = 1, DestinationHash = "",
           PendingRelease = true, EnabledAcknowledged = true
         };
-        File.WriteAllText(fixture.GuardCheckpoint, JsonConvert.SerializeObject(state));
+        File.WriteAllText(fixture.GuardCheckpoint, "{\"SchemaVersion\":1,\"DestinationHash\":\"\",\"PendingRelease\":true,\"EnabledAcknowledged\":true}");
         var restored = StartupSellOnlyModeState.Load(fixture.GuardCheckpoint);
         Require(restored.SchemaVersion == 2 && restored.ManualReviewRequired &&
           !restored.EnableIntentPending && !restored.PendingRelease);
