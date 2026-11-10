@@ -287,20 +287,31 @@ a:active {
 }
 
 
-/* Market Metrics: keep each group's subheadings aligned with its values.
-   Only affects the market-wide table; per-market metrics are unchanged. */
+/* Market Metrics: two centered heading rows with matching stacked values.
+   Scoped to Market-Wide Metrics only; Per-Market Metrics is unchanged. */
+.market-wide-grouped th,
+.market-wide-grouped td {
+  text-align: center !important;
+  vertical-align: middle;
+}
+
 .market-wide-grouped th.market-wide-group,
 .market-wide-grouped td.market-wide-group {
   min-width: 135px;
   white-space: nowrap;
-  vertical-align: top;
 }
 
 .market-wide-grouped .market-wide-group-heading {
-  min-height: 27px;
+  color: #ffffff;
+  text-transform: uppercase;
   font-weight: 700;
-  line-height: 18px;
-  padding-bottom: 9px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.market-wide-grouped thead .market-wide-group-line {
+  color: #8f9fb3;
+  font-weight: 400;
 }
 
 .market-wide-grouped .market-wide-group-line {
@@ -308,7 +319,6 @@ a:active {
   line-height: 20px;
   white-space: nowrap;
 }
-
 
 /* Compact global-setting ticker tooltip: preserve full setting names on one line. */
 .tooltip-global-setting {
