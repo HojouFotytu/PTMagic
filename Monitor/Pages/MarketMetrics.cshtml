@@ -51,35 +51,6 @@
   <div class="row">
     <div class="col-sm-12">
       <div class="card-box">
-        <h4 class="m-t-0 m-b-10 header-title"><b>History Requirements</b></h4>
-        <p class="text-muted">Required history depends on each metric, timeframe and lookback. OHLCV retention uses StoreDataMaxHours; derivatives history is derived from enabled MarketTrends separately. Sufficient capacity never guarantees that the exchange has provided the observations.</p>
-        <div class="table-responsive">
-          <table class="table table-sm">
-            <thead><tr><th>Trend / metric</th><th>Calculation basis</th><th class="text-right">Closed source candles</th><th class="text-right">Required now</th><th class="text-right">Recommended retention</th><th class="text-right">Configured</th><th>Status</th></tr></thead>
-            <tbody>
-              @foreach (var trend in trends) {
-                @foreach (var requirement in trend.HistoryRequirements ?? new List<Core.MarketAnalyzer.MarketData.MarketTrendHistoryRequirement>()) {
-                  <tr class="@(requirement.HasAllAlignmentCapacity == false ? "text-warning" : "")">
-                    <td>@trend.Name / @Model.MetricTitle(requirement.Metric)</td>
-                    <td>@requirement.Basis</td>
-                    <td class="text-right">@(requirement.SourceDataFamily == "BinanceFuturesFunding" ? "Settlement events" : requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "2 OI endpoints" : requirement.MinimumClosedSourceCandles.ToString())</td>
-                    <td class="text-right">@((requirement.SourceDataFamily == "BinanceFuturesFunding" || requirement.SourceDataFamily == "BinanceFuturesOpenInterest") ? (requirement.CalculationWindowMinutes / 60.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " h" : requirement.RequiredStoreDataMaxHours + " h")</td>
-                    <td class="text-right">@((requirement.SourceDataFamily == "BinanceFuturesFunding" || requirement.SourceDataFamily == "BinanceFuturesOpenInterest") ? "MarketTrend-derived" : requirement.RecommendedStoreDataMaxHours + " h")</td>
-                    <td class="text-right">@((requirement.SourceDataFamily == "BinanceFuturesFunding" || requirement.SourceDataFamily == "BinanceFuturesOpenInterest") ? "Automatic" : requirement.ConfiguredStoreDataMaxHours.HasValue ? requirement.ConfiguredStoreDataMaxHours.Value + " h" : "--")</td>
-                    <td>@(requirement.SourceDataFamily == "BinanceFuturesFunding" ? "Complete settlement history required" : requirement.SourceDataFamily == "BinanceFuturesOpenInterest" ? "Provider availability and exact endpoints required" : String.IsNullOrEmpty(requirement.Diagnostic) ? "Capacity sufficient" : requirement.Diagnostic)</td>
-                  </tr>
-                }
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row">
-    <div class="col-sm-12">
-      <div class="card-box">
         <h4 class="m-t-0 m-b-20 header-title"><b>Market-Wide Metrics</b></h4>
         <div class="table-responsive">
           <table class="table table-sm m-b-0">
