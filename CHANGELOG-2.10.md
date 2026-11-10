@@ -10,6 +10,14 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## SOM and Monitor changes — verified offline (November 10)
+
+**User validation at exact source `fb94373d8928b681e3ebe1f7209bd1439db42e72`:** the .NET 10.0.403 Core/PTMagic/Monitor solution built successfully twice (15.6s, then 10.3s); all **16/16 offline harnesses and 337/337 test groups PASSED twice**. New Global Settings Log metric snapshot tests, SOM enable-only API and lifecycle tests, and two-raid red ticker assertions were included. The first run reported eight nonfatal existing nullable-source warnings in test projects; the second printed none. This is deterministic development acceptance only: actual Binance/ProfitTrailer API integration, configured runtime raids, and browser-visible Monitor behavior are still independently unverified.
+
+The previous source-specific "not yet executed" statements below describe the **earlier state** when those features were published, and are **superseded for the now-verified source** by this result. Further Phase 2 work continues with distinct global account, top-trader account and top-trader position long/short ratios; no re-run of the accepted suite is required before starting that work.
+
+**Evidence:** [November 10 SOM and Monitor offline validation](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-10-som-monitor-offline-validation.md).
+
 ## Monitor — simpler metrics and complete Global Settings log (November 10)
 
 The Market Metrics page no longer renders its **History Requirements** explanation/table. Analytical history requirements, actual collection, retention limits, completeness checks, warnings, and UNAVAILABLE behavior remain unchanged.
