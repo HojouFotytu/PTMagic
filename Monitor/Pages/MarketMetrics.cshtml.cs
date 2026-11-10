@@ -15,26 +15,44 @@ namespace Monitor.Pages
     public MarketTrendAnalyticsMonitorSnapshot Analytics { get; set; } = new MarketTrendAnalyticsMonitorSnapshot();
     public string LoadError { get; set; } = "";
 
-    public IReadOnlyList<string> GlobalMetricNames { get; } = new string[]
+    // Presentation only: all 17 existing market-wide metrics, grouped for comparison.
+    // The group ordering drives BOTH the subheadings and every trend's values.
+    public sealed class GlobalMetricGroup
     {
-      MarketTrendMetrics.PriceTrend,
-      MarketTrendMetrics.MedianPriceTrend,
-      MarketTrendMetrics.MeanMedianSpread,
-      MarketTrendMetrics.Breadth,
-      MarketTrendMetrics.Dispersion,
-      MarketTrendMetrics.Concentration,
-      MarketTrendMetrics.MedianATRP,
-      MarketTrendMetrics.VolatilityBreadth,
-      MarketTrendMetrics.MedianVolumeExpansion,
-      MarketTrendMetrics.VolumeExpansionBreadth,
-      MarketTrendMetrics.StrongVolumeExpansionBreadth,
-      MarketTrendMetrics.VolumeConcentration,
-      MarketTrendMetrics.TopNVolumeShare,
-      MarketTrendMetrics.BTCVolumeShare,
-      MarketTrendMetrics.BTCETHVolumeShare,
-      MarketTrendMetrics.MeanCorrelationToBTC,
-      MarketTrendMetrics.MedianCorrelationToBTC
+      public string Heading { get; }
+      public IReadOnlyList<string> Metrics { get; }
+
+      public GlobalMetricGroup(string heading, params string[] metrics)
+      {
+        Heading = heading;
+        Metrics = metrics;
+      }
+    }
+
+    public IReadOnlyList<GlobalMetricGroup> GlobalMetricGroups { get; } = new[]
+    {
+      new GlobalMetricGroup("Price Direction",
+        MarketTrendMetrics.PriceTrend, MarketTrendMetrics.MedianPriceTrend,
+        MarketTrendMetrics.MeanMedianSpread),
+      new GlobalMetricGroup("Market Structure",
+        MarketTrendMetrics.Breadth, MarketTrendMetrics.Dispersion,
+        MarketTrendMetrics.Concentration),
+      new GlobalMetricGroup("Volatility",
+        MarketTrendMetrics.MedianATRP, MarketTrendMetrics.VolatilityBreadth),
+      new GlobalMetricGroup("Volume Expansion",
+        MarketTrendMetrics.MedianVolumeExpansion, MarketTrendMetrics.VolumeExpansionBreadth,
+        MarketTrendMetrics.StrongVolumeExpansionBreadth),
+      new GlobalMetricGroup("Volume Concentration",
+        MarketTrendMetrics.VolumeConcentration, MarketTrendMetrics.TopNVolumeShare),
+      new GlobalMetricGroup("BTC / ETH Volume Share",
+        MarketTrendMetrics.BTCVolumeShare, MarketTrendMetrics.BTCETHVolumeShare),
+      new GlobalMetricGroup("BTC Correlation",
+        MarketTrendMetrics.MeanCorrelationToBTC, MarketTrendMetrics.MedianCorrelationToBTC)
     };
+
+    // Retain the flat inventory for callers that need the original set.
+    public IReadOnlyList<string> GlobalMetricNames =>
+      GlobalMetricGroups.SelectMany(group => group.Metrics).ToArray();
 
     public IReadOnlyList<string> AssetMetricNames { get; } = new string[]
     {
@@ -173,6 +191,22 @@ namespace Monitor.Pages
         MarketTrendMetrics.MeanCorrelationToBTC => "Mean BTC Correlation",
         MarketTrendMetrics.MedianCorrelationToBTC => "Median BTC Correlation",
         _ => metric
+      };
+    }
+
+    // Compact subheadings used only in the grouped market-wide table.
+    public string GlobalMetricSubheading(string metric)
+    {
+      return metric switch
+      {
+        MarketTrendMetrics.Breadth => "Breadth",
+        MarketTrendMetrics.Concentration => "Concentration",
+        MarketTrendMetrics.MedianVolumeExpansion => "Median Expansion",
+        MarketTrendMetrics.VolumeExpansionBreadth => "Expansion Breadth",
+        MarketTrendMetrics.StrongVolumeExpansionBreadth => "Strong Expansion Breadth",
+        MarketTrendMetrics.MeanCorrelationToBTC => "Mean Correlation",
+        MarketTrendMetrics.MedianCorrelationToBTC => "Median Correlation",
+        _ => MetricTitle(metric)
       };
     }
 
