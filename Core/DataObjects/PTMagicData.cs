@@ -427,6 +427,19 @@ namespace Core.Main.DataObjects.PTMagicData
     public string UnavailableReason { get; set; } = "";
   }
 
+  // Persisted at selection time alongside the trigger audit. This is a
+  // market-wide metric snapshot, not a pointer to later Monitor analytics.
+  public class GlobalSettingMetricSummary
+  {
+    public string MarketTrendName { get; set; } = "";
+    public string Metric { get; set; } = "";
+    public double? Value { get; set; }
+    public string Unit { get; set; } = "";
+    // Membership in the selected setting's trigger set, independent of TRUE/FALSE.
+    public bool UsedInTriggerSet { get; set; } = false;
+    public string UnavailableReason { get; set; } = "";
+  }
+
   public class GlobalSettingSummary
   {
     public string SettingName { get; set; }
@@ -436,6 +449,7 @@ namespace Core.Main.DataObjects.PTMagicData
     public string TriggerConnection { get; set; } = "";
     public string SelectionBasis { get; set; } = "";
     public List<GlobalSettingTriggerSummary> TriggerDetails { get; set; } = new List<GlobalSettingTriggerSummary>();
+    public List<GlobalSettingMetricSummary> MarketMetricSnapshots { get; set; } = new List<GlobalSettingMetricSummary>();
   }
 
   public class MarketPairSummary
