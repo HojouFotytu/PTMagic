@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Monitor — centered two-row Market-Wide Metrics headers (November 10)
+
+The existing seven-group Market-Wide Metrics table now has **two header rows**: white uppercase group titles (PRICE DIRECTION, MARKET STRUCTURE, etc.) on the upper row, with the individual metric labels in muted gray on the lower row. The Trend, Timeframe and Markets headings span both header rows. **Every column is centered**, including the three identity/count columns, group titles, metric labels, and stacked metric values. Grouped metric values retain their existing positive/negative colors, tooltip details, units and UNAVAILABLE behavior. The separate Per-Market Metrics table is unchanged. A focused `ConfigurationLifecycle` source assertion checks the two header rows, centered alignment, and styling.
+
+**Status:** committed on existing `phase1/market-data-foundation`; no local .NET build or browser verification has been reported for this latest change. Prior 73/73 checks belong to earlier source and are not counted as acceptance here.
+
 ## Dashboard — retain Possible Buys count when list is disabled (November 10)
 
 When `Monitor.MaxDashboardBuyEntries=0`, the DashboardTop partial now renders a **compact full-width Possible Buys (N) heading** above the Positions panel, retaining the actual ProfitTrailer buy-log count and the existing Buy Analyzer `more` link. The buy-entry table and its empty-state content remain hidden; Positions moves into its own **full-width row**. When the buy-entry limit is positive, the original side-by-side Possible Buys and Positions cards and existing list-limit behavior remain intact. This change modifies only the dashboard Razor layout, not the analyzer or PT execution.
