@@ -2,14 +2,16 @@
 @model DashboardTopModel
 @{
   Layout = null;
-  bool showBuyList = Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries > 0;
 }
-<div class="row">
-  <div class="@(showBuyList ? "col-md px-1" : "col-12 px-1")">
+@{
+  bool sideBySide = true;
+  }
+<div class="@(sideBySide ? "row" : "col-md-12")">
+  @if (Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries>0)
+  {
+  <div class="col-md px-1">
     <div class="card-box px-2">
-      <h4 class="@(showBuyList ? "m-t-0 m-b-20 header-title" : "m-t-0 m-b-0 header-title")"><b>Possible Buys (@Model.PTData.BuyLog.Count)</b><small id="buylist-refresh-icon"><i class="fa fa-info-circle text-muted"  style="font-size x-small" data-toggle="tooltip" data-placement="top" title="Set 'Max Dashboard Buy Entries' to zero in Monitor Settings, to hide this table."></i></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
-      @if (showBuyList)
-      {
+      <h4 class="m-t-0 m-b-20 header-title"><b>Possible Buys (@Model.PTData.BuyLog.Count)</b><small id="buylist-refresh-icon"><i class="fa fa-info-circle text-muted"  style="font-size x-small" data-toggle="tooltip" data-placement="top" title="Set 'Max Dashboard Buy Entries' to zero in Monitor Settings, to hide this table."></i></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
       @if (Model.PTData.BuyLog.Count == 0) 
       {
         <p>Your Profit Trailer did not find anything worth buying so far.</p>
@@ -86,15 +88,11 @@
           <p class="text-right"><small><i class="fa fa-info-circle"></i> @Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries of @Model.PTData.BuyLog.Count items listed - <a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">View all items</a></small></p>
         }
       }
-      }
     </div>
   </div>
-  @if (!showBuyList)
-  {
-    <div class="w-100"></div>
   }
-
-  <div class="@(showBuyList ? "col-md px-1" : "col-12 px-1")">
+  
+  <div class="col-md px-1">    
     <div class="card-box px-2">
       <h4 class="m-t-0 m-b-20 header-title"><b>Positions (@Model.PTData.DCALog.Count)</b><small id="baglist-refresh-icon"></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BagAnalyzer">more</a></small></h4>
 
