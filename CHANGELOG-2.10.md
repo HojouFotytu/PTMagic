@@ -16,7 +16,7 @@ PTMagic startup global SOM is now **enable-only**: when StartupSellOnlyMode is c
 
 The first two startup RAID SUMMARY reports warn about manual SOM release. A red `PT: SOM` top Monitor ticker next to Selected Global Setting, SMS and PT health appears only on those first two raids. Its information tooltip describes the enable-only operation, manual release and the fact the indicator does **not** read the actual global SOM state. The ticker disappears after raid 2; it does not turn SOM off. SettingsGeneral help text and Status Summary metadata are updated accordingly.
 
-**Published source:** `8b6ad114ff86f3468f84f0adf2f1bbf2d69d3b24`. Updated lifecycle regression tests are authored; **no .NET build or new regression execution is yet claimed**. Prior 332/332 PASS is on the earlier source `49f2aab`. This supersedes the prior automatic-release behavior documented in D-025/D-037.
+**Published source:** `69729dba543ce46187cc4244693a5d1a53e88bbf`. Updated lifecycle regression tests and a source-level Monitor ticker assertion are authored; **no .NET build or new regression execution is yet claimed**. Prior 332/332 PASS is on the earlier source `49f2aab`. This supersedes the prior automatic-release behavior documented in D-025/D-037.
 
 ## Phase 2 — Funding/OI offline acceptance (November 10)
 
