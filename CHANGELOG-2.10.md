@@ -16,7 +16,7 @@ PTMagic startup global SOM is now **enable-only**: when StartupSellOnlyMode is c
 
 The first two startup RAID SUMMARY reports warn about manual SOM release. A red `PT: SOM` top Monitor ticker next to Selected Global Setting, SMS and PT health appears only on those first two raids. Its information tooltip describes the enable-only operation, manual release and the fact the indicator does **not** read the actual global SOM state. The ticker disappears after raid 2; it does not turn SOM off. SettingsGeneral help text and Status Summary metadata are updated accordingly.
 
-**Published source:** `69729dba543ce46187cc4244693a5d1a53e88bbf`. Updated lifecycle regression tests and a source-level Monitor ticker assertion are authored; **no .NET build or new regression execution is yet claimed**. Prior 332/332 PASS is on the earlier source `49f2aab`. This supersedes the prior automatic-release behavior documented in D-025/D-037.
+**Published source:** `891f709010c867259a6cde3df8e9c82781091b7f`. Updated lifecycle regression tests and a source-level Monitor ticker assertion are authored; **no .NET build or new regression execution is yet claimed**. Prior 332/332 PASS is on the earlier source `49f2aab`. This supersedes the prior automatic-release behavior documented in D-025/D-037.
 
 ## Phase 2 — Funding/OI offline acceptance (November 10)
 
@@ -199,26 +199,26 @@ Sources: [structural validator][validator], [property compilation and quote pars
 
 Sources: [delivery coordinator][delivery], [PT settings transport][settings-api], [freshness gate][freshness] and [orchestration][orchestration].
 
-## 5. Native startup global Sell Only Mode
+## 5. Native startup global Sell Only Mode — enable-only (D-047)
 
-`GeneralSettings.Application.StartupSellOnlyMode` defaults to **`true`**. After configuration/preset validation and before the long market-data load, PTMagic sends the native ProfitTrailer control request to every configured target:
+`GeneralSettings.Application.StartupSellOnlyMode` defaults to `true`. At live first startup, PTMagic may request native ProfitTrailer global SOM ON:
 
 ```text
 POST /api/v2/globalSellOnlyMode
 query: token=<configured API token>&enabled=true
 ```
 
-Global SOM blocks new buys and DCA buys while allowing sells. This request controls the global flag and carries no PAIRS, DCA or INDICATORS payload. PTMagic preserves configured URL context paths and uses the appropriate primary/additional target tokens. The control transport validates target/token alignment before requests, rejects redirects, login pages and explicit API failures, bounds response handling and avoids exposing token-bearing request failures.
+Global SOM stops new buys and DCA buys but allows sells. The control request does **not** upload a PAIRS, DCA or INDICATORS overlay. The configured PT Monitor base path, primary/additional target tokens, response validation and credential protections remain in effect.
 
-PTMagic records its pending control intent before sending the enable request. Enable or intent-persistence failure defers bootstrap. Release uses `enabled=false` only after a **fresh, conclusive, completed raid and acknowledged normal configuration delivery to every target**. Failed collection, indeterminate results, stale analysis or failed delivery retain the guard. Freshness is checked again before release and between targets.
+**No automatic release.** PTMagic's native SOM helper rejects `enabled=false`; successful market analysis, normal configuration acknowledgement, restarting and opting out do not authorize an automatic OFF. Only the **user manually disables SOM in ProfitTrailer** when ready to resume buying. The native setter supplies no authoritative readback or user ownership, so neither PTMagic's local guard checkpoint nor the Monitor warning proves the current remote state.
 
-Release has separate acknowledgement and retry state. A failed release preserves the normal configuration acknowledgement and leaves the owned operation pending; the next cycle reasserts the guard and retries release after fresh conclusive analysis. `_data/StartupSellOnlyModeState.json` stores metadata for restart recovery without credentials or properties.
+PTMagic saves its intent before attempting `enabled=true` and records local acknowledgement/manual-review metadata separately from normal PT configuration delivery. `_data/StartupSellOnlyModeState.json` uses schema v2; legacy schema-v1 `PendingRelease` data migrates to manual review, never to a release operation. A failed/unknown response or partial multi-target acknowledgement must not be treated as successfully established protection. `StartupSellOnlyMode=false` prevents new automatic enables but does not clear existing remote protection. TestMode sends no native SOM API request or live checkpoint changes.
 
-**TestMode behavior:** `TestMode=true` simulates guard enable, normal configuration delivery and guard release. It sends none of these PT-changing API requests and does not overwrite live acknowledgement checkpoints. A long TestMode load therefore does not itself enable remote SOM.
+**Two-raid notification:** During startup raids 1 and 2, RAID SUMMARY logs a `PT: SOM WARNING` requiring manual release in ProfitTrailer. The shared Monitor header displays a **red `PT: SOM` ticker** beside Global Setting, SMS and PT health, with an information tooltip explaining the enable-only/manual-release policy. From raid 3, the temporary ticker and warning disappear. Their disappearance neither disables SOM nor proves it is OFF. Manual-review status stays available in Status Summary.
 
-**Flag ownership:** enabling startup SOM gives PTMagic control of that switch for its startup cycle. There is no previous-value readback or restoration; a manually pre-enabled SOM can later be set false when release conditions pass. Disabling the option prevents new startup control, while a matching checkpoint still resumes an already-owned pending operation. Command acknowledgement is tracked; it is not a separate readback of the live PT flag.
+**Verification:** Latest application source `891f709010c867259a6cde3df8e9c82781091b7f` has been published but **NOT yet built/regression-tested** following these changes. Last verified `49f2aab66592b6e2922097ca5242b5a614090602` passed 332/332 offline groups before SOM revision. Real PT behavior and Monitor browser acceptance remain separate.
 
-Sources: [SOM transport][som-api], [guard checkpoint][som-state], [startup orchestration][orchestration] and [accepted endpoint/ownership contract][som-decision].
+Sources: [SOM transport][som-api], [guard checkpoint][som-state], [startup orchestration][orchestration] and [current SOM decision D-047][som-decision].
 
 ### Unified TestMode console highlighting
 
@@ -260,7 +260,7 @@ These fields belong in **`settings.general.json` → `GeneralSettings.Applicatio
 
 | Field | Default | Effective behavior |
 |---|---|---|
-| `StartupSellOnlyMode` | `true` | Native startup global SOM control, with the release and ownership rules above. Explicitly present in both supplied general-settings templates. |
+| `StartupSellOnlyMode` | `true` | Enable-only native global SOM at startup, followed by manual release in ProfitTrailer; no automatic OFF. Explicitly present in both supplied general-settings templates. |
 | `ProfitTrailerServerAPITokenXtra` | `""` | Blank reuses the primary token. Otherwise comma-separated tokens correspond to additional PT URLs in the same order. |
 | `MaxAnalysisAgeSeconds` | `300` | Permitted range 1–86400 seconds. Measures age from the raid pin at decision time. |
 | `DecisionHistoryEnabled` | `true` | Enables bounded decision records. |
@@ -268,7 +268,7 @@ These fields belong in **`settings.general.json` → `GeneralSettings.Applicatio
 | `DecisionHistoryMaxMegabytes` | `256` | Permitted range 16–102400; storage accounting uses MiB. |
 | `TestMode` | `true` | Existing setting; 2.10 extends isolation to native SOM, acknowledgement checkpoints and SMS persistence. |
 
-The supplied files are [`PTMagic/_defaults/_default_settings_PT_2.x/settings.general.json`][packaged-settings] and [`_Development/DevSettings/settings.general.json`][development-settings]. Both explicitly contain `"StartupSellOnlyMode": true` under `Application`. Existing installations obtain the default when the field is absent; a configured `false` remains an explicit opt-out subject to pending owned-operation recovery.
+The supplied files are [`PTMagic/_defaults/_default_settings_PT_2.x/settings.general.json`][packaged-settings] and [`_Development/DevSettings/settings.general.json`][development-settings]. Both explicitly contain `"StartupSellOnlyMode": true` under `Application`. Existing installations obtain the default when the field is absent; a configured `false` prevents a new enable but never releases an existing global SOM flag.
 
 ### Analyzer and metric settings
 
