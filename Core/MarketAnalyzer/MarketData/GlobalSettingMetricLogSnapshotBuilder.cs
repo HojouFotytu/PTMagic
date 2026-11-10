@@ -59,14 +59,11 @@ namespace Core.MarketAnalyzer.MarketData
           .OrderBy(name => String.Equals(name, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
           .ThenBy(name => name, StringComparer.OrdinalIgnoreCase))
         {
-          // An asset-only measurement has no single market-wide value to display
-          // in a Global Settings log. Its invalid global trigger remains visible
-          // in the separate Activation Triggers audit.
-          if (!MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
-            || scope == MarketTrendMetricScope.Asset)
-          {
-            continue;
-          }
+          // Asset-scoped metrics belong in the complete metric list too.
+          // They have no single global numerical value and must not be
+          // presented as unavailable global aggregates.
+          bool isAssetMetric = MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
+            && scope == MarketTrendMetricScope.Asset;
 
           FeatureValueSnapshot feature = null;
           if (analysis?.MarketMetrics != null)
@@ -79,9 +76,13 @@ namespace Core.MarketAnalyzer.MarketData
           bool referenced = references.Any(trigger =>
             String.Equals(trigger.MarketTrendName, trend.Name, StringComparison.OrdinalIgnoreCase)
             && String.Equals(MarketTrendMetrics.Normalize(trigger.Metric), metric, StringComparison.OrdinalIgnoreCase));
+          bool matched = references.Any(trigger =>
+            String.Equals(trigger.MarketTrendName, trend.Name, StringComparison.OrdinalIgnoreCase)
+            && String.Equals(MarketTrendMetrics.Normalize(trigger.Metric), metric, StringComparison.OrdinalIgnoreCase)
+            && String.Equals(trigger.Result, "TRUE", StringComparison.OrdinalIgnoreCase));
 
           string reason = "";
-          if (!available)
+          if (!available && !isAssetMetric)
           {
             reason = !String.IsNullOrWhiteSpace(feature?.InvalidReason)
               ? feature.InvalidReason
@@ -94,9 +95,11 @@ namespace Core.MarketAnalyzer.MarketData
           {
             MarketTrendName = trend.Name,
             Metric = metric,
-            Value = available ? feature.Value : (double?)null,
+            Value = !isAssetMetric && available ? feature.Value : (double?)null,
             Unit = MarketTrendMetricTriggerResolver.GetUnit(metric),
             UsedInTriggerSet = referenced,
+            TriggerConditionTrue = matched,
+            IsAssetMetric = isAssetMetric,
             UnavailableReason = reason
           });
         }
