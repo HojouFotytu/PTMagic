@@ -2,12 +2,20 @@
 @model DashboardTopModel
 @{
   Layout = null;
+  bool showBuyList = Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries > 0;
 }
-@{
-  bool sideBySide = true;
-  }
-<div class="@(sideBySide ? "row" : "col-md-12")">
-  @if (Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries>0)
+@if (!showBuyList)
+{
+  <div class="row">
+    <div class="col-12 px-1">
+      <div class="card-box px-2 py-2">
+        <h4 class="m-t-0 m-b-0 header-title"><b>Possible Buys (@Model.PTData.BuyLog.Count)</b><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
+      </div>
+    </div>
+  </div>
+}
+<div class="row">
+  @if (showBuyList)
   {
   <div class="col-md px-1">
     <div class="card-box px-2">
@@ -92,7 +100,7 @@
   </div>
   }
   
-  <div class="col-md px-1">    
+  <div class="@(showBuyList ? "col-md px-1" : "col-12 px-1")">
     <div class="card-box px-2">
       <h4 class="m-t-0 m-b-20 header-title"><b>Positions (@Model.PTData.DCALog.Count)</b><small id="baglist-refresh-icon"></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BagAnalyzer">more</a></small></h4>
 
