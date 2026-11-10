@@ -95,6 +95,9 @@ namespace Core.Main
     private List<SingleMarketSettingSummary> _raidPriorSms;
     private readonly Dictionary<string, DecisionMetricInput> _decisionInputs =
       new Dictionary<string, DecisionMetricInput>(StringComparer.OrdinalIgnoreCase);
+    private List<GlobalSettingTriggerSummary> _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
+    private string _selectedGlobalTriggerConnection = "";
+    private string _selectedGlobalSelectionBasis = "";
     public ConfigurationDeliveryCoordinator ConfigurationDelivery => _configurationDelivery;
     private Mutex mutex = new Mutex(false, "analyzerStateMutex");
 
@@ -1510,6 +1513,9 @@ namespace Core.Main
     private void CheckGlobalSettingsTriggers(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
     {
         _selectionIndeterminate = false;
+        _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
+        _selectedGlobalTriggerConnection = "";
+        _selectedGlobalSelectionBasis = "Default fallback: no global trigger expression matched";
         this.Log.DoLogInfo("Checking global settings triggers...");
         bool unavailableNormalizedTriggerFound = false;
         bool foundMatchingSetting = false;
@@ -1526,8 +1532,19 @@ namespace Core.Main
                   new Dictionary<string, Core.MarketAnalyzer.MarketData.TriggerTruthValue>(StringComparer.OrdinalIgnoreCase);
                 List<Core.MarketAnalyzer.MarketData.TriggerTruthValue> orderedTriggerResults =
                   new List<Core.MarketAnalyzer.MarketData.TriggerTruthValue>();
+                List<GlobalSettingTriggerSummary> settingTriggerDetails = new List<GlobalSettingTriggerSummary>();
                 foreach (Trigger trigger in globalSetting.Triggers)
                 {
+                    GlobalSettingTriggerSummary triggerDetail = new GlobalSettingTriggerSummary
+                    {
+                      Tag = trigger.Tag ?? "",
+                      MarketTrendName = trigger.MarketTrendName ?? "",
+                      Metric = Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric),
+                      MinChange = trigger.MinChange,
+                      MaxChange = trigger.MaxChange,
+                      Unit = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.GetUnit(trigger.Metric)
+                    };
+                    settingTriggerDetails.Add(triggerDetail);
                     MarketTrend marketTrend = this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Find(mt => String.Equals(mt.Name, trigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
                     if (marketTrend != null)
                     {
@@ -1545,6 +1562,8 @@ namespace Core.Main
                         {
                             double averageMarketTrendChange = resolvedMetricValue;
                             bool isTriggered = averageMarketTrendChange >= trigger.MinChange && averageMarketTrendChange < trigger.MaxChange;
+                            triggerDetail.Value = averageMarketTrendChange;
+                            triggerDetail.Result = isTriggered ? "TRUE" : "FALSE";
                             Core.MarketAnalyzer.MarketData.TriggerTruthValue value = isTriggered
                               ? Core.MarketAnalyzer.MarketData.TriggerTruthValue.True
                               : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False;
@@ -1583,6 +1602,7 @@ namespace Core.Main
                         }
                         else
                         {
+                            triggerDetail.UnavailableReason = metricError ?? "";
                             Core.MarketAnalyzer.MarketData.TriggerTruthValue unavailableValue = Core.MarketAnalyzer.MarketData.TriggerTruthValue.Unavailable;
                             orderedTriggerResults.Add(unavailableValue);
                             if (!String.IsNullOrWhiteSpace(trigger.Tag))
@@ -1597,6 +1617,7 @@ namespace Core.Main
                     }
                     else
                     {
+                        triggerDetail.UnavailableReason = "Referenced MarketTrend does not exist.";
                         this.CaptureDecisionMetric(new MarketTrend { Name = trigger.MarketTrendName }, trigger.Metric, null,
                           trigger.MarketTrendRelation, null, "Referenced MarketTrend does not exist.",
                           "GlobalSetting", globalSetting.SettingName, "#" + (orderedTriggerResults.Count + 1));
@@ -1634,6 +1655,9 @@ namespace Core.Main
                 if (settingResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True)
                 {
                     triggeredSetting = globalSetting;
+                    _selectedGlobalTriggerDetails = settingTriggerDetails;
+                    _selectedGlobalTriggerConnection = globalSetting.TriggerConnection ?? "";
+                    _selectedGlobalSelectionBasis = "Trigger expression matched";
                     foundMatchingSetting = true;
                     break;
                 }
@@ -1651,6 +1675,9 @@ namespace Core.Main
         if (!foundMatchingSetting && unavailableNormalizedTriggerFound)
         {
             _selectionIndeterminate = true;
+            _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
+            _selectedGlobalTriggerConnection = "";
+            _selectedGlobalSelectionBasis = "Retained: regime selection indeterminate (unavailable metrics)";
             GlobalSetting active = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
               .Find(setting => setting.SettingName.Equals(this.ActiveSettingName, StringComparison.OrdinalIgnoreCase))
               ?? this.ActiveSetting;
@@ -1677,6 +1704,9 @@ namespace Core.Main
         this.LastRuntimeSummary.FloodProtectedSetting = triggeredSetting;
         triggeredSetting = this.ActiveSetting;
         matchedTriggers = new List<string>();
+        _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
+        _selectedGlobalTriggerConnection = "";
+        _selectedGlobalSelectionBasis = "Retained by flood protection";
         changed = false;
         this.Log.DoLogInfo("Flood protection retained the confirmed global setting '" + this.ActiveSettingName + "'.");
       }
@@ -2800,6 +2830,9 @@ namespace Core.Main
         GlobalSettingSummary gss = new GlobalSettingSummary();
         gss.SettingName = this.LastRuntimeSummary.CurrentGlobalSetting.SettingName;
         gss.SwitchDateTime = this.LastRuntimeSummary.LastRuntime.ToUniversalTime();
+        gss.TriggerConnection = _selectedGlobalTriggerConnection;
+        gss.SelectionBasis = _selectedGlobalSelectionBasis;
+        gss.TriggerDetails = new List<GlobalSettingTriggerSummary>(_selectedGlobalTriggerDetails);
 
         if (this.LastRuntimeSummary.GlobalSettingSummary.Count > 0)
         {

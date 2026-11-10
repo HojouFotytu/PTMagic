@@ -10,6 +10,10 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Monitor — Global Settings activation triggers (November 10)
+
+The Control page Global Settings Log now preserves activation-time evaluations for every trigger on the selected GlobalSetting: tag, MarketTrend, normalized metric name, observed value and unit, configured bounds, TRUE/FALSE/UNAVAILABLE outcome, and the Boolean trigger connection. FALSE results are preserved because negation can make them part of a matching expression. The legacy Market Trends column remains available. Selection-basis labels distinguish matched regimes from DEFAULT fallback, indeterminate retention and flood protection. Existing history rows without this data are explicitly labeled; later measurements are never substituted for activation values. This changes Monitor/history reporting only, not trigger decisions or ProfitTrailer configuration. No local build or browser check is claimed for this change.
+
 ## Phase 2 — Funding-rate source and metric integration (November 10)
 
 Historical settled Binance USD-M funding has been added to the optional normalized analyzer: a typed `fundingRate`/timestamp/`rateType`/markPrice mapper, the pinned `/fapi/v1/fundingRate` history client and a bounded sequential incremental service tracking verified query-window completeness. There is **no fixed storage-hours period or assumed 8-hour settlement cadence**. The full data horizon is derived from funding-enabled MarketTrends; `FundingMaxRequestsPerRaid` (default 60, 0–400) only caps requests.

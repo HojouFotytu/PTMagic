@@ -151,7 +151,8 @@
         <th data-toggle="tooltip" data-placement="top" title="Time the setting got activated.">Activation Time</th>
         <th data-toggle="tooltip" data-placement="top" title="Name of the global setting.">Setting</th>
         <th data-toggle="tooltip" data-placement="top" title="Amount of time the setting is or was active">Active Time</th>
-        <th data-toggle="tooltip" data-placement="top" title="Market trends values from the time the setting got activated.">Market Trends</th>
+        <th data-toggle="tooltip" data-placement="top" title="Legacy market-trend values from the time the setting was selected.">Market Trends</th>
+        <th data-toggle="tooltip" data-placement="top" title="Recorded activation trigger states and metric values, including the FALSE terms relevant to negation.">Activation Triggers</th>
       </tr>
     </thead>
     <tbody>
@@ -172,6 +173,44 @@
           <td>@Core.Helper.SystemHelper.SplitCamelCase(gss.SettingName)</td>
           <td>@Core.Helper.SystemHelper.GetProperDurationTime(gss.ActiveSeconds)</td>
           <td>@Html.Raw(marketTrendsSummary)</td>
+          <td>
+            @if (!String.IsNullOrWhiteSpace(gss.SelectionBasis)) {
+              <div class="m-b-5"><small class="text-muted">@gss.SelectionBasis</small></div>
+            }
+            @if (gss.TriggerDetails != null && gss.TriggerDetails.Count > 0) {
+              if (!String.IsNullOrWhiteSpace(gss.TriggerConnection)) {
+                <div class="m-b-5"><small><b>Logic:</b> @gss.TriggerConnection</small></div>
+              }
+              foreach (Core.Main.DataObjects.PTMagicData.GlobalSettingTriggerSummary trigger in gss.TriggerDetails) {
+                string valueLabel = trigger.Value.HasValue
+                  ? trigger.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (trigger.Unit ?? "")
+                  : "UNAVAILABLE";
+                string limits = "";
+                if (trigger.MinChange != Core.Main.Constants.MinTrendChange) {
+                  limits = "≥ " + trigger.MinChange.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (trigger.Unit ?? "");
+                }
+                if (trigger.MaxChange != Core.Main.Constants.MaxTrendChange) {
+                  limits += (limits.Length > 0 ? ", " : "") + "< " + trigger.MaxChange.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (trigger.Unit ?? "");
+                }
+                string stateClass = trigger.Result == "TRUE" ? "text-success" : trigger.Result == "FALSE" ? "text-muted" : "text-warning";
+                <div class="m-b-5">
+                  <span class="@stateClass"><b>@trigger.Result</b></span>
+                  <span>@(String.IsNullOrWhiteSpace(trigger.Tag) ? "" : trigger.Tag + ": ")@Core.Helper.SystemHelper.SplitCamelCase(trigger.MarketTrendName) [@trigger.Metric]</span>
+                  <span>= @valueLabel</span>
+                  @if (limits.Length > 0) {
+                    <small class="text-muted">(@limits)</small>
+                  }
+                  @if (trigger.Result == "UNAVAILABLE" && !String.IsNullOrWhiteSpace(trigger.UnavailableReason)) {
+                    <small class="text-warning">@trigger.UnavailableReason</small>
+                  }
+                </div>
+              }
+            } else if (String.IsNullOrWhiteSpace(gss.SelectionBasis)) {
+              <small class="text-muted">Trigger details not recorded in this historical entry.</small>
+            } else {
+              <small class="text-muted">No evaluated matching triggers.</small>
+            }
+          </td>
         </tr>
       }
     </tbody>

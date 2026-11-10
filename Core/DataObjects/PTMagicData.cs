@@ -410,12 +410,30 @@ namespace Core.Main.DataObjects.PTMagicData
     public double Value { get; set; } = 0;
   }
 
+  // Evaluated at selection time, not recreated using later market data.
+  // A FALSE term may be necessary in a negated Boolean trigger connection.
+  public class GlobalSettingTriggerSummary
+  {
+    public string Tag { get; set; } = "";
+    public string MarketTrendName { get; set; } = "";
+    public string Metric { get; set; } = "";
+    public double? Value { get; set; }
+    public double MinChange { get; set; } = Constants.MinTrendChange;
+    public double MaxChange { get; set; } = Constants.MaxTrendChange;
+    public string Unit { get; set; } = "%";
+    public string Result { get; set; } = "UNAVAILABLE";
+    public string UnavailableReason { get; set; } = "";
+  }
+
   public class GlobalSettingSummary
   {
     public string SettingName { get; set; }
     public DateTime SwitchDateTime { get; set; }
     public int ActiveSeconds { get; set; } = 0;
     public Dictionary<string, MarketTrendChange> MarketTrendChanges { get; set; } = new Dictionary<string, MarketTrendChange>();
+    public string TriggerConnection { get; set; } = "";
+    public string SelectionBasis { get; set; } = "";
+    public List<GlobalSettingTriggerSummary> TriggerDetails { get; set; } = new List<GlobalSettingTriggerSummary>();
   }
 
   public class MarketPairSummary
