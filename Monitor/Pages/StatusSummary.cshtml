@@ -151,8 +151,8 @@
         <th data-toggle="tooltip" data-placement="top" title="Time the setting got activated.">Activation Time</th>
         <th data-toggle="tooltip" data-placement="top" title="Name of the global setting.">Setting</th>
         <th data-toggle="tooltip" data-placement="top" title="Amount of time the setting is or was active">Active Time</th>
-        <th data-toggle="tooltip" data-placement="top" title="Activation-time global trend metrics. White entries were referenced by the selected setting trigger set (regardless of TRUE/FALSE); gray entries were not.">Market Trends</th>
-        <th data-toggle="tooltip" data-placement="top" title="Recorded activation trigger states and metric values, including the FALSE terms relevant to negation.">Activation Triggers</th>
+        <th data-toggle="tooltip" data-placement="top" title="All configured MarketTrends at activation. White trends were referenced by the selected setting; gray trends were not.">Market Trends</th>
+        <th data-toggle="tooltip" data-placement="top" title="All configured MarketTrend metrics at activation. Gray: not referenced; white: referenced but not TRUE; green: at least one matching TRUE condition.">Market Metrics</th>
       </tr>
     </thead>
     <tbody>
@@ -174,62 +174,34 @@
           <td>@Core.Helper.SystemHelper.GetProperDurationTime(gss.ActiveSeconds)</td>
           <td>
             @if (gss.MarketMetricSnapshots != null && gss.MarketMetricSnapshots.Count > 0) {
-              foreach (Core.Main.DataObjects.PTMagicData.GlobalSettingMetricSummary metric in gss.MarketMetricSnapshots) {
-                string name = Core.Helper.SystemHelper.SplitCamelCase(metric.MarketTrendName)
-                  + " / " + Core.Helper.SystemHelper.SplitCamelCase(metric.Metric);
-                string valueText = metric.Value.HasValue
-                  ? metric.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture)
-                    + (metric.Unit ?? "")
-                  : "UNAVAILABLE";
-                <div class="@(metric.UsedInTriggerSet ? "text-white" : "text-muted")"
-                  title="@(metric.Value.HasValue ? (metric.UsedInTriggerSet ? "Referenced by activation trigger set" : "Not referenced by activation trigger set") : metric.UnavailableReason)">
-                  @name: @valueText
+              foreach (var trendGroup in gss.MarketMetricSnapshots.GroupBy(metric => metric.MarketTrendName, StringComparer.OrdinalIgnoreCase)) {
+                bool used = trendGroup.Any(metric => metric.UsedInTriggerSet);
+                <div class="@(used ? "text-white" : "text-muted")">
+                  @Core.Helper.SystemHelper.SplitCamelCase(trendGroup.Key)
                 </div>
               }
-            } else if ((gss.MarketMetricSnapshots == null || gss.MarketMetricSnapshots.Count == 0) && !String.IsNullOrEmpty(marketTrendsSummary)) {
-              <div class="text-muted" title="Legacy historical entry: full per-metric snapshot was not recorded.">@Html.Raw(marketTrendsSummary)</div>
-            } else if (gss.MarketMetricSnapshots == null) {
-              <small class="text-muted">Historical metrics not recorded.</small>
+            } else if (!String.IsNullOrEmpty(marketTrendsSummary)) {
+              <div class="text-muted" title="Legacy entry: full metrics were not recorded.">@Html.Raw(marketTrendsSummary)</div>
             } else {
-              <small class="text-muted">No global metrics available at activation.</small>
+              <small class="text-muted">Historical trends not recorded.</small>
             }
           </td>
           <td>
-            @if (!String.IsNullOrWhiteSpace(gss.SelectionBasis)) {
-              <div class="m-b-5"><small class="text-muted">@gss.SelectionBasis</small></div>
-            }
-            @if (gss.TriggerDetails != null && gss.TriggerDetails.Count > 0) {
-              if (!String.IsNullOrWhiteSpace(gss.TriggerConnection)) {
-                <div class="m-b-5"><small><b>Logic:</b> @gss.TriggerConnection</small></div>
-              }
-              foreach (Core.Main.DataObjects.PTMagicData.GlobalSettingTriggerSummary trigger in gss.TriggerDetails) {
-                string valueLabel = trigger.Value.HasValue
-                  ? trigger.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (trigger.Unit ?? "")
-                  : "UNAVAILABLE";
-                string limits = "";
-                if (trigger.MinChange != Core.Main.Constants.MinTrendChange) {
-                  limits = "≥ " + trigger.MinChange.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (trigger.Unit ?? "");
-                }
-                if (trigger.MaxChange != Core.Main.Constants.MaxTrendChange) {
-                  limits += (limits.Length > 0 ? ", " : "") + "< " + trigger.MaxChange.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (trigger.Unit ?? "");
-                }
-                string stateClass = trigger.Result == "TRUE" ? "text-success" : trigger.Result == "FALSE" ? "text-muted" : "text-warning";
-                <div class="m-b-5">
-                  <span class="@stateClass"><b>@trigger.Result</b></span>
-                  <span>@(String.IsNullOrWhiteSpace(trigger.Tag) ? "" : trigger.Tag + ": ")@Core.Helper.SystemHelper.SplitCamelCase(trigger.MarketTrendName) [@trigger.Metric]</span>
-                  <span>= @valueLabel</span>
-                  @if (limits.Length > 0) {
-                    <small class="text-muted">(@limits)</small>
-                  }
-                  @if (trigger.Result == "UNAVAILABLE" && !String.IsNullOrWhiteSpace(trigger.UnavailableReason)) {
-                    <small class="text-warning">@trigger.UnavailableReason</small>
-                  }
+            @if (gss.MarketMetricSnapshots != null && gss.MarketMetricSnapshots.Count > 0) {
+              foreach (Core.Main.DataObjects.PTMagicData.GlobalSettingMetricSummary metric in gss.MarketMetricSnapshots) {
+                string metricClass = metric.TriggerConditionTrue ? "text-success" : metric.UsedInTriggerSet ? "text-white" : "text-muted";
+                string metricName = Core.Helper.SystemHelper.SplitCamelCase(metric.MarketTrendName)
+                  + " / " + Core.Helper.SystemHelper.SplitCamelCase(metric.Metric);
+                string metricValue = metric.IsAssetMetric ? "" :
+                  metric.Value.HasValue
+                    ? ": " + metric.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (metric.Unit ?? "")
+                    : ": UNAVAILABLE";
+                <div class="@metricClass" title="@(metric.IsAssetMetric ? "Asset-level metric; no market-wide value" : metric.UnavailableReason)">
+                  @metricName@metricValue
                 </div>
               }
-            } else if (String.IsNullOrWhiteSpace(gss.SelectionBasis)) {
-              <small class="text-muted">Trigger details not recorded in this historical entry.</small>
             } else {
-              <small class="text-muted">No evaluated matching triggers.</small>
+              <small class="text-muted">Historical metrics not recorded.</small>
             }
           </td>
         </tr>
