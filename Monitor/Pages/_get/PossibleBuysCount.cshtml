@@ -1,0 +1,6 @@
+@page
+@model PossibleBuysCountModel
+@{
+  Layout = null;
+}
+@(Model.Count?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—")
