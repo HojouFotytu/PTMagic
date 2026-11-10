@@ -578,8 +578,9 @@ internal static class Program
           && countSource.Contains("return _possibleBuyCount;", StringComparison.Ordinal)
           && !countSource.Contains("GetAwaiter().GetResult()", StringComparison.Ordinal)
           && fullBuyGetter.Contains("GetDataFromProfitTrailer(\"/api/v2/data/pbl\", true)", StringComparison.Ordinal)
-          && dashboard.Contains("Model.PTData.PossibleBuyCount?.ToString()", StringComparison.Ordinal)
-          && dashboard.Contains("Model.PTData.BuyLog.Count.ToString()", StringComparison.Ordinal)
+          && !dashboard.Contains("PossibleBuyCount", StringComparison.Ordinal)
+          && dashboard.Contains("id=\"possible-buys-count\"", StringComparison.Ordinal)
+          && dashboard.Contains("Model.PTData.BuyLog.Count", StringComparison.Ordinal)
           && dashboard.Contains("Take(Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries)", StringComparison.Ordinal));
       });
       Check("dashboard zero buy-entry limit preserves count above full-width positions", () =>
@@ -592,9 +593,33 @@ internal static class Program
         Require(dashboard.Contains("MaxDashboardBuyEntries > 0", StringComparison.Ordinal)
           && dashboard.Contains("@if (!showBuyList)", StringComparison.Ordinal)
           && dashboard.Contains("@if (showBuyList)", StringComparison.Ordinal)
-          && dashboard.Contains("Possible Buys (@possibleBuysCount)", StringComparison.Ordinal)
+          && dashboard.Contains("Possible Buys (<span id=\"possible-buys-count\">", StringComparison.Ordinal)
           && dashboard.Contains("showBuyList ? \"col-md px-1\" : \"col-12 px-1\"", StringComparison.Ordinal)
           && dashboard.Contains("Positions (@Model.PTData.DCALog.Count)", StringComparison.Ordinal));
+      });
+      Check("dashboard refresh retries after timeout and PBL count is independent", () =>
+      {
+        string root = Directory.GetCurrentDirectory();
+        string indexPath = Path.Combine(root, "Monitor", "Pages", "Index.cshtml");
+        string countPath = Path.Combine(root, "Monitor", "Pages", "_get", "PossibleBuysCount.cshtml");
+        string countModelPath = Path.Combine(root, "Monitor", "Pages", "_get", "PossibleBuysCount.cshtml.cs");
+        string topPath = Path.Combine(root, "Monitor", "Pages", "_get", "DashboardTop.cshtml");
+        if (!File.Exists(indexPath) || !File.Exists(countPath) || !File.Exists(countModelPath))
+          throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
+        string index = File.ReadAllText(indexPath);
+        string count = File.ReadAllText(countPath);
+        string countModel = File.ReadAllText(countModelPath);
+        string top = File.ReadAllText(topPath);
+        Require(index.Contains("_get/PossibleBuysCount", StringComparison.Ordinal)
+          && index.Contains("timeout: 10000", StringComparison.Ordinal)
+          && index.Contains("timeout: 5000", StringComparison.Ordinal)
+          && index.Contains("dashboardTopRequestRunning = false;", StringComparison.Ordinal)
+          && index.Contains("scheduleDashboardTop();", StringComparison.Ordinal)
+          && index.Contains("lastPossibleBuysCount", StringComparison.Ordinal)
+          && count.Contains("Model.Count", StringComparison.Ordinal)
+          && countModel.Contains("PtDataObject.PossibleBuyCount", StringComparison.Ordinal)
+          && top.Contains("id=\"possible-buys-count\"", StringComparison.Ordinal)
+          && !top.Contains("Model.PTData.PossibleBuyCount", StringComparison.Ordinal));
       });
       Check("global ticker tooltip uses compact delivery wording and only conditional startup SOM", () =>
       {
