@@ -3,13 +3,17 @@
 @{
   Layout = null;
   bool showBuyList = Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries > 0;
+  // The zero-entry header must not block Positions on PT's PBL endpoint.
+  string possibleBuysCount = showBuyList
+    ? Model.PTData.BuyLog.Count.ToString()
+    : Model.PTData.PossibleBuyCount?.ToString() ?? "—";
 }
 @if (!showBuyList)
 {
   <div class="row">
     <div class="col-12 px-1">
       <div class="card-box px-2 py-2">
-        <h4 class="m-t-0 m-b-0 header-title"><b>Possible Buys (@Model.PTData.BuyLog.Count)</b><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
+        <h4 class="m-t-0 m-b-0 header-title"><b>Possible Buys (@possibleBuysCount)</b><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
       </div>
     </div>
   </div>
@@ -19,7 +23,7 @@
   {
   <div class="col-md px-1">
     <div class="card-box px-2">
-      <h4 class="m-t-0 m-b-20 header-title"><b>Possible Buys (@Model.PTData.BuyLog.Count)</b><small id="buylist-refresh-icon"><i class="fa fa-info-circle text-muted"  style="font-size x-small" data-toggle="tooltip" data-placement="top" title="Set 'Max Dashboard Buy Entries' to zero in Monitor Settings, to hide this table."></i></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
+      <h4 class="m-t-0 m-b-20 header-title"><b>Possible Buys (@possibleBuysCount)</b><small id="buylist-refresh-icon"><i class="fa fa-info-circle text-muted"  style="font-size x-small" data-toggle="tooltip" data-placement="top" title="Set 'Max Dashboard Buy Entries' to zero in Monitor Settings, to hide this table."></i></small><small class="pull-right"><a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)BuyAnalyzer">more</a></small></h4>
       @if (Model.PTData.BuyLog.Count == 0) 
       {
         <p>Your Profit Trailer did not find anything worth buying so far.</p>
