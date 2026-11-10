@@ -99,7 +99,7 @@ internal static class Program
         Require(error.Message.Contains("Default", StringComparison.Ordinal));
         Call(fixture.Bot, "RestoreRaidState"); Call(fixture.Bot, "UpdateDeliverySummary");
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
-        Require(fixture.Bot.LastRuntimeSummary.StartupSellOnlyModeActive && fixture.Bot.LastRuntimeSummary.StartupSellOnlyModePending
+        Require(fixture.Bot.LastRuntimeSummary.StartupSellOnlyModeActive && fixture.Bot.LastRuntimeSummary.StartupSellOnlyModeManualReviewRequired
           && Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
         Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedPayloadHash == "" && !File.Exists(fixture.Checkpoint)
           && File.ReadAllText(fixture.GuardCheckpoint) == guardCheckpoint);
@@ -221,11 +221,10 @@ internal static class Program
         Require(wire.Bodies.Single() == "" && !request.Query.Contains("pairsData", StringComparison.Ordinal)
           && !request.Query.Contains("configName", StringComparison.Ordinal) && !request.Query.Contains("license", StringComparison.Ordinal));
       });
-      Check("global SOM release sends enabled false through the same endpoint", () =>
+      Check("global SOM disable is rejected before any HTTP request", () =>
       {
         using var fixture = new Fixture(); var wire = new FakeHttp(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
-        Require(SomHttp(fixture, wire, false).Succeeded && wire.Calls == 1);
-        Require(Query(wire.Uris.Single())["enabled"] == "false" && wire.Bodies.Single() == "");
+        Require(!SomHttp(fixture, wire, false).Succeeded && wire.Calls == 0);
       });
       Check("global SOM uses distinct API tokens for additional PT targets", () =>
       {
@@ -295,13 +294,12 @@ internal static class Program
         var wire = new FakeHttp(index => new HttpResponseMessage(index == 1 ? HttpStatusCode.OK : HttpStatusCode.InternalServerError));
         Require(!SomHttp(fixture, wire, true).Succeeded && wire.Calls == 2);
       });
-      Check("global SOM release freshness gate stops before a later target", () =>
+      Check("global SOM disable remains blocked with multiple targets and any freshness state", () =>
       {
         using var fixture = new Fixture(); fixture.AddSecondTarget();
         var wire = new FakeHttp(_ => new HttpResponseMessage(HttpStatusCode.OK));
-        Require(!SomHttp(fixture, wire, false, () => wire.Calls == 0).Succeeded && wire.Calls == 1);
-        var blocked = new FakeHttp(_ => new HttpResponseMessage(HttpStatusCode.OK));
-        Require(!SomHttp(fixture, blocked, false, () => false).Succeeded && blocked.Calls == 0);
+        Require(!SomHttp(fixture, wire, false, () => true).Succeeded && wire.Calls == 0);
+        Require(!SomHttp(fixture, wire, false, () => false).Succeeded && wire.Calls == 0);
       });
       Check("HTTP 200 sends encoded PAIRS DCA and INDICATORS", () =>
       {
@@ -360,7 +358,8 @@ internal static class Program
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
         Require(fixture.Bot.PairsLines.SequenceEqual(pairs) && fixture.Bot.DCALines.SequenceEqual(dca) && fixture.Bot.IndicatorsLines.SequenceEqual(indicators));
         Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedPayloadHash == "" && !File.Exists(fixture.Checkpoint));
-        Require(Get<bool>(fixture.Bot, "_startupGuardActive") && Get<bool>(fixture.Bot, "_startupGuardPending"));
+        Require(Get<bool>(fixture.Bot, "_startupGuardActive") && !Get<bool>(fixture.Bot, "_startupGuardPending")
+          && Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
       Check("startup API guard does not overwrite the normal configuration acknowledgement", () =>
       {
@@ -369,28 +368,37 @@ internal static class Program
         Call(fixture.Bot, "InitializeDeliveryTracking"); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == sends && File.ReadAllText(fixture.Checkpoint) == before);
       });
-      Check("startup API orchestration waits for conclusive successful normal delivery", () =>
+      Check("startup SOM remains enabled after conclusive acknowledged normal delivery", () =>
       {
         using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
         Set(fixture.Bot, "_selectionIndeterminate", true); fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true }) && Get<bool>(fixture.Bot, "_startupGuardPending"));
-        Set(fixture.Bot, "_selectionIndeterminate", false); fixture.Next = ConfigurationDeliveryResult.Failed("fake transport failure");
+        Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Set(fixture.Bot, "_selectionIndeterminate", false);
+        fixture.Next = ConfigurationDeliveryResult.Failed("transport failure");
         fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true }) && Get<bool>(fixture.Bot, "_startupGuardPending"));
-        fixture.Next = ConfigurationDeliveryResult.Applied(); fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 2 && fixture.SomCalls.SequenceEqual(new[] { true, false }));
-        Require(!Get<bool>(fixture.Bot, "_startupGuardActive") && !Get<bool>(fixture.Bot, "_startupGuardPending") && !Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
-        Require(fixture.Events.SequenceEqual(new[] { "som:true", "configuration", "configuration", "som:false" }));
+        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        fixture.Next = ConfigurationDeliveryResult.Applied();
+        fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 2 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Require(Get<bool>(fixture.Bot, "_startupGuardActive") &&
+          !Get<bool>(fixture.Bot, "_startupGuardPending") &&
+          !Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
+        Require(fixture.Events.SequenceEqual(new[] { "som:true", "configuration", "configuration" }));
       });
-      Check("failed initial guard throws and is retried before bootstrap", () =>
+      Check("failed SOM enable never automatically retries over a user's manual choice", () =>
       {
-        using var fixture = new Fixture(); fixture.SomNext = ConfigurationDeliveryResult.Failed("fake offline target");
+        using var fixture = new Fixture(); fixture.SomNext = ConfigurationDeliveryResult.Failed("offline target");
         bool threw = false;
         try { Call(fixture.Bot, "EnsureStartupSellOnlyMode"); } catch (InvalidOperationException) { threw = true; }
-        Require(threw && Get<bool>(fixture.Bot, "_startupGuardPending") && !Get<bool>(fixture.Bot, "_startupGuardActive"));
-        Require(fixture.Sent.Count == 0 && fixture.Bot.ConfigurationDelivery.Confirmed.AppliedPayloadHash == "" && !fixture.Bot.ConfigurationDelivery.Pending);
-        fixture.SomNext = ConfigurationDeliveryResult.Applied(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        Require(fixture.SomCalls.SequenceEqual(new[] { true, true }) && fixture.Sent.Count == 0 && Get<bool>(fixture.Bot, "_startupGuardActive"));
+        Require(threw && Get<bool>(fixture.Bot, "_startupGuardPending") &&
+          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
+        Require(fixture.Sent.Count == 0 && !fixture.Bot.ConfigurationDelivery.Pending);
+        fixture.SomNext = ConfigurationDeliveryResult.Applied();
+        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 0 &&
+          fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
       });
       Check("stale raid sends no normal configuration and retains startup guard", () =>
       {
@@ -398,37 +406,32 @@ internal static class Program
         Set(fixture.Bot, "_raidAnalysisBuilt", false); SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
         Call(fixture.Bot, "SaveProfitTrailerProperties");
         Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true })
-          && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred" && Get<bool>(fixture.Bot, "_startupGuardPending"));
+          && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred" &&
+          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
-      Check("failed release preserves normal acknowledgement and retries without resending properties", () =>
+      Check("normal settings acknowledgement never triggers SOM off", () =>
       {
-        using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode"); fixture.SelectRisk();
-        fixture.SomNext = ConfigurationDeliveryResult.Failed("fake release timeout"); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true, false }));
-        Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Risk" && fixture.Bot.ActiveSettingName == "Risk"
-          && !fixture.Bot.ConfigurationDelivery.Pending && Get<bool>(fixture.Bot, "_startupGuardPending")
-          && !Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
-        fixture.BeforeRaid(); fixture.CompileClean(); fixture.SomNext = ConfigurationDeliveryResult.Applied();
+        using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        fixture.SelectRisk(); Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Risk" &&
+          !Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
+        fixture.BeforeRaid(); fixture.CompileClean();
         Call(fixture.Bot, "EnsureStartupSellOnlyMode"); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true, false, true, false }));
-        Require(!Get<bool>(fixture.Bot, "_startupGuardPending") && !Get<bool>(fixture.Bot, "_startupGuardActive"));
+        Require(fixture.SomCalls.SequenceEqual(new[] { true }) &&
+          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
-      Check("indeterminate raid cannot release a previously failed startup release", () =>
+      Check("stale and indeterminate raids never release global SOM", () =>
       {
         using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        fixture.SomNext = ConfigurationDeliveryResult.Failed("fake release timeout"); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        fixture.BeforeRaid(); fixture.CompileClean(); fixture.SomNext = ConfigurationDeliveryResult.Applied();
-        Call(fixture.Bot, "EnsureStartupSellOnlyMode"); Set(fixture.Bot, "_selectionIndeterminate", true);
+        Set(fixture.Bot, "_selectionIndeterminate", true);
         Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true, false, true }) && Get<bool>(fixture.Bot, "_startupGuardPending"));
-      });
-      Check("freshness is rechecked after configuration acknowledgement before releasing global SOM", () =>
-      {
-        using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        fixture.AfterConfigurationSend = () => SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
+        Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Set(fixture.Bot, "_selectionIndeterminate", false);
+        fixture.AfterConfigurationSend = () => SetStatic(typeof(BinanceFuturesAnalyticsRuntime),
+          "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
         Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default");
-        Require(fixture.SomCalls.SequenceEqual(new[] { true }) && Get<bool>(fixture.Bot, "_startupGuardPending"));
+        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true }));
       });
       Check("startup guard checkpoint restores pending control without storing credentials or properties", () =>
       {
@@ -438,7 +441,8 @@ internal static class Program
           if (enabled)
           {
             var state = StartupSellOnlyModeState.Load(fixture.GuardCheckpoint);
-            intentSavedBeforeEnable = state?.PendingRelease == true && !state.EnabledAcknowledged;
+            intentSavedBeforeEnable = state?.EnableIntentPending == true &&
+              state.ManualReviewRequired && !state.EnabledAcknowledged;
           }
         };
         Call(fixture.Bot, "EnsureStartupSellOnlyMode");
@@ -448,9 +452,10 @@ internal static class Program
           && !json.Contains("DEFAULT_sell_only_mode_enabled", StringComparison.Ordinal));
         Set(fixture.Bot, "_startupGuardPending", false); Set(fixture.Bot, "_startupGuardActive", false);
         Call(fixture.Bot, "InitializeDeliveryTracking");
-        Require(Get<bool>(fixture.Bot, "_startupGuardPending"));
+        Require(!Get<bool>(fixture.Bot, "_startupGuardPending") &&
+          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
         Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        Require(fixture.SomCalls.SequenceEqual(new[] { true, true }) && fixture.Sent.Count == 0);
+        Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0);
       });
       Check("startup opt-out sends no SOM request when no owned operation is pending", () =>
       {
@@ -458,12 +463,42 @@ internal static class Program
         Call(fixture.Bot, "EnsureStartupSellOnlyMode"); Call(fixture.Bot, "SaveProfitTrailerProperties");
         Require(fixture.SomCalls.Count == 0 && fixture.Sent.Count == 1 && !File.Exists(fixture.GuardCheckpoint));
       });
-      Check("startup opt-out still completes an already-owned pending guard", () =>
+      Check("startup opt-out never disables previously enabled SOM", () =>
       {
         using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        fixture.Configuration.GeneralSettings.Application.StartupSellOnlyMode = false; Call(fixture.Bot, "InitializeDeliveryTracking");
+        fixture.Configuration.GeneralSettings.Application.StartupSellOnlyMode = false;
+        Call(fixture.Bot, "InitializeDeliveryTracking");
         Call(fixture.Bot, "EnsureStartupSellOnlyMode"); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.SomCalls.SequenceEqual(new[] { true, true, false }) && fixture.Sent.Count == 1 && !Get<bool>(fixture.Bot, "_startupGuardPending"));
+        Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 1 &&
+          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
+      });
+      Check("first two startup raids display SOM notice, third clears", () =>
+      {
+        using var fixture = new Fixture();
+        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+        for (int raid = 1; raid <= 3; raid++)
+        {
+          Call(fixture.Bot, "CountStartupSomNoticeRaid");
+          Call(fixture.Bot, "UpdateDeliverySummary");
+          Require(fixture.Bot.LastRuntimeSummary.StartupSellOnlyModeNoticeVisible == (raid <= 2));
+        }
+        Require(fixture.SomCalls.SequenceEqual(new[] { true }));
+        Require(StartupSellOnlyModeState.Load(fixture.GuardCheckpoint).NoticeRaidCount == 3);
+      });
+      Check("legacy release checkpoint migration never sends SOM false", () =>
+      {
+        using var fixture = new Fixture();
+        var state = new StartupSellOnlyModeState
+        {
+          SchemaVersion = 1, DestinationHash = "",
+          PendingRelease = true, EnabledAcknowledged = true
+        };
+        File.WriteAllText(fixture.GuardCheckpoint, JsonConvert.SerializeObject(state));
+        var restored = StartupSellOnlyModeState.Load(fixture.GuardCheckpoint);
+        Require(restored.SchemaVersion == 2 && restored.ManualReviewRequired &&
+          !restored.EnableIntentPending && !restored.PendingRelease);
+        Call(fixture.Bot, "InitializeDeliveryTracking");
+        Require(fixture.SomCalls.Count == 0);
       });
       Check("TestMode startup guard and release perform no API calls or live checkpoint writes", () =>
       {
