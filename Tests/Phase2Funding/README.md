@@ -8,7 +8,7 @@ Binance `GET /fapi/v1/fundingRate` returns settled native decimal funding rates,
 
 The metric registry, normalized engine, SMS trigger/off-trigger path, metric exports, diagnostics, and Monitor History Requirements use PTMagic's existing shared pipeline.
 
-**Testing:** 17 new offline case groups authored, not yet executed. The earlier 315/315 offline pass was for open-interest source `5f51faaa`, not this funding implementation. Live exchange and configured PTMagic/Monitor acceptance remain separate.
+**Verified November 10, 2026:** All **17 funding groups PASS** at source `49f2aab66592b6e2922097ca5242b5a614090602`; the solution built successfully in **11.0s**, and **16/16 offline harnesses passed (332/332 total groups)** using .NET SDK 10.0.403. Eight nullable warnings in two existing test projects were nonfatal. The earlier OI-only 315/315 result belongs to `5f51faaa`. Live Binance and configured PTMagic/Monitor acceptance remain separate.
 
 From the PTMagic application clone, run:
 

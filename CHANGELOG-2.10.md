@@ -10,6 +10,12 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
+## Phase 2 — Funding/OI offline acceptance (November 10)
+
+**User-executed at exact application source `49f2aab66592b6e2922097ca5242b5a614090602`:** .NET 10.0.403 solution build PASS in **11.0s**; Core/PTMagic/Monitor all compiled; **16/16 offline projects and 332/332 test case groups PASS**. Funding 17/17, OI 35/35, existing regression 280/280. Eight nullable warnings in older test fixtures were nonfatal. The source includes the additional Monitor Global Settings activation-trigger capture feature, compiled successfully and covered by existing 28 Monitor roundtrip checks; its actual browser rendering remains unverified.
+
+This is **offline deterministic** acceptance only: no live Binance requests, configured PTM raids, native PT updates or Monitor browser acceptance. The original Phase 1 configured integration-test deferral remains separate from mandatory Phase 2 development tests. Detailed test evidence: [funding validation](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-10-phase2-funding-offline-validation.md).
+
 ## Monitor — Global Settings activation triggers (November 10)
 
 The Control page Global Settings Log now preserves activation-time evaluations for every trigger on the selected GlobalSetting: tag, MarketTrend, normalized metric name, observed value and unit, configured bounds, TRUE/FALSE/UNAVAILABLE outcome, and the Boolean trigger connection. FALSE results are preserved because negation can make them part of a matching expression. The legacy Market Trends column remains available. Selection-basis labels distinguish matched regimes from DEFAULT fallback, indeterminate retention and flood protection. Existing history rows without this data are explicitly labeled; later measurements are never substituted for activation values. This changes Monitor/history reporting only, not trigger decisions or ProfitTrailer configuration. No local build or browser check is claimed for this change.
@@ -20,7 +26,7 @@ Historical settled Binance USD-M funding has been added to the optional normaliz
 
 Two asset-scoped metrics, `FundingRate` (latest regular settled rate in the window) and `FundingSum` (sum of regular settled rates), use percentage points without annualization. Special funding remains separate; unknown rateType does not become a fabricated regular zero. Missing/unverified data stays unavailable. Binance Spot/US never request Futures funding. Existing metric/triggers/exports/Monitor history paths are reused. Funding rate schedule adjustment metadata and Phase 2B aggregates remain future work.
 
-Seventeen synthetic funding test groups have been authored and included in the 16-harness fail-fast runner; **no build or test run of the new funding code is claimed**. OI-only 315/315 results remain attributed to source `5f51faaa`. Implementation checkpoint: `6430bab1afa262fadd4ae31199c11084508b28c7`.
+Seventeen funding tests were authored and subsequently **passed 17/17** in the complete 16-harness run at `49f2aab` (332/332 total), with a successful .NET solution build. Earlier OI-only 315/315 results remain correctly attributed to source `5f51faaa`; the funding implementation was originally published at `6430bab1`.
 
 ## Phase 2 — Incremental open-interest collector and metric integration (November 10)
 
