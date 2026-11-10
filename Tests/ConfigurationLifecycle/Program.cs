@@ -530,6 +530,21 @@ internal static class Program
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 1 &&
           Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
+      Check("dashboard zero buy-entry limit preserves count above full-width positions", () =>
+      {
+        string root = Directory.GetCurrentDirectory();
+        string dashboardPath = Path.Combine(root, "Monitor", "Pages", "_get", "DashboardTop.cshtml");
+        if (!File.Exists(dashboardPath))
+          throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
+        string dashboard = File.ReadAllText(dashboardPath);
+        Require(dashboard.Contains("MaxDashboardBuyEntries > 0", StringComparison.Ordinal)
+          && dashboard.Contains("@if (!showBuyList)", StringComparison.Ordinal)
+          && dashboard.Contains("@if (showBuyList)", StringComparison.Ordinal)
+          && dashboard.Contains("Possible Buys (@Model.PTData.BuyLog.Count)", StringComparison.Ordinal)
+          && dashboard.Contains("Take(Model.PTMagicConfiguration.GeneralSettings.Monitor.MaxDashboardBuyEntries)", StringComparison.Ordinal)
+          && dashboard.Contains("showBuyList ? \"col-md px-1\" : \"col-12 px-1\"", StringComparison.Ordinal)
+          && dashboard.Contains("Positions (@Model.PTData.DCALog.Count)", StringComparison.Ordinal));
+      });
       Check("global ticker tooltip uses compact delivery wording and only conditional startup SOM", () =>
       {
         string root = Directory.GetCurrentDirectory();
