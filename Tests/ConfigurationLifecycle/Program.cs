@@ -530,6 +530,27 @@ internal static class Program
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 1 &&
           Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
+      Check("global ticker tooltip uses compact delivery wording and only conditional startup SOM", () =>
+      {
+        string root = Directory.GetCurrentDirectory();
+        string tickerPath = Path.Combine(root, "Monitor", "Pages", "_get", "TickerWidgets.cshtml");
+        string cssPath = Path.Combine(root, "Monitor", "wwwroot", "assets", "css", "custom.css");
+        if (!File.Exists(tickerPath) || !File.Exists(cssPath))
+          throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
+        string ticker = File.ReadAllText(tickerPath);
+        string css = File.ReadAllText(cssPath);
+        Require(ticker.Contains("Delivered to PT", StringComparison.Ordinal)
+          && ticker.Contains("Not Delivered to PT", StringComparison.Ordinal)
+          && ticker.Contains("Model.Summary.AppliedGlobalSettingName", StringComparison.Ordinal)
+          && ticker.Contains("Model.Summary.StartupSellOnlyModeActive", StringComparison.Ordinal)
+          && ticker.Contains("globalSettingInfoTooltip += \"<br />Startup SOM\"", StringComparison.Ordinal)
+          && !ticker.Contains("<b>Instance: </b>", StringComparison.Ordinal)
+          && !ticker.Contains("<b>Delivery: </b>", StringComparison.Ordinal)
+          && !ticker.Contains("<b>Startup global SOM: </b>", StringComparison.Ordinal)
+          && ticker.Contains("tooltip-global-setting", StringComparison.Ordinal)
+          && css.Contains(".tooltip-global-setting", StringComparison.Ordinal)
+          && css.Contains("white-space: nowrap", StringComparison.Ordinal));
+      });
       Check("Monitor SOM ticker is red, explains manual release and is removed on raid three", () =>
       {
         string root = Directory.GetCurrentDirectory();
