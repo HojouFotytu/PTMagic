@@ -21,6 +21,59 @@ internal static class Program
   {
     try
     {
+      Check("global setting log captures all global metrics and highlights trigger membership regardless of result", () =>
+      {
+        var trends = new[]
+        {
+          new MarketTrend { Name = "M15", TrendMinutes = 15, Metrics = "PriceTrend,Breadth,ATRP" },
+          new MarketTrend { Name = "H3", TrendMinutes = 180, Metrics = "MedianPriceTrend" }
+        };
+        var analyses = new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase)
+        {
+          ["M15"] = new MarketTrendAnalysisSnapshot
+          {
+            MarketTrendName = "M15",
+            MarketMetrics = new Dictionary<string, FeatureValueSnapshot>
+            {
+              ["PriceTrend"] = new FeatureValueSnapshot { Value = 0.5, IsValid = true },
+              ["Breadth"] = new FeatureValueSnapshot { Value = 42.0, IsValid = true }
+            }
+          },
+          ["H3"] = new MarketTrendAnalysisSnapshot
+          {
+            MarketTrendName = "H3",
+            MarketMetrics = new Dictionary<string, FeatureValueSnapshot>
+            {
+              ["MedianPriceTrend"] = new FeatureValueSnapshot { Value = -1.25, IsValid = true }
+            }
+          }
+        };
+        var selected = new[]
+        {
+          new GlobalSettingTriggerSummary { MarketTrendName = "M15", Metric = "PriceTrend", Result = "FALSE" },
+          new GlobalSettingTriggerSummary { MarketTrendName = "H3", Metric = "MedianPriceTrend", Result = "TRUE" }
+        };
+        var captured = GlobalSettingMetricLogSnapshotBuilder.Capture(trends, analyses, selected);
+        Require(captured.Count == 3);
+        Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").UsedInTriggerSet);
+        Require(captured.Single(x => x.MarketTrendName == "H3").UsedInTriggerSet);
+        Require(!captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "Breadth").UsedInTriggerSet);
+        Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").Value == 0.5);
+        Require(!captured.Any(x => x.Metric == "ATRP")); // Asset-only metrics have no global value.
+        analyses["M15"] = new MarketTrendAnalysisSnapshot { MarketTrendName = "M15" };
+        Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").Value == 0.5);
+      });
+      Check("unavailable global metric is displayed as unavailable without inventing zero", () =>
+      {
+        var trends = new[] { new MarketTrend { Name = "H24", TrendMinutes = 1440, Metrics = "PriceTrend,Breadth" } };
+        var captured = GlobalSettingMetricLogSnapshotBuilder.Capture(trends,
+          new Dictionary<string, MarketTrendAnalysisSnapshot>(),
+          new[] { new GlobalSettingTriggerSummary { MarketTrendName = "H24", Metric = "PriceTrend", Result = "UNAVAILABLE" } });
+        Require(captured.Count == 2);
+        Require(captured.All(x => x.Value == null && !String.IsNullOrWhiteSpace(x.UnavailableReason)));
+        Require(captured.Single(x => x.Metric == "PriceTrend").UsedInTriggerSet);
+        Require(!captured.Single(x => x.Metric == "Breadth").UsedInTriggerSet);
+      });
       Check("main market parsing uses the exact key and preserves normalized non-USDT quotes", () =>
       {
         using var fixture = new Fixture();
