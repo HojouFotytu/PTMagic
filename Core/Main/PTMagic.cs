@@ -2538,6 +2538,12 @@ namespace Core.Main
       }
       // A previous successful or uncertain command is never replayed on
       // restart or later raids: it could overwrite the user's manual choice.
+      if (_startupEnableAttemptedThisProcess && _startupGuardPending)
+      {
+        _startupGuardStatus = "SOM enable unconfirmed; manually inspect PT";
+        this.UpdateDeliverySummary();
+        throw new InvalidOperationException("Startup global SOM remains unconfirmed; bootstrap deferred.");
+      }
       if (_startupEnableAttemptedThisProcess)
       {
         this.UpdateDeliverySummary();
