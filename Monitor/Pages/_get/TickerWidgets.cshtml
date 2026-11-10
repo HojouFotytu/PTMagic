@@ -54,6 +54,16 @@
   <span data-toggle="tooltip" data-placement="bottom" title="Active single market settings"><b>SMS: </b></span><span class="header-title"><a href="ManageSMS"><span data-ticker-role="sms-count">@activeSingleSettings</span> <i data-ticker-role="sms-info" class="@singleSettingsInfoClass" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(singleSettingsTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-200 text-left'></div></div>"></i></a></span>
 </div>
 
+@if (Model.Summary.StartupSellOnlyModeNoticeVisible)
+{
+  <div class="card-box card-box-mini card-box-ptmagic-outlined text-danger" data-ticker-role="som-card">
+    <span class="text-danger"><b>PT: SOM</b></span>
+    <i class="fa fa-info-circle text-danger" data-ticker-role="som-info"
+      data-toggle="tooltip" data-placement="bottom"
+      title="PTMagic requested global Sell Only Mode ON during startup protection. It never turns SOM OFF automatically. New buys and DCA buys can remain blocked; sells continue. Open ProfitTrailer and manually disable SOM when ready. This indicator appears during startup raids 1 and 2 only and does not read the live PT SOM flag."></i>
+  </div>
+}
+
 <div class="card-box card-box-mini card-box-ptmagic-status-outlined @healthIconColor" data-ticker-role="health-card" data-toggle="tooltip" data-placement="bottom" title="@ptMagicHealthTooltip">
   <i data-ticker-role="health-icon" class="fa @ptMagicHealthIcon @healthIconColor"></i>
 </div>

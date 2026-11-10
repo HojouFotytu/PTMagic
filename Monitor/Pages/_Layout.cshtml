@@ -212,6 +212,21 @@
       $smsInfo.attr('class', $incomingSmsInfo.attr('class'));
       syncTickerTooltipTitle($smsInfo, $incomingSmsInfo);
 
+      // SOM startup notice is transient: insert it when incoming raid 1/2
+      // reports it, remove it when the next summary no longer reports it.
+      var $somCard = $ticker.find('[data-ticker-role="som-card"]');
+      var $incomingSomCard = $incoming.find('[data-ticker-role="som-card"]');
+      if ($incomingSomCard.length > 0 && $somCard.length === 0) {
+        $healthCard.before($incomingSomCard);
+        $ticker.find('[data-ticker-role="som-info"]').tooltip();
+      } else if ($incomingSomCard.length === 0 && $somCard.length > 0) {
+        $somCard.find('[data-toggle="tooltip"]').tooltip('dispose');
+        $somCard.remove();
+      } else if ($incomingSomCard.length > 0 && $somCard.length > 0) {
+        syncTickerTooltipTitle($somCard.find('[data-ticker-role="som-info"]'),
+          $incomingSomCard.find('[data-ticker-role="som-info"]'));
+      }
+
       $healthCard.attr('class', $incomingHealthCard.attr('class'));
       syncTickerTooltipTitle($healthCard, $incomingHealthCard);
       $ticker.find('[data-ticker-role="health-icon"]').attr('class', $incoming.find('[data-ticker-role="health-icon"]').attr('class'));
