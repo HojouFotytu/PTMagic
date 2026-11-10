@@ -77,6 +77,9 @@ namespace Core.Main
     private bool _firstSuccessfulRaidPending = true;
     private bool _startupGuardActive;
     private bool _startupGuardPending;
+    private bool _startupGuardManualReviewRequired;
+    private bool _startupEnableAttemptedThisProcess;
+    private int _startupGuardNoticeRaidCount;
     private ConfigurationDeliveryResult _startupGuardDelivery = ConfigurationDeliveryResult.Deferred("No startup global SOM command attempted.");
     private string _startupGuardStatus = "Inactive";
     private bool _selectionIndeterminate;
@@ -945,6 +948,7 @@ namespace Core.Main
               // The native global SOM command changes no preset or property.
               // Protect new and DCA buys before compilation/network bootstrap.
               this.EnsureStartupSellOnlyMode();
+              this.CountStartupSomNoticeRaid();
 
               // Load current PT files
               this.LoadCurrentProfitTrailerProperties();
@@ -1064,6 +1068,10 @@ namespace Core.Main
               this.Log.DoLogInfo("+ Configuration delivery: " + _raidDelivery.Status);
               this.Log.DoLogInfo("+ Startup global SOM: " + _startupGuardStatus
                 + (this.PTMagicConfiguration.GeneralSettings.Application.TestMode ? " (TestMode preview)" : ""));
+              if (this.ShouldShowStartupSomNotice())
+                this.Log.DoLogWarn("+ PT: SOM WARNING (startup raid " + _startupGuardNoticeRaidCount +
+                  "/2): PTMagic requested global SOM ON. PTMagic will NOT turn it OFF. " +
+                  "Review and manually disable SOM in ProfitTrailer when ready to resume buying.");
               this.Log.DoLogInfo("+ Global setting switched: " + (globalSettingSwitchedThisRaid ? "Yes" : "No") + ((this.LastRuntimeSummary.FloodProtectedSetting != null) ? " (Flood protection!)" : ""));
               this.Log.DoLogInfo("+ Global setting reapplied: " + ((_normalDecisionCommittedThisRaid && this.GlobalSettingWritten && !globalSettingSwitchedThisRaid) ? "Yes" : "No"));
               this.Log.DoLogInfo("+ Single Market Settings changed: " + (this.SingleMarketSettingChanged ? "Yes" : "No"));
@@ -2406,9 +2414,15 @@ namespace Core.Main
       {
         this.Log.DoLogWarn("Startup global SOM checkpoint could not be restored: " + exception.GetType().Name + ".");
       }
-      _startupGuardPending = guardState?.PendingRelease == true;
-      _startupGuardActive = _startupGuardPending && guardState?.EnabledAcknowledged == true;
-      _startupGuardStatus = _startupGuardPending ? "Pending restart reconciliation" : "Inactive";
+      // A legacy PendingRelease never authorizes global SOM OFF.
+      _startupGuardPending = guardState?.EnableIntentPending == true;
+      _startupGuardManualReviewRequired = guardState?.ManualReviewRequired == true ||
+        _startupGuardPending || guardState?.EnabledAcknowledged == true;
+      _startupGuardActive = guardState?.EnabledAcknowledged == true;
+      _startupGuardNoticeRaidCount = Math.Clamp(guardState?.NoticeRaidCount ?? 0, 0, 3);
+      _startupGuardStatus = _startupGuardPending
+        ? "SOM enable uncertain; inspect PT manually"
+        : _startupGuardManualReviewRequired ? "SOM left to user; review manually in PT" : "Inactive";
       _startupGuardDelivery = ConfigurationDeliveryResult.Deferred("Startup global SOM has not been checked in this process.");
       _lastEffectivePayload = null;
       GlobalSetting confirmed = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
@@ -2435,14 +2449,15 @@ namespace Core.Main
         this.PTMagicConfiguration, this.Log,
         canSend: () => (_decisionFresh = this.IsRaidFresh(out _)));
 
-    private ConfigurationDeliveryResult SendGlobalSellOnlyMode(bool enabled)
+    // Global SOM is enable-only. A plain boolean setter cannot tell a user
+    // switch from PTMagic's startup request; never issue enabled=false.
+    private ConfigurationDeliveryResult EnableStartupGlobalSellOnlyMode()
     {
       if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode)
         return new ConfigurationDeliveryResult { Succeeded = true, Simulated = true,
-          Status = enabled ? "TestMode global SOM enabled" : "TestMode global SOM released" };
-      return _globalSellOnlyModeSender != null ? _globalSellOnlyModeSender(enabled)
-        : GlobalSellOnlyModeAPI.Set(this.PTMagicConfiguration, enabled, this.Log,
-          canSend: () => enabled || (_decisionFresh = this.IsRaidFresh(out _)));
+          Status = "TestMode startup global SOM enable preview" };
+      return _globalSellOnlyModeSender != null ? _globalSellOnlyModeSender(true)
+        : GlobalSellOnlyModeAPI.Set(this.PTMagicConfiguration, true, this.Log);
     }
 
     private void SaveDeliveryCheckpoint()
@@ -2462,8 +2477,10 @@ namespace Core.Main
       if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode) return;
       new StartupSellOnlyModeState
       {
-        DestinationHash = StartupGuardDestinationFingerprint(), PendingRelease = _startupGuardPending,
-        EnabledAcknowledged = _startupGuardActive
+        DestinationHash = StartupGuardDestinationFingerprint(), EnableIntentPending = _startupGuardPending,
+        EnabledAcknowledged = _startupGuardActive,
+        ManualReviewRequired = _startupGuardManualReviewRequired,
+        NoticeRaidCount = _startupGuardNoticeRaidCount
       }.Save(StartupGuardCheckpointPath);
     }
 
@@ -2478,59 +2495,94 @@ namespace Core.Main
       }
     }
 
-    private void EnsureStartupSellOnlyMode()
+    private bool ShouldShowStartupSomNotice() =>
+      this.PTMagicConfiguration?.GeneralSettings?.Application?.TestMode == false &&
+      _startupGuardManualReviewRequired && _startupGuardNoticeRaidCount >= 1 &&
+      _startupGuardNoticeRaidCount <= 2;
+
+    private void CountStartupSomNoticeRaid()
     {
-      if (!_firstSuccessfulRaidPending && !_startupGuardPending) return;
-      if (!this.PTMagicConfiguration.GeneralSettings.Application.StartupSellOnlyMode && !_startupGuardPending) return;
-      _startupGuardPending = true;
-      _startupGuardStatus = "Enable pending";
-      // Persist the intent before the API call, covering a crash/timeout after
-      // PT accepted true but before acknowledgement was recorded locally.
-      this.SaveStartupGuardCheckpoint();
-      try { _startupGuardDelivery = this.SendGlobalSellOnlyMode(true) ?? ConfigurationDeliveryResult.Failed("Global SOM transport returned no acknowledgement."); }
-      catch (Exception exception) { _startupGuardDelivery = ConfigurationDeliveryResult.Failed("Global SOM transport exception: " + exception.GetType().Name); }
-      if (!_startupGuardDelivery.Succeeded)
+      if (this.PTMagicConfiguration.GeneralSettings.Application.TestMode ||
+          !_startupGuardManualReviewRequired) return;
+      if (_startupGuardNoticeRaidCount < 3)
       {
-        _startupGuardStatus = "Enable failed; remote state unconfirmed";
-        this.Log.DoLogError(_startupGuardDelivery.Error);
-        this.UpdateDeliverySummary();
-        throw new InvalidOperationException("Initial global SOM was not acknowledged; market-data bootstrap is deferred until the next interval.");
+        _startupGuardNoticeRaidCount++;
+        this.SaveAcknowledgedStartupGuardCheckpoint();
       }
-      _startupGuardActive = true;
-      _startupGuardStatus = _startupGuardDelivery.Simulated ? "TestMode enabled" : "Enabled";
-      this.SaveAcknowledgedStartupGuardCheckpoint();
-      this.Log.DoLogInfo(_startupGuardDelivery.Simulated
-        ? "TESTMODE: startup global SOM preview; no PT API command was sent."
-        : "Startup global SOM enable acknowledged: new buys and DCA buys blocked; sells remain allowed. Loading market data.");
       this.UpdateDeliverySummary();
     }
 
-    private void ReleaseStartupSellOnlyMode()
+    private void EnsureStartupSellOnlyMode()
     {
-      if (!_startupGuardPending) return;
-      _decisionFresh = this.IsRaidFresh(out string reason);
-      if (!_decisionFresh || _selectionIndeterminate)
+      if (!_firstSuccessfulRaidPending) return;
+      Application app = this.PTMagicConfiguration.GeneralSettings.Application;
+      if (!app.StartupSellOnlyMode)
       {
-        _startupGuardStatus = "Release deferred; waiting for a fresh conclusive raid";
-        _startupGuardDelivery = ConfigurationDeliveryResult.Deferred(reason);
+        // Turning the option off never requests an automatic SOM release.
+        this.UpdateDeliverySummary();
         return;
       }
-      try { _startupGuardDelivery = this.SendGlobalSellOnlyMode(false) ?? ConfigurationDeliveryResult.Failed("Global SOM transport returned no acknowledgement."); }
-      catch (Exception exception) { _startupGuardDelivery = ConfigurationDeliveryResult.Failed("Global SOM transport exception: " + exception.GetType().Name); }
+      if (app.TestMode)
+      {
+        _startupGuardStatus = "TestMode SOM preview (PT unchanged)";
+        _startupGuardDelivery = new ConfigurationDeliveryResult
+        {
+          Succeeded = true, Simulated = true, Status = "TestMode SOM enable preview"
+        };
+        this.Log.DoLogInfo("TESTMODE: startup global SOM preview; no PT API command was sent.");
+        this.UpdateDeliverySummary();
+        return;
+      }
+      // A previous successful or uncertain command is never replayed on
+      // restart or later raids: it could overwrite the user's manual choice.
+      if (_startupGuardManualReviewRequired || _startupEnableAttemptedThisProcess)
+      {
+        _startupGuardStatus = _startupGuardPending
+          ? "Previous SOM enable uncertain; inspect PT before buying"
+          : "Previous SOM enable left unchanged; manual PT release";
+        this.UpdateDeliverySummary();
+        return;
+      }
+
+      _startupGuardPending = true;
+      _startupGuardManualReviewRequired = true;
+      _startupGuardStatus = "SOM enable pending; manual PT review required";
+      this.SaveStartupGuardCheckpoint(); // intent before the external command
+      _startupEnableAttemptedThisProcess = true;
+      try
+      {
+        _startupGuardDelivery = this.EnableStartupGlobalSellOnlyMode() ??
+          ConfigurationDeliveryResult.Failed("Global SOM API returned no acknowledgement.");
+      }
+      catch (Exception exception)
+      {
+        _startupGuardDelivery = ConfigurationDeliveryResult.Failed(
+          "Global SOM enable exception: " + exception.GetType().Name);
+      }
       if (!_startupGuardDelivery.Succeeded)
       {
-        _startupGuardStatus = "Release failed; remote state unconfirmed";
-        this.Log.DoLogWarn(_startupGuardDelivery.Error);
-        this.Log.DoLogWarn("The normal configuration is acknowledged, but startup global SOM release is pending. It will be reasserted before the next load and retried after a fresh conclusive raid.");
-        return;
+        _startupGuardStatus = "SOM enable unconfirmed; inspect PT manually";
+        this.Log.DoLogError(_startupGuardDelivery.Error);
+        this.UpdateDeliverySummary();
+        throw new InvalidOperationException(
+          "Startup global SOM was not acknowledged. Check PT before continuing.");
       }
-      _startupGuardActive = false;
       _startupGuardPending = false;
-      _startupGuardStatus = _startupGuardDelivery.Simulated ? "TestMode released" : "Released";
+      _startupGuardActive = true;
+      _startupGuardStatus = "PTMagic requested SOM ON; manual release required in PT";
       this.SaveAcknowledgedStartupGuardCheckpoint();
-      this.Log.DoLogInfo(_startupGuardDelivery.Simulated
-        ? "TESTMODE: startup global SOM release preview; no PT API command was sent."
-        : "Startup global SOM disable acknowledged after fresh analysis and confirmed configuration delivery.");
+      this.Log.DoLogWarn("PTMagic enabled global SOM. PTMagic will NOT disable SOM automatically. " +
+        "Manually turn it off in ProfitTrailer when ready to resume new and DCA buys.");
+      this.UpdateDeliverySummary();
+    }
+
+    private void CompleteStartupSellOnlyMode()
+    {
+      // The normal configuration acknowledgement is independent of the PT
+      // global SOM flag. Leave its state entirely under the user's control.
+      if (!_startupGuardManualReviewRequired) return;
+      _startupGuardStatus = "Analysis complete; SOM unchanged; release manually in PT";
+      this.SaveAcknowledgedStartupGuardCheckpoint();
     }
 
     private bool IsRaidFresh(out string reason)
@@ -2610,7 +2662,7 @@ namespace Core.Main
         if (switched || this.GlobalSettingWritten) this.LastSettingsChange = DateTime.UtcNow;
         if (switched) this.LastRuntimeSummary.LastGlobalSettingSwitch = this.LastRuntime;
         this.SaveDeliveryCheckpoint();
-        this.ReleaseStartupSellOnlyMode();
+        this.CompleteStartupSellOnlyMode();
         this.Log.DoLogInfo(_raidDelivery.Simulated
           ? "TESTMODE: configuration evaluated; no updates sent to PT."
           : _raidDelivery.Attempted ? "Complete configuration acknowledged by all PT targets."
@@ -2643,6 +2695,8 @@ namespace Core.Main
       this.LastRuntimeSummary.ConfigurationDeliveryStatus = _raidDelivery.Status;
       this.LastRuntimeSummary.StartupSellOnlyModeActive = _startupGuardActive;
       this.LastRuntimeSummary.StartupSellOnlyModePending = _startupGuardPending;
+      this.LastRuntimeSummary.StartupSellOnlyModeManualReviewRequired = _startupGuardManualReviewRequired;
+      this.LastRuntimeSummary.StartupSellOnlyModeNoticeVisible = this.ShouldShowStartupSomNotice();
       this.LastRuntimeSummary.StartupSellOnlyModeStatus = _startupGuardStatus;
       this.LastRuntimeSummary.AnalysisAsOfUtc = _raidAnalysisBuilt ? BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc : null;
       this.LastRuntimeSummary.SourceRevision = BuildIdentity.SourceRevision;
@@ -2669,6 +2723,8 @@ namespace Core.Main
         summary.ConfigurationDeliveryStatus = _raidDelivery.Status;
         summary.StartupSellOnlyModeActive = _startupGuardActive;
         summary.StartupSellOnlyModePending = _startupGuardPending;
+        summary.StartupSellOnlyModeManualReviewRequired = _startupGuardManualReviewRequired;
+        summary.StartupSellOnlyModeNoticeVisible = this.ShouldShowStartupSomNotice();
         summary.StartupSellOnlyModeStatus = _startupGuardStatus;
         summary.AnalysisAsOfUtc = _raidAnalysisBuilt ? BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc : null;
         Directory.CreateDirectory(directory);

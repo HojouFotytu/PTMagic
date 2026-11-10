@@ -15,6 +15,9 @@ namespace Core.ProfitTrailer
     public bool EnableIntentPending { get; set; }
     public bool EnabledAcknowledged { get; set; }
     public bool ManualReviewRequired { get; set; }
+    // Count attempted startup raids since the first possible live SOM enable.
+    // The temporary user-facing warning is displayed only on raids 1 and 2.
+    public int NoticeRaidCount { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
     // Read the old release intent for safe migration; never serialize it.
     public bool PendingRelease { get; set; }
