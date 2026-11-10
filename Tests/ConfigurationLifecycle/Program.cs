@@ -54,12 +54,15 @@ internal static class Program
           new GlobalSettingTriggerSummary { MarketTrendName = "H3", Metric = "MedianPriceTrend", Result = "TRUE" }
         };
         var captured = GlobalSettingMetricLogSnapshotBuilder.Capture(trends, analyses, selected);
-        Require(captured.Count == 3);
+        Require(captured.Count == 4);
         Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").UsedInTriggerSet);
         Require(captured.Single(x => x.MarketTrendName == "H3").UsedInTriggerSet);
         Require(!captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "Breadth").UsedInTriggerSet);
         Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").Value == 0.5);
-        Require(!captured.Any(x => x.Metric == "ATRP")); // Asset-only metrics have no global value.
+        Require(captured.Single(x => x.Metric == "ATRP").IsAssetMetric);
+        Require(!captured.Single(x => x.Metric == "ATRP").Value.HasValue);
+        Require(captured.Single(x => x.MarketTrendName == "H3").TriggerConditionTrue);
+        Require(!captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").TriggerConditionTrue);
         analyses["M15"] = new MarketTrendAnalysisSnapshot { MarketTrendName = "M15" };
         Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").Value == 0.5);
       });
