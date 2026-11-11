@@ -81,9 +81,12 @@ try
       repairRequests++;
       return ServiceRows(source, symbol, from, to, limit, ct);
     }, serviceLog);
+  var repairedCache = new FuturesLongShortRatioDiskCache(serviceCacheRoot)
+    .TryRestore(FuturesLongShortRatioSource.GlobalAccount, "ETHUSDT", servicePin, serviceLog);
   Check(repairRequests == 1 && repairReport.Requests == 1 && repairReport.CompleteSeries == 1 &&
-    !File.Exists(corruptPath),
-    "corrupt ratio cache is discarded and repaired with one bounded provider request");
+    File.Exists(corruptPath) && repairedCache.Rows.Count == 12 &&
+    repairedCache.CompleteIntervals.Count > 0,
+    "corrupt ratio cache is replaced with valid observations and coverage after one bounded request");
 }
 finally
 {
