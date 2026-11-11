@@ -75,7 +75,7 @@ namespace Core.MarketAnalyzer.MarketData
     {
       if (budget < 0 || budget > MaximumRequestsPerRaid)
         throw new ArgumentOutOfRangeException(nameof(budget),
-          "LongShortRatioMaxRequestsPerRaid must be between 0 and " + MaximumRequestsPerRaid + ".");
+          "Internal long/short ratio request budget must be between 0 and " + MaximumRequestsPerRaid + ".");
     }
 
     public async Task<FuturesLongShortRatioRefreshReport> RefreshAsync(
