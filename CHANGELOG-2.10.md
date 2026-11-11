@@ -20,9 +20,15 @@ Any next refresh correction is restricted to **scheduling logic in `Monitor/Page
 
 The last confirmed local focused Monitor run reported **75/75 PASS** on a prior revision, and the last complete suite reported **337/337 PASS** at `fb94373`. Neither establishes correct refresh after the rollback. See the [November 11 investigation and current status](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-dashboard-refresh-history-and-current-state.md).
 
-## Phase 2 — Binance Futures long/short ratio metrics (November 11; verification pending)
+## Phase 2 — Binance Futures long/short ratio metrics and derivative persistence (November 11)
 
-Three opt-in asset metrics were added: `GlobalLongShortAccountRatio`, `TopTraderLongShortAccountRatio`, and `TopTraderLongShortPositionRatio`. They use distinct Binance USD-M Futures endpoints and preserve account participation separately from position-size participation. Five-minute observations are evaluated over each MarketTrend's exact TrendMinutes window; the ratio is aggregated through implied long-side share so neutral remains 1.0. Missing observations remain unavailable. Top-trader endpoints use an optional read-only Binance API key; no API secret is required. The three sources share a bounded per-raid request budget and fair incremental acquisition. No global aggregates or disk cache were added. **Local build, focused harness, live API and Monitor browser acceptance are pending.**
+Three opt-in asset metrics are implemented: `GlobalLongShortAccountRatio`, `TopTraderLongShortAccountRatio`, and `TopTraderLongShortPositionRatio`. They use distinct Binance USD-M Futures endpoints and preserve global-account participation separately from top-trader account counts and top-trader position-size participation. Five-minute observations are evaluated over each MarketTrend's exact `TrendMinutes` window. The window ratio averages implied long-side shares `r/(1+r)` and converts the mean back to a ratio; neutral remains 1.0. Missing observations remain unavailable. Top-trader endpoints use an optional read-only Binance API key; no API secret is required. No exchange-wide aggregate is added in this metric batch.
+
+The .NET 10.0.403 solution build and all **17/17 offline harnesses passed** at exact source `875b4feb71104fbc609bd07dc3120405218d325f` (17.4s). The ratio harness passed 29 groups; funding 18; raw OI 18; incremental OI 17. Eight nonfatal nullable warnings were reported in two existing test projects.
+
+**Derivative disk persistence:** funding now uses `_data/DerivativesFundingCache`; ratios use `_data/DerivativesLongShortRatioCache`, partitioned by endpoint source and symbol. Existing OI persistence remains at `_data/DerivativesOpenInterestCache`. Funding and ratio caches store versioned compressed raw observations plus verified provider-query coverage intervals, use temporary-file/atomic replacement, validate restored content and discard corrupt files fail-open. The funding cache preserves distinct Regular/Special events at the same timestamp.
+
+**Still pending:** current tests verify direct cache save/restore, ratio source isolation and corruption recovery. End-to-end restart through newly constructed data services, configured two-startup request reduction, live Binance/API-key behavior and Monitor browser rendering remain unverified. The next task is service-level restart testing; taker-flow development follows persistence acceptance.
 
 ## Monitor — enforce centered market-wide headings and gray labels (November 10)
 
@@ -161,7 +167,7 @@ The normalized store remains in memory. Persistent files described later contain
 
 ## 2. Current metric catalogue
 
-The registry exposes **26 canonical metric names** (22 original normalized metrics, 2 OI and 2 funding). “Global” means a market-wide measurement usable by a GlobalSetting; “asset” means a market-specific measurement usable in SMS activation/off-trigger evaluation. Scope is checked when a trigger requests a metric.
+The registry exposes **29 canonical metric names** (22 original normalized metrics, 2 OI, 2 funding and 3 long/short ratio metrics). “Global” means a market-wide measurement usable by a GlobalSetting; “asset” means a market-specific measurement usable in SMS activation/off-trigger evaluation. Scope is checked when a trigger requests a metric.
 
 ### Returns and relative strength
 
@@ -201,6 +207,20 @@ These calculations aggregate closed five-minute inputs into **complete UTC-align
 The share metrics do not invent a zero for an absent required BTC/ETH population member. `TopNVolumeShare` is unavailable when fewer than N eligible markets exist. `Concentration` and `VolumeConcentration` have different definitions: the former compares returns, while the latter measures volume HHI.
 
 Sources: [OHLCV aggregation and formulas][period-metrics] and [global volatility/volume calculations][ohlcv-engine].
+
+### Binance USD-M Futures derivatives
+
+| Metric | Scope | Definition and unit |
+|---|---|---|
+| `OpenInterestChange` | Asset | Change in native open-interest quantity over the configured TrendMinutes window. |
+| `OpenInterestValueChange` | Asset | Change in provider-reported open-interest value over the configured window. |
+| `FundingRate` | Asset | Latest regular settled funding rate in the window, in percentage points. |
+| `FundingSum` | Asset | Sum of regular settled funding rates in the window, in percentage points. |
+| `GlobalLongShortAccountRatio` | Asset | Binance all-trader long/short account ratio for the symbol. Neutral is 1.0. |
+| `TopTraderLongShortAccountRatio` | Asset | Top-trader account long/short ratio for the symbol. Requires the optional read-only API key. |
+| `TopTraderLongShortPositionRatio` | Asset | Top-trader position-size long/short ratio for the symbol. Distinct from account count; requires the optional read-only API key. |
+
+OI, funding and ratio metrics are opt-in, Binance USD-M Futures-only asset metrics. Funding and ratio history now use versioned disk caches as recorded above. Missing source data remains unavailable; no cache coverage record is treated as a synthetic metric value.
 
 ### BTC correlation
 
