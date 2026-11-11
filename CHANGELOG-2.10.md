@@ -20,6 +20,10 @@ Any next refresh correction is restricted to **scheduling logic in `Monitor/Page
 
 The last confirmed local focused Monitor run reported **75/75 PASS** on a prior revision, and the last complete suite reported **337/337 PASS** at `fb94373`. Neither establishes correct refresh after the rollback. See the [November 11 investigation and current status](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-dashboard-refresh-history-and-current-state.md).
 
+## Phase 2 — Binance Futures long/short ratio metrics (November 11; verification pending)
+
+Three opt-in asset metrics were added: `GlobalLongShortAccountRatio`, `TopTraderLongShortAccountRatio`, and `TopTraderLongShortPositionRatio`. They use distinct Binance USD-M Futures endpoints and preserve account participation separately from position-size participation. Five-minute observations are evaluated over each MarketTrend's exact TrendMinutes window; the ratio is aggregated through implied long-side share so neutral remains 1.0. Missing observations remain unavailable. Top-trader endpoints use an optional read-only Binance API key; no API secret is required. The three sources share a bounded per-raid request budget and fair incremental acquisition. No global aggregates or disk cache were added. **Local build, focused harness, live API and Monitor browser acceptance are pending.**
+
 ## Monitor — enforce centered market-wide headings and gray labels (November 10)
 
 The grouped Market-Wide Metrics page now includes scoped page-local styling to ensure that all column headings, stacked labels, and values render **centered**, while metric labels are **muted gray** and the seven group titles are **white uppercase**. The group titles are emitted uppercase by Razor, not dependent solely on a stylesheet transform. The page-local CSS prevents stale cached `custom.css` from overriding the intended display. Per-Market Metrics, metric values and calculations are unchanged. The focused source check was extended. **Local .NET build and browser confirmation of this latest revision are pending.**
