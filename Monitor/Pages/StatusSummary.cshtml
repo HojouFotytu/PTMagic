@@ -7,6 +7,20 @@
 @section Styles {
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/nvd3/nv.d3.min.css" rel="stylesheet" type="text/css" />
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/tablesaw/css/tablesaw.css" rel="stylesheet" type="text/css" />
+  <style>
+    .market-metric-unavailable {
+      color: #d9e2ec !important;
+      opacity: 1 !important;
+    }
+    .market-metric-evaluated {
+      color: #ffffff !important;
+      opacity: 1 !important;
+    }
+    .market-metric-true {
+      color: #5cb85c !important;
+      opacity: 1 !important;
+    }
+  </style>
 }
 
 <div class="row">
@@ -151,7 +165,7 @@
         <th data-toggle="tooltip" data-placement="top" title="Time the setting got activated.">Activation Time</th>
         <th data-toggle="tooltip" data-placement="top" title="Name of the global setting.">Setting</th>
         <th data-toggle="tooltip" data-placement="top" title="Amount of time the setting is or was active">Active Time</th>
-        <th data-toggle="tooltip" data-placement="top" title="Only metrics referenced by the activated setting. Green: at least one matching trigger evaluated TRUE; otherwise white.">Market Metrics</th>
+        <th>Market Metrics <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="<span class='market-metric-unavailable'>Unavailable</span>: The metric value could not be obtained at activation.<br /><span class='market-metric-evaluated'>Evaluated</span>: The metric was available, but its trigger condition did not evaluate TRUE.<br /><span class='market-metric-true'>True</span>: At least one matching trigger condition evaluated TRUE."></i></th>
       </tr>
     </thead>
     <tbody>
@@ -169,9 +183,9 @@
           <td>
             @if (marketMetricEntries.Count > 0) {
               foreach (StatusSummaryModel.GlobalSettingLogMetricEntry entry in marketMetricEntries) {
-                string metricClass = entry.TriggerConditionTrue ? "text-success" : "";
-                string metricStyle = entry.TriggerConditionTrue ? "" : "color: #ffffff !important; opacity: 1 !important;";
-                <div class="@metricClass" style="@metricStyle" title="@entry.Tooltip">@entry.Text</div>
+                string metricClass = entry.TriggerConditionTrue ? "market-metric-true"
+                  : entry.IsUnavailable ? "market-metric-unavailable" : "market-metric-evaluated";
+                <div class="@metricClass" title="@entry.Tooltip">@entry.Text</div>
               }
             } else {
               <small class="text-white">No market metrics recorded for this activation.</small>

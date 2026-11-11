@@ -40,6 +40,7 @@ namespace Monitor.Pages
     {
       public string Text { get; set; } = "";
       public bool TriggerConditionTrue { get; set; } = false;
+      public bool IsUnavailable { get; set; } = false;
       public string Tooltip { get; set; } = "";
     }
 
@@ -115,6 +116,7 @@ namespace Monitor.Pages
         {
           Text = metricName + metricValue,
           TriggerConditionTrue = metric.TriggerConditionTrue,
+          IsUnavailable = !metric.IsAssetMetric && (!metric.Value.HasValue || !String.IsNullOrWhiteSpace(metric.UnavailableReason)),
           Tooltip = metric.IsAssetMetric ? "Asset-level metric; no market-wide value" : metric.UnavailableReason
         });
         renderedMetricKeys.Add(MetricKey(metric.MarketTrendName, metric.Metric));
@@ -145,6 +147,7 @@ namespace Monitor.Pages
             + " / " + Core.Helper.SystemHelper.SplitCamelCase(MarketTrendMetrics.Normalize(detail.Metric)) + value,
           TriggerConditionTrue = group.Any(trigger =>
             String.Equals(trigger.Result, "TRUE", StringComparison.OrdinalIgnoreCase)),
+          IsUnavailable = !detail.Value.HasValue,
           Tooltip = detail.UnavailableReason
         });
       }
@@ -185,6 +188,7 @@ namespace Monitor.Pages
             Text = Core.Helper.SystemHelper.SplitCamelCase(trendName) + ": "
               + changePair.Value.TrendChange.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + "%",
             TriggerConditionTrue = wasTrue,
+            IsUnavailable = false,
             Tooltip = "Legacy MarketTrend value recorded at activation."
           });
         }
@@ -202,6 +206,7 @@ namespace Monitor.Pages
             {
               Text = Core.Helper.SystemHelper.SplitCamelCase(trendName) + value,
               TriggerConditionTrue = wasTrue,
+              IsUnavailable = !detail.Value.HasValue,
               Tooltip = detail.UnavailableReason
             });
           }
