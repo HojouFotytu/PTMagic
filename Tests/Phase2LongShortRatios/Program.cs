@@ -51,7 +51,7 @@ string json = """
 """;
 var mapped = FuturesLongShortRatio.MapHistory(JArray.Parse(json),
   FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT",
-  DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_300_000));
+  DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_400_000));
 Check(mapped.Count == 2, "maps two ordered 5m observations");
 Check(mapped[0].LongShortRatio == 1.5m && mapped[0].LongSideShare == 0.60m &&
   mapped[0].ShortSideShare == 0.40m, "preserves ratio and source components independently");
