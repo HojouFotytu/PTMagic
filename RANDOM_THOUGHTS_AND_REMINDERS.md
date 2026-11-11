@@ -6,6 +6,6 @@ This document is completely independent of current roadmaps, decisions, backlogs
 
 ## Notes
 
-No thoughts or reminders recorded yet.
+- 2026-11-11: Monitor: Move market metrics into the Market Analyzer page, and remove all individual markets.
 
 <!-- Add future notes as simple dated bullets, preserving the original meaning and uncertainty. Keep them here unless separately asked to turn a specific idea into work. -->
