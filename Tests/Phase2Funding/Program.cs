@@ -363,6 +363,66 @@ internal static class Program
     _passed++;
   }
 
+  private static FuturesFundingObservation At(string symbol, DateTimeOffset when) => new FuturesFundingObservation
+  {
+    Symbol = symbol, FundingTimeUtc = when, NativeRate = 0.0001m,
+    RateType = "Regular", MarkPrice = 100m
+  };
+
+  private static async Task TestPartialCoverageSurvivesRestart()
+  {
+    string root = Path.Combine(Path.GetTempPath(), "PTM_FundingPartialRestart_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+      const int trend = 120000;
+      DateTimeOffset firstLast = default;
+      var first = new FuturesFundingDataService(root);
+      var firstReport = await first.RefreshAsync(new[] { "BTCUSDT" }, trend, Pin, 1,
+        (symbol, from, to, limit, ct) =>
+        {
+          var page = Enumerable.Range(1, 1000)
+            .Select(index => At(symbol, from.AddMinutes(index))).ToArray();
+          firstLast = page.Last().FundingTimeUtc;
+          return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(page);
+        }, Log);
+      Assert(firstReport.Requests == 1 && firstReport.CompleteSymbols == 0,
+        "First funding service stores one bounded partial page.");
+
+      DateTimeOffset secondFrom = default;
+      DateTimeOffset secondLast = default;
+      var second = new FuturesFundingDataService(root);
+      var secondReport = await second.RefreshAsync(new[] { "BTCUSDT" }, trend, Pin, 1,
+        (symbol, from, to, limit, ct) =>
+        {
+          secondFrom = from;
+          var page = Enumerable.Range(0, 1000)
+            .Select(index => At(symbol, from.AddMinutes(index))).ToArray();
+          secondLast = page.Last().FundingTimeUtc;
+          return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(page);
+        }, Log);
+      Assert(secondReport.Requests == 1 && secondReport.CompleteSymbols == 0 &&
+        secondFrom == firstLast,
+        "Restarted funding service resumes at the first uncovered settlement boundary.");
+
+      DateTimeOffset thirdFrom = default;
+      var third = new FuturesFundingDataService(root);
+      var thirdReport = await third.RefreshAsync(new[] { "BTCUSDT" }, trend, Pin, 1,
+        (symbol, from, to, limit, ct) =>
+        {
+          thirdFrom = from;
+          return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+            Array.Empty<FuturesFundingObservation>());
+        }, Log);
+      Assert(thirdReport.Requests == 1 && thirdFrom == secondLast,
+        "Second partial funding page is persisted immediately and survives another restart.");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+    _passed++;
+  }
+
   private static void TestSpotUnavailable()
   {
     var result=FuturesFundingFeatureEngine.Calculate(new[]{"BTCUSDT"},
@@ -389,6 +449,7 @@ internal static class Program
     {
       TestFundingDiskCache();
       await TestServiceRestartPersistence();
+      await TestPartialCoverageSurvivesRestart();
       TestPayload();
       TestSpecialAndUnknownTypes();
       TestPayloadFailures();
