@@ -202,6 +202,34 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestUnicodeSymbolServiceAndCache()
+  {
+    const string symbol = "币安人生USDT";
+    string root = Path.Combine(Path.GetTempPath(), "PTM_FundingUnicode_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+      var service = new FuturesFundingDataService(root);
+      var report = await service.RefreshAsync(new[] { symbol }, 60, Pin, 1,
+        (requested, from, to, limit, ct) =>
+          Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+            new[] { Event(requested, 30, 0.0001m) }), Log);
+      Assert(report.Requests == 1 && report.CompleteSymbols == 1 &&
+        service.TrySnapshot(symbol, 60, Pin, out var snapshot) && snapshot.Count == 1,
+        "Funding service accepts and calculates history for a Unicode Binance symbol.");
+      var restored = new FuturesFundingDiskCache(root).TryRestore(symbol, Pin, Log);
+      Assert(restored.Rows.Count == 1 && restored.Rows[0].Symbol == symbol,
+        "Funding disk cache restores Unicode symbol identity.");
+      string url = BinanceFuturesFundingClient.HistoryUrl(symbol, Pin.AddHours(-1), Pin, 100);
+      Assert(url.Contains(Uri.EscapeDataString(symbol), StringComparison.Ordinal),
+        "Funding request URL encodes Unicode Binance symbols.");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+    _passed++;
+  }
+
   private static void TestRegistryAndDerivedHorizon()
   {
     Assert(MarketTrendMetrics.TryGetScope(MarketTrendMetrics.FundingRate, out var rate) &&
@@ -458,6 +486,7 @@ internal static class Program
       TestPayloadFailures();
       TestConflictAndPin();
       TestUrl();
+      await TestUnicodeSymbolServiceAndCache();
       TestRegistryAndDerivedHorizon();
       await TestCompleteWindowAndUnits();
       await TestSpecialExcluded();
