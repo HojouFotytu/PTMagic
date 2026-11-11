@@ -208,9 +208,6 @@ namespace Core.Main.DataObjects.PTMagicData
   public class GlobalSetting
   {
     public string SettingName { get; set; }
-    // Explicit opt-in: use this setting only when an active DEFAULT cannot be re-evaluated.
-    [DefaultValue(false)]
-    public bool IsIndeterminateFallback { get; set; } = false;
     public string TriggerConnection { get; set; } = "AND";
     public List<Trigger> Triggers { get; set; } = new List<Trigger>();
     public Dictionary<string, object> PairsProperties { get; set; } = new Dictionary<string, object>();
