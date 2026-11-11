@@ -90,6 +90,67 @@ finally
   if (Directory.Exists(serviceCacheRoot)) Directory.Delete(serviceCacheRoot, recursive: true);
 }
 
+string partialCacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioPartialRestart_" + Guid.NewGuid().ToString("N"));
+const int partialHorizon = FuturesLongShortRatio.MaximumHistoryMinutes;
+var partialRequest = new FuturesLongShortRatioSeriesRequest
+{
+  Source = FuturesLongShortRatioSource.GlobalAccount,
+  HorizonMinutes = partialHorizon,
+  Symbols = new[] { "XRPUSDT" }
+};
+FuturesLongShortRatioObservation RatioAt(string symbol, DateTimeOffset timestamp) => new()
+{
+  Symbol = symbol, Source = FuturesLongShortRatioSource.GlobalAccount,
+  TimestampUtc = timestamp, Period = TimeSpan.FromMinutes(5),
+  LongShortRatio = 1.5m, LongSideShare = .6m, ShortSideShare = .4m
+};
+try
+{
+  var firstPage = Enumerable.Range(0, 500)
+    .Select(index => RatioAt("XRPUSDT", servicePin.AddMinutes(-partialHorizon + 5 + index * 5)))
+    .ToArray();
+  DateTimeOffset firstLast = firstPage[^1].TimestampUtc;
+  var first = new FuturesLongShortRatioDataService(partialCacheRoot);
+  var firstReport = await first.RefreshAsync(new[] { partialRequest }, servicePin, 1,
+    (source, symbol, from, to, limit, ct) =>
+      Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(firstPage), serviceLog);
+  Check(firstReport.Requests == 1 && firstReport.CompleteSeries == 0,
+    "first ratio service persists one bounded partial page");
+
+  DateTimeOffset secondFrom = default;
+  var secondPage = Enumerable.Range(1, 500)
+    .Select(index => RatioAt("XRPUSDT", firstLast.AddMinutes(index * 5)))
+    .ToArray();
+  DateTimeOffset secondLast = secondPage[^1].TimestampUtc;
+  var second = new FuturesLongShortRatioDataService(partialCacheRoot);
+  var secondReport = await second.RefreshAsync(new[] { partialRequest }, servicePin, 1,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      secondFrom = from;
+      return Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(secondPage);
+    }, serviceLog);
+  Check(secondReport.Requests == 1 && secondReport.CompleteSeries == 0 &&
+    secondFrom.ToUnixTimeMilliseconds() == firstLast.ToUnixTimeMilliseconds() + 1,
+    "restarted ratio service resumes immediately after the first covered range");
+
+  DateTimeOffset thirdFrom = default;
+  var third = new FuturesLongShortRatioDataService(partialCacheRoot);
+  var thirdReport = await third.RefreshAsync(new[] { partialRequest }, servicePin, 1,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      thirdFrom = from;
+      return Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(
+        Array.Empty<FuturesLongShortRatioObservation>());
+    }, serviceLog);
+  Check(thirdReport.Requests == 1 &&
+    thirdFrom.ToUnixTimeMilliseconds() == secondLast.ToUnixTimeMilliseconds() + 1,
+    "second partial ratio page is persisted immediately and survives another restart");
+}
+finally
+{
+  if (Directory.Exists(partialCacheRoot)) Directory.Delete(partialCacheRoot, recursive: true);
+}
+
 string cacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioCache_" + Guid.NewGuid().ToString("N"));
 try
 {
