@@ -1,65 +1,59 @@
-# TESTING settings — all-metric probe
+# PTMagic 2.10 — latest-build diagnostic analyzer
 
-**Version:** 1.0.2  
-**Date / timestamp:** 2026-11-11 / 2026-11-11T17:54:36+09:00  
-**Branch:** `phase1/market-data-foundation`  
-**Status:** Isolated diagnostic configuration; not a production LONG or SHORT analyzer.
+**Source branch:** `phase1/market-data-foundation`  
+**Pinned source revision:** `5a21a482711c8026b50fce10c55b3fb76f4075c3`  
+**Test version:** 1.0.3  
+**SetDate:** 2026-11-12  
+**SetTimestamp:** 2026-11-12T00:18:03+09:00  
+**Scope:** In-place update of the existing `Tests/Settings` test configuration. Neither production trading settings nor application code is changed.
 
 ## Purpose
 
-This analyzer explicitly enables every metric in the PTMagic 2.10 metric registry inspected on `phase1/market-data-foundation` (source revision `de5ecc8c3b8ef81d1a6305beebd075185342e395`). It is intended to verify metric calculation, source availability, and per-asset trigger resolution. It is not a market-regime classifier or trading strategy.
+Verify **all 27 metrics in the currently inspected PTMagic 2.10 metric registry**, with valid global-versus-asset trigger scopes. The previous 29-metric test is outdated: `TopTraderLongShortAccountRatio` and `TopTraderLongShortPositionRatio` were removed and are **not configured here**. The old per-raid knobs `OpenInterestMaxRequestsPerRaid`, `FundingMaxRequestsPerRaid`, and `LongShortRatioMaxRequestsPerRaid` were also removed; the latest build uses adaptive acquisition under the shared Binance limiter.
 
-The registry contains **29 unique metrics**: 16 Global-only, 12 Asset-only, and `PriceTrend` with Both scope. All 29 are enabled exactly once across four MarketTrends.
+## MarketTrends and coverage
 
-## MarketTrend coverage
+| MarketTrend | Minutes | Metric count | Enabled metrics |
+| --- | ---: | ---: | --- |
+| M30 | 30 | 10 | PriceTrend, MedianPriceTrend, MeanMedianSpread, Breadth, Dispersion, RelativeStrengthMarket, RelativeStrengthBTC, ATRP, VolumeExpansion, CorrelationToBTC |
+| H1 | 60 | 14 | Concentration, MedianATRP, VolatilityBreadth, MedianVolumeExpansion, VolumeExpansionBreadth, StrongVolumeExpansionBreadth, VolumeConcentration, TopNVolumeShare, BTCVolumeShare, BTCETHVolumeShare, MeanCorrelationToBTC, MedianCorrelationToBTC, OpenInterestChange, GlobalLongShortAccountRatio |
+| H4 | 240 | 1 | OpenInterestValueChange |
+| H24 | 1440 | 2 | FundingRate, FundingSum |
 
-| MarketTrend | Horizon | Metrics enabled |
-|---|---:|---|
-| `M30` | 30 minutes | `PriceTrend`, `MedianPriceTrend`, `MeanMedianSpread`, `Breadth`, `Dispersion`, `RelativeStrengthMarket`, `RelativeStrengthBTC`, `ATRP`, `VolumeExpansion`, `CorrelationToBTC` |
-| `H1` | 1 hour | `Concentration`, `MedianATRP`, `VolatilityBreadth`, `MedianVolumeExpansion`, `VolumeExpansionBreadth`, `StrongVolumeExpansionBreadth`, `VolumeConcentration`, `TopNVolumeShare`, `BTCVolumeShare`, `BTCETHVolumeShare`, `MeanCorrelationToBTC`, `MedianCorrelationToBTC`, `OpenInterestChange`, `GlobalLongShortAccountRatio`, `TopTraderLongShortAccountRatio` |
-| `H4` | 4 hours | `OpenInterestValueChange`, `TopTraderLongShortPositionRatio` |
-| `H24` | 24 hours | `FundingRate`, `FundingSum` |
+Every metric is enabled exactly once. There are **17 globally resolvable metrics** (16 global-only and PriceTrend), each included in the broad-range `DEFAULT` GlobalSetting trigger set. The per-asset metrics are evaluated with **four diagnostic SMS**, totaling 11 triggers:
 
-This deliberately uses four horizons rather than reproducing the production timeframe ladder. The longest normalized-OHLCV lookback is H1 correlation (30 returns plus the required close endpoint); `StoreDataMaxHours=72` caps normalized-OHLCV retention at 72 hours while providing sufficient history for the configured M30/H1 OHLCV metrics, including the H1 30-return correlation lookback. The H4/H24 derivatives feeds use their own source-specific history handling and do not require increasing this OHLCV retention. H4 and H24 are reserved for derivatives feeds and do not add longer normalized-OHLCV lookbacks.
+- `TEST_SMS_01_BASELINE`: PriceTrend, RelativeStrengthMarket, RelativeStrengthBTC, ATRP, VolumeExpansion, CorrelationToBTC
+- `TEST_SMS_02_OPEN_INTEREST`: OpenInterestChange, OpenInterestValueChange
+- `TEST_SMS_03_FUNDING`: FundingRate, FundingSum
+- `TEST_SMS_04_POSITIONING`: GlobalLongShortAccountRatio
 
-## Diagnostic SMS
+SMS groups have empty PAIRS/DCA/INDICATORS property maps, no off triggers, and broad `AND` comparisons. Global DEFAULT uses `OR` so some unavailable metrics do not necessarily prevent selecting the fallback. Trigger rows are resolved individually, including unavailable values. The broad bounds are probes, not strategy thresholds.
 
-Four no-op SMS groups exercise every asset-scoped metric, plus the per-asset `PriceTrend`:
+## Population and retention
 
-| Test SMS | Metrics |
-|---|---|
-| `TEST_SMS_01_ASSET_BASELINE` | `PriceTrend`, `RelativeStrengthMarket`, `RelativeStrengthBTC`, `ATRP`, `VolumeExpansion`, `CorrelationToBTC` |
-| `TEST_SMS_02_OPEN_INTEREST` | `OpenInterestChange`, `OpenInterestValueChange` |
-| `TEST_SMS_03_FUNDING` | `FundingRate`, `FundingSum` |
-| `TEST_SMS_04_POSITIONING` | `GlobalLongShortAccountRatio`, `TopTraderLongShortAccountRatio`, `TopTraderLongShortPositionRatio` |
+- `StoreDataMaxHours=72`; `IntervalMinutes=5`.
+- `IncludedUnderlyingTypes=["COIN"]`; `UseProfitTrailerAllowedUnderlyingTypes=false`. This is an isolated testing eligibility policy, not the user's production strategy policy.
+- All four MarketTrends and all four SMS groups use the same asset allowlist: `BTC,ETH,BNB,SOL,XRP,DOGE,ADA,LINK,LTC,AVAX,BCH,TRX,DOT,ATOM,XLM,NEAR`. These are **candidate** USD-M market symbols and remain subject to live Binance eligibility and availability.
+- `MaxMarkets=0` avoids a separate global aggregation cap. `TopNVolumeCount=5`. The separate `Concentration` metric requires a **complete Top10 plus at least one remaining market**, so at least 11 allowed markets must actually be eligible and have complete H1 OHLCV data.
+- M30 and H1 OHLCV-dependent lookbacks are within 72-hour capacity (including 30-period BTC correlations), although actual source completeness remains independently required.
+- H4 OI and H24 funding use source-specific histories independent of the normalized OHLCV `StoreDataMaxHours` value.
+- The allowlist governs MarketTrend and SMS evaluation populations, but does **not guarantee** that every upstream kline fetch is limited to those same markets.
 
-Each SMS uses an `AND` connection and deliberately broad numeric bounds. A group therefore activates only when all of its requested metrics resolve to valid values. These are neutral `TEST_SMS_` identities, not production `SLnn` or `SSnn` identities.
+## Using the test
 
-**The SMS property dictionaries are empty.** They do not override PAIRS, DCA, or INDICATORS properties. Their only purpose is to exercise per-market metric triggers and expose unavailable metrics. No SMS trading behavior is introduced.
+1. Use `settings.analyzer.json` in an **isolated PTMagic 2.10 TestMode instance** at the source revision above. This folder is not automatically loaded by PTMagic.
+2. Adapt `settings.general.example.json` locally, including the existing PT license, API token, Monitor URL and **correct existing PT preset name**. Never commit secrets or placeholder substitutions. The template has `TestMode=true`.
+3. Retain an existing compatible PAIRS/DCA/INDICATORS preset trio. The tester introduces no new strategy preset and makes no production trading overrides.
+4. Review the Market Metrics page, `MarketTrendAnalytics.json`, decision history, and raid summary. Check `AssetSymbols` and `GlobalSymbols` in the actual outputs before treating any unavailable data as a calculation failure.
+5. Inspect adaptive collection progress over subsequent raids: exact OI H1/H4 endpoints, complete H24 regular funding history, and full H1 five-minute global long/short ratio history. Missing or unpolled source data remain UNAVAILABLE and must not be interpreted as zero.
+6. Observe warnings for stale/incomplete metrics and distinguish population exclusions from exchange-history gaps. This is **runtime testing**, not evidence of a trading advantage.
 
-## GlobalSettings
+The only supported positioning metric in this source revision, `GlobalLongShortAccountRatio`, uses Binance's public endpoint and **does not require an additional API key**.
 
-`GlobalSettings` contains only the required `DEFAULT` setting. It carries 16 broad-range OR triggers covering every Global-only metric; this makes the global trigger resolver evaluate those metrics without introducing another GlobalSetting. **No new GL settings are created.** The broad bounds are diagnostic pass-throughs, not regime thresholds. Asset-scoped metrics are additionally exercised through the diagnostic SMS groups.
+**Not yet verified:** local PTMagic build, actual configured raid execution, live Binance source completeness, Monitor browser output, or PT order behavior. GitHub configuration-file presence is not runtime acceptance.
 
-## Derivatives data requirements
+## Sources
 
-- **Exchange:** `BinanceFutures` is required for all seven new derivatives metrics.
-- **Open interest:** `OpenInterestChange` and `OpenInterestValueChange` are separate percentage changes, using exact historical 5-minute endpoints at the configured MarketTrend horizon. The value metric uses the provider-reported OI value; it is not inferred from quantity and price.
-- **Funding:** `FundingRate` is the latest regular settlement in the configured window; `FundingSum` is the sum of regular settlements in that window. Both are percentage points. The H24 window avoids assuming a fixed 8-hour settlement cadence. Funding history must be completely verified.
-- **Long/short ratios:** all three are per-asset ratios calculated from a complete exact 5-minute series. Binance history is limited to 30 days.
-- **API key:** `GlobalLongShortAccountRatio` does not require a key. `TopTraderLongShortAccountRatio` and `TopTraderLongShortPositionRatio` require the optional read-only `BinanceFuturesApiKey` in GeneralSettings. No API secret or signature is used. Without this key, those two metrics remain unavailable.
-
-The per-raid collection budgets are set to 60 requests for each derivatives source family. With a large eligible market universe, asset-level coverage can be partial during an individual raid; inspect source coverage and unavailable reasons rather than interpreting missing values as zero.
-
-## Safety and use
-
-- `settings.general.example.json` sets `TestMode=true`. It is a local template: replace the PT credential and default-setting placeholders locally, and add the read-only Binance key if top-trader metrics are to be tested. Never commit credentials or keys.
-- In TestMode, PT configuration delivery and remote SOM commands are simulated; the test configuration does not change the connected PT settings.
-- The only GlobalSetting is the DEFAULT fallback. The SMS entries have no property overrides. No production GL, SL, or SS settings are changed.
-- Run this as a separate PTMagic test configuration/instance. Do not replace either production LONG or SHORT analyzer configuration with this file.
-
-## Source references
-
-- [Canonical metric registry](https://github.com/HojouFotytu/PTMagic/blob/phase1/market-data-foundation/Core/MarketAnalyzer/MarketData/MarketTrendMetrics.cs)
-- [Metric history requirements](https://github.com/HojouFotytu/PTMagic/blob/phase1/market-data-foundation/Core/MarketAnalyzer/MarketData/MarketTrendHistoryRequirements.cs)
-- [PTMagic 2.10 changelog](https://github.com/HojouFotytu/PTMagic/blob/phase1/market-data-foundation/CHANGELOG-2.10.md)
+- [Pinned registry](https://github.com/HojouFotytu/PTMagic/blob/5a21a482711c8026b50fce10c55b3fb76f4075c3/Core/MarketAnalyzer/MarketData/MarketTrendMetrics.cs)
+- [Pinned history requirements](https://github.com/HojouFotytu/PTMagic/blob/5a21a482711c8026b50fce10c55b3fb76f4075c3/Core/MarketAnalyzer/MarketData/MarketTrendHistoryRequirements.cs)
+- [Adaptive acquisition test](https://github.com/HojouFotytu/PTMagic/blob/5a21a482711c8026b50fce10c55b3fb76f4075c3/Tests/Phase2AdaptiveAcquisition/README.md)
