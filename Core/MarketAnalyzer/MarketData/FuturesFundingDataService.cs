@@ -93,6 +93,7 @@ namespace Core.MarketAnalyzer.MarketData
           var active = new HashSet<string>(symbols, StringComparer.OrdinalIgnoreCase);
           foreach (string symbol in _series.Keys.Where(x => !active.Contains(x)).ToArray()) _series.Remove(symbol);
           foreach (string symbol in _served.Keys.Where(x => !active.Contains(x)).ToArray()) _served.Remove(symbol);
+          _restored.RemoveWhere(symbol => !active.Contains(symbol));
           foreach (Series state in _series.Values)
           {
             foreach (var key in state.Rows.Keys.Where(x => x.At < start).ToArray()) state.Rows.Remove(key);
