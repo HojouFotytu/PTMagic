@@ -22,6 +22,24 @@ internal static class Program
       Invalid("blank trend identity", settings => settings.MarketAnalyzer.MarketTrends[0].Name = " ", "nonempty Name");
       Invalid("unsupported Exchange timeframe", settings => settings.MarketAnalyzer.MarketTrends[0].TrendMinutes = 7, "positive multiple of 5");
       Invalid("missing default fallback", settings => settings.GlobalSettings.RemoveAll(setting => setting.SettingName == "Default"), "default fallback");
+      Valid("indeterminate fallback is immediately before final DEFAULT", settings =>
+      {
+        settings.GlobalSettings.Insert(1, new GlobalSetting { SettingName = "DirectionUnconfirmed", IsIndeterminateFallback = true });
+      });
+      Invalid("multiple indeterminate fallbacks", settings =>
+      {
+        settings.GlobalSettings[0].IsIndeterminateFallback = true;
+        settings.GlobalSettings.Insert(1, new GlobalSetting { SettingName = "DirectionUnconfirmed", IsIndeterminateFallback = true });
+      }, "At most one GlobalSetting");
+      Invalid("indeterminate fallback must be the final specialist", settings =>
+      {
+        settings.GlobalSettings[0].IsIndeterminateFallback = true;
+        settings.GlobalSettings.Insert(1, new GlobalSetting { SettingName = "Middle" });
+      }, "immediately before DEFAULT");
+      Invalid("DEFAULT cannot be marked as indeterminate fallback", settings =>
+      {
+        settings.GlobalSettings[1].IsIndeterminateFallback = true;
+      }, "cannot be set on DEFAULT");
       Invalid("duplicate global setting identity", settings => settings.GlobalSettings.Add(new GlobalSetting { SettingName = "riskoff" }), "Duplicate GlobalSetting");
       Invalid("duplicate SMS identity", settings => settings.SingleMarketSettings.Add(new SingleMarketSetting { SettingName = "protection" }), "Duplicate SingleMarketSetting");
       Invalid("blank setting identity", settings => settings.SingleMarketSettings[0].SettingName = "", "nonempty SettingName");
