@@ -84,7 +84,8 @@
               <div class="form-group row">
                 <label class="col-md-4 col-form-label">Binance Futures API Key <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Optional read-only API key for top-trader long/short ratio history. No API secret or signed trading permission is required. Leave blank to disable top-trader metrics."></i></label>
                 <div class="col-md-8">
-                  <input type="password" class="form-control" name="Application_BinanceFuturesApiKey" value="@Model.PTMagicConfiguration.GeneralSettings.Application.BinanceFuturesApiKey" autocomplete="off">
+                  <input type="password" class="form-control" name="Application_BinanceFuturesApiKey" value="" autocomplete="new-password" placeholder="@(String.IsNullOrWhiteSpace(Model.PTMagicConfiguration.GeneralSettings.Application.BinanceFuturesApiKey) ? "Not configured" : "Key configured — enter a new key to replace")">
+                  <small class="text-muted">Leave blank to keep the current key. <label><input type="checkbox" name="Application_BinanceFuturesApiKeyClear"> Clear saved key</label></small>
                 </div>
               </div>
 
