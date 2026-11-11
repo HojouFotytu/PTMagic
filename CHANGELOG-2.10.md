@@ -1,6 +1,6 @@
 # PTMagic 2.10 — Cumulative release changes
 
-**Updated:** November 10, 2026
+**Updated:** November 11, 2026
 
 **Application version:** 2.10.0, in development
 
@@ -10,57 +10,23 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The implementation references below identify the inspected `fac346c` source baseline. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
-## Dashboard — full rollback to pre-change behavior (November 11)
+## Dashboard — restored pre-experiment source and unresolved refresh investigation (November 11)
 
-**Owner-directed rollback:** Following failed runtime refresh and coloring attempts, the DashboardTop view and ProfitTrailerData class have been restored **byte-for-byte** to their state at the earlier source baseline `438acbe8e40241cd190e45385dffbee5637b3eb8`. The original Monitor `Index.cshtml` refresh script had already been restored and its blob matches that same baseline. The experimental separate PBL count endpoint and background count cache had already been deleted. The last dashboard-specific ConfigurationLifecycle source test was removed. **All experimental zero-limit Possible Buys card/count/full-width layout changes are withdrawn**: the original behavior at `MaxDashboardBuyEntries=0` again hides the Possible Buys card, and the original BuyLog getter skips PT PBL retrieval in that mode. Non-dashboard Monitor changes are not reverted.
+The entire November 10–11 Possible Buys zero-limit count/card experiment, separate PBL-count endpoint, async-cache variation, and replacement AJAX refresh implementation have been withdrawn by owner direction. The active `Monitor/Pages/Index.cshtml`, `Monitor/Pages/_get/DashboardTop.cshtml`, and `Core/DataObjects/ProfitTrailerData.cs` files are byte-identical to the pre-experiment `438acbe8e40241cd190e45385dffbee5637b3eb8` file blobs. **Current zero-limit behavior hides the Possible Buys card** and skips fresh PBL reads in that mode. The original `.load()` refresh and profit-color initialization are retained.
 
-**Validation:** GitHub confirms matching original file blobs for `DashboardTop.cshtml`, `ProfitTrailerData.cs`, and `Index.cshtml`. No new local solution build or live Monitor browser validation has been supplied after the rollback. The user has also requested that further changes not be treated as production-correct solely because source tests pass.
+**Remaining defect (not resolved):** The owner reports stale PBL and Positions data even after full rollback. November 2 changes `ec19a5e` and `26ce2d8` made DashboardTop polling callback-dependent, added a hidden-tab guard, and placed tooltip and color updates before the request-running flag is cleared. These are possible source-level failure paths, **not a runtime-confirmed cause**. Ticker tooltip preservation resides separately in `_Layout.cshtml`/`TickerWidgets.cshtml`. The next proposed correction must be described to the owner **before any implementation**, must preserve the existing `$("#dashboardTop").load(...)` method unless explicitly approved otherwise, and must not reintroduce the experimental count endpoint/cache.
 
-## Dashboard — reverted PBL refresh experiment; simple card-only hide (November 11)
-
-**Owner-directed replacement supersedes the two earlier asynchronous-dashboard fixes below.** The experimental dedicated `PossibleBuysCount` Razor endpoint, async-count cache, and custom `Index.cshtml` AJAX/timeout/retry replacement were **removed/reverted**. Original `DashboardTop` jQuery `.load()` refresh, tooltips, and profit-value autocoloring are restored.
-
-When `MaxDashboardBuyEntries=0`, **the existing Possible Buys card/container and its title `Possible Buys (N)` remain rendered** and show `PTData.BuyLog.Count`; only the buy-list table and its empty/list-content section are omitted. Positions moves to the next flex line and fills the width. When positive, the normal two-card side-by-side display and PBL list remain. The `BuyLog` accessor retains its regular refresh path without the old zero-limit short-circuit so the header can count actual PT PBL entries; this means a slow PT PBL API could still delay a synchronous DashboardTop response. No separate count API, background task, or new caching strategy is introduced. One focused source regression check replaces the prior experimental count/refresh checks. **Local build/browser verification pending.**
-
-## Dashboard — independent PBL endpoint and resilient top refresh (November 11)
-
-The first nonblocking count attempt did not resolve the owner's report that DashboardTop stopped refreshing. This follow-up separates **all zero-entry PBL count reads** into a dedicated authenticated `_get/PossibleBuysCount` partial and removes the count accessor entirely from `DashboardTop.cshtml`. The main DashboardTop AJAX request has a **10-second timeout**, error handling and an unconditional completion path that clears the in-flight flag and schedules the next refresh even after an HTTP error. The independent count request has a **5-second client timeout** and uses the preexisting bounded asynchronous PBL count cache. The browser preserves the last displayed count across top-panel re-renders; missing count data is shown as `—` rather than fabricated zero.
-
-**Unchanged:** The compact Possible Buys count line stays above a full-width Positions card when `MaxDashboardBuyEntries=0`, and the normal positive-limit display remains side-by-side with its full PBL table. The DashboardBottom refresh remains separate. Source-level `ConfigurationLifecycle` checks were updated to verify the independent endpoint, updated fragment, bounded AJAX calls, and retry scheduler. No PT configuration, trades, SOM, or market-analysis decisions changed. **Local .NET build, focused test execution and actual browser refresh behavior on this new source remain unverified.**
-
-## Dashboard — restore nonblocking top-panel refresh with PBL count (November 11)
-
-The previous change that removed the `MaxDashboardBuyEntries=0` PBL short-circuit caused the whole DashboardTop HTML response to wait for the native ProfitTrailer `/api/v2/data/pbl` request. A slow or failing PBL endpoint could therefore hold up the **Positions** widget and make the dashboard appear not to refresh.
-
-**Correction:** for `MaxDashboardBuyEntries=0`, the compact Possible Buys heading reads an independently cached, asynchronously refreshed **full PT PBL count**. It does not synchronously wait for PT. The count refresh uses the existing BuyAnalyzer refresh interval, one in-flight request and an eight-second timeout; a missing/failed count displays `—` rather than a fabricated zero. A positive dashboard buy-row limit continues to use the normal complete PBL list. The separate full Buy Analyzer list remains unchanged. The normal DashboardTop 5-second AJAX scheduling and full-width Positions layout are unchanged. Added source assertions for the nonblocking count and retained layout.
-
-**Scope:** Core PBL count accessor, DashboardTop markup, focused ConfigurationLifecycle source checks. The asynchronous count may generate an independent PT PBL request while the hidden list is off. No changes to PT configuration, trades, SOM, or market analysis. **Local build and new focused checks remain pending.**
-
-## Monitor formatting — focused validation PASS (November 11)
-
-The user successfully built the .NET solution (Core, PTMagic, Monitor) in **15.7 seconds** and ran **75/75 ConfigurationLifecycle checks PASS**, including the latest Market-Wide Metrics page-local styling assertions, dashboard PBL count, ticker and SOM regression checks. No warnings or errors were reported. The local output did not print a source SHA; the repository branch head inspected afterward was `44dd757e29808eaa8662fbdf8a63835efb02378a`, not an independently locally stamped revision. This supersedes the prior "local build pending" status for the latest Monitor styling correction. Browser appearance remains unverified. [Validation record](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-monitor-market-wide-formatting-validation.md).
+The last confirmed local focused Monitor run reported **75/75 PASS** on a prior revision, and the last complete suite reported **337/337 PASS** at `fb94373`. Neither establishes correct refresh after the rollback. See the [November 11 investigation and current status](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-dashboard-refresh-history-and-current-state.md).
 
 ## Monitor — enforce centered market-wide headings and gray labels (November 10)
 
 The grouped Market-Wide Metrics page now includes scoped page-local styling to ensure that all column headings, stacked labels, and values render **centered**, while metric labels are **muted gray** and the seven group titles are **white uppercase**. The group titles are emitted uppercase by Razor, not dependent solely on a stylesheet transform. The page-local CSS prevents stale cached `custom.css` from overriding the intended display. Per-Market Metrics, metric values and calculations are unchanged. The focused source check was extended. **Local .NET build and browser confirmation of this latest revision are pending.**
-
-## Dashboard — PT-reported Possible Buys count independent of list limit (November 10)
-
-The `ProfitTrailerData.BuyLog` accessor previously returned a cached/empty list without contacting ProfitTrailer whenever `MaxDashboardBuyEntries=0`. That defeated the compact `Possible Buys (N)` heading: it could show zero even when PT reported available PBL entries. The zero-limit early return is now removed. The existing refresh-cache and native `/api/v2/data/pbl` retrieval populate the **full PT PBL**, independent of how many dashboard rows are displayed. `MaxDashboardBuyEntries` now controls only dashboard row visibility/Take count, not acquisition or count. The compact heading remains above full-width Positions at zero, and nonzero limits retain the original side-by-side layout.
-
-**Source:** `Core/DataObjects/ProfitTrailerData.cs` and one focused source regression in `Tests/ConfigurationLifecycle/Program.cs`. This fetches PT PBL even when its list is hidden, so there may be the ordinary cache-paced API traffic that was previously suppressed at zero. No analyzer, PT configuration, trade, SOM, or exchange-data processing changes. **New source build and focused test results pending**; previous test passes predate this correction.
 
 ## Monitor — centered two-row Market-Wide Metrics headers (November 10)
 
 The existing seven-group Market-Wide Metrics table now has **two header rows**: white uppercase group titles (PRICE DIRECTION, MARKET STRUCTURE, etc.) on the upper row, with the individual metric labels in muted gray on the lower row. The Trend, Timeframe and Markets headings span both header rows. **Every column is centered**, including the three identity/count columns, group titles, metric labels, and stacked metric values. Grouped metric values retain their existing positive/negative colors, tooltip details, units and UNAVAILABLE behavior. The separate Per-Market Metrics table is unchanged. A focused `ConfigurationLifecycle` source assertion checks the two header rows, centered alignment, and styling.
 
 **Status:** committed on existing `phase1/market-data-foundation`; no local .NET build or browser verification has been reported for this latest change. Prior 73/73 checks belong to earlier source and are not counted as acceptance here.
-
-## Dashboard — retain Possible Buys count when list is disabled (November 10)
-
-When `Monitor.MaxDashboardBuyEntries=0`, the DashboardTop partial now renders a **compact full-width Possible Buys (N) heading** above the Positions panel, retaining the actual ProfitTrailer buy-log count and the existing Buy Analyzer `more` link. The buy-entry table and its empty-state content remain hidden; Positions moves into its own **full-width row**. When the buy-entry limit is positive, the original side-by-side Possible Buys and Positions cards and existing list-limit behavior remain intact. This change modifies only the dashboard Razor layout, not the analyzer or PT execution.
-
-**Source:** `Monitor/Pages/_get/DashboardTop.cshtml`, plus one focused `ConfigurationLifecycle` source check for the two layout states. **Validation pending:** local .NET build, focused harness execution, and actual browser layout inspection. Earlier 337/337 results do not verify this newer source.
 
 ## Monitor — compact Global Setting header tooltip (November 10)
 
