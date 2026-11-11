@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -59,7 +60,15 @@ namespace Core.MarketAnalyzer.MarketData
       public int Pages;
     }
 
+    private readonly FuturesLongShortRatioDiskCache _disk;
+    private readonly HashSet<(FuturesLongShortRatioSource Source, string Symbol)> _restored =
+      new HashSet<(FuturesLongShortRatioSource Source, string Symbol)>();
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+
+    public FuturesLongShortRatioDataService(string cacheDirectory = null)
+    {
+      _disk = String.IsNullOrWhiteSpace(cacheDirectory) ? null : new FuturesLongShortRatioDiskCache(cacheDirectory);
+    }
     private readonly object _sync = new object();
     private readonly Dictionary<(FuturesLongShortRatioSource Source, string Symbol), Series> _series =
       new Dictionary<(FuturesLongShortRatioSource Source, string Symbol), Series>();
@@ -143,6 +152,29 @@ namespace Core.MarketAnalyzer.MarketData
             .ToArray();
         }
 
+        int restored = 0;
+        if (_disk != null)
+        {
+          foreach (Work item in work)
+          {
+            var key = (item.Source, item.Symbol);
+            bool restore;
+            lock (_sync) restore = _restored.Add(key);
+            if (!restore) continue;
+            FuturesLongShortRatioDiskSnapshot saved = _disk.TryRestore(item.Source, item.Symbol, pinnedAsOfUtc, log);
+            lock (_sync)
+            {
+              Series state = Ensure(key);
+              foreach (FuturesLongShortRatioObservation row in saved.Rows)
+                state.Rows[row.TimestampUtc.ToUnixTimeMilliseconds()] = row;
+              state.Complete.AddRange(saved.CompleteIntervals);
+              foreach (long timestamp in state.Rows.Keys.Where(value => value < item.Start).ToArray()) state.Rows.Remove(timestamp);
+              state.Complete.RemoveAll(value => value.End < item.Start);
+            }
+            if (saved.Rows.Count > 0 || saved.CompleteIntervals.Count > 0) restored++;
+          }
+        }
+
         int requestsMade = 0;
         int failures = 0;
         int authenticationFailures = 0;
@@ -217,6 +249,18 @@ namespace Core.MarketAnalyzer.MarketData
                 else if (last >= from) state.Complete.Add((from, last));
               }
 
+              if (_disk != null)
+              {
+                IReadOnlyList<FuturesLongShortRatioObservation> snapshot;
+                (long Start, long End)[] coverage;
+                lock (_sync)
+                {
+                  Series saved = Ensure((item.Source, item.Symbol));
+                  snapshot = saved.Rows.Values.ToArray();
+                  coverage = saved.Complete.ToArray();
+                }
+                _disk.TrySave(item.Source, item.Symbol, snapshot, coverage, pinnedAsOfUtc, log);
+              }
               if (exhausted) item.Pages = PagesPerSeriesPerRaid;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
