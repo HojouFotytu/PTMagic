@@ -27,6 +27,7 @@ internal static class Program
       TestBudgetAndRetentionBounds();
       await TestZeroBudgetIsDisabled();
       await TestSingleSymbolExactEndpoints();
+      await TestUnicodeSymbolServiceAndCache();
       await TestRequestBudgetAndFairProgress();
       await TestEmptyResponseNotFabricated();
       await TestMissingEndpointUnavailable();
@@ -154,6 +155,23 @@ internal static class Program
       report.Requests == 1 && report.FailedPages == 0,
       "One bounded page must cover exact 60-minute OI.");
     Check(service.Snapshot("BTCUSDT", Pin, 60).Count >= 13, "Source history must be retained.");
+    _passed++;
+  }
+
+  private static async Task TestUnicodeSymbolServiceAndCache()
+  {
+    const string symbol = "哈基米USDT";
+    var service = NewService("unicode-symbol");
+    var report = await service.RefreshAsync(new[] { symbol }, 60, Pin, 2, FullPage, Log);
+    Check(report.AvailableSymbols == 1 && report.Requests == 1 &&
+      service.Snapshot(symbol, Pin, 60).Count >= 13,
+      "OI service accepts Unicode Binance symbol and stores its observations.");
+    var restarted = NewService("unicode-symbol");
+    int requests = 0;
+    var restored = await restarted.RefreshAsync(new[] { symbol }, 60, Pin, 2,
+      (s, end, limit, ct) => { requests++; return FullPage(s, end, limit, ct); }, Log);
+    Check(restored.AvailableSymbols == 1 && restored.RestoredSymbols == 1 && requests == 0,
+      "OI cache restores Unicode symbol without another provider request.");
     _passed++;
   }
 
