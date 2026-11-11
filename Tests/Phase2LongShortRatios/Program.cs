@@ -45,8 +45,8 @@ Throws<ArgumentOutOfRangeException>(() => BinanceFuturesLongShortRatioClient.His
 
 string json = """
 [
- {"symbol":"BTCUSDT","longShortRatio":"1.5","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000000000},
- {"symbol":"BTCUSDT","longShortRatio":"0.5","longAccount":"0.40","shortAccount":"0.60","timestamp":1700000300000}
+ {"symbol":"BTCUSDT","longShortRatio":"1.5","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000100000},
+ {"symbol":"BTCUSDT","longShortRatio":"0.5","longAccount":"0.40","shortAccount":"0.60","timestamp":1700000400000}
 ]
 """;
 var mapped = FuturesLongShortRatio.MapHistory(JArray.Parse(json),
@@ -73,11 +73,10 @@ string invalidRatio = json.Replace("1.5","-1.5");
 Throws<InvalidDataException>(() => FuturesLongShortRatio.MapHistory(JArray.Parse(invalidRatio),
   FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT",
   DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_300_000)), "negative ratio rejected");
-string conflict = json.Replace("1.5","1.6").Replace("0.60","0.60");
 string duplicateConflict = """
 [
- {"symbol":"BTCUSDT","longShortRatio":"1.5","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000000000},
- {"symbol":"BTCUSDT","longShortRatio":"1.6","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000000000}
+ {"symbol":"BTCUSDT","longShortRatio":"1.5","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000100000},
+ {"symbol":"BTCUSDT","longShortRatio":"1.6","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000100000}
 ]
 """;
 Throws<InvalidDataException>(() => FuturesLongShortRatio.MapHistory(JArray.Parse(duplicateConflict),
@@ -85,7 +84,7 @@ Throws<InvalidDataException>(() => FuturesLongShortRatio.MapHistory(JArray.Parse
   DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_300_000)), "conflicting duplicate timestamp rejected");
 
 var samples = new List<FuturesLongShortRatioObservation>();
-long start = 1_700_000_000_000;
+long start = 1_700_000_100_000;
 for (int i = 1; i <= 12; i++)
 {
   samples.Add(new FuturesLongShortRatioObservation
