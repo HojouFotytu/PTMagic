@@ -61,6 +61,8 @@ namespace Core.MarketAnalyzer.MarketData
     public static FuturesOpenInterestDataService OpenInterestDataService => OpenInterestDataServiceInstance;
     private static readonly FuturesFundingDataService FundingDataServiceInstance = new FuturesFundingDataService();
     public static FuturesFundingDataService FundingDataService => FundingDataServiceInstance;
+    private static readonly FuturesLongShortRatioDataService LongShortRatioDataServiceInstance = new FuturesLongShortRatioDataService();
+    public static FuturesLongShortRatioDataService LongShortRatioDataService => LongShortRatioDataServiceInstance;
 
     public static DateTimeOffset? CurrentRaidAsOfUtc
     {
@@ -499,6 +501,87 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     /// <summary>
+    /// Optional three-source USD-M long/short ratio acquisition. All requested
+    /// source/symbol series share one per-raid budget and use the frozen asset
+    /// populations and pinned raid boundary.
+    /// </summary>
+    public static async Task RefreshLongShortRatiosAsync(PTMagicConfiguration configuration,
+      LogHelper log, IReadOnlyDictionary<string, Market> recentMarkets = null,
+      CancellationToken cancellationToken = default)
+    {
+      if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+      if (log == null) throw new ArgumentNullException(nameof(log));
+      var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? new List<MarketTrend>())
+        .Where(t => t != null && String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase))
+        .Select(t => new { Trend = t, Metrics = MarketTrendMetricSelection.Select(t, configuration.AnalyzerSettings)
+          .Where(FuturesLongShortRatioFeatureEngine.IsMetric).ToArray() })
+        .Where(x => x.Metrics.Length > 0).ToArray();
+      if (trends.Length == 0) return;
+      if (!String.Equals(configuration.GeneralSettings?.Application?.Exchange, "BinanceFutures",
+        StringComparison.OrdinalIgnoreCase))
+      {
+        log.DoLogWarn("Long/short ratio metrics are supported only on Binance USD-M Futures.");
+        return;
+      }
+
+      AnalyzerUniverseSnapshot universe;
+      DateTimeOffset? pin;
+      lock (SnapshotLock) { universe = _currentUniverse; pin = _currentRaidAsOfUtc; }
+      if (universe == null || !pin.HasValue)
+      {
+        log.DoLogWarn("Long/short ratio acquisition deferred: frozen universe or pinned raid time is unavailable.");
+        return;
+      }
+
+      int budget = configuration.AnalyzerSettings.MarketAnalyzer.LongShortRatioMaxRequestsPerRaid;
+      if (budget < 0 || budget > FuturesLongShortRatioDataService.MaximumRequestsPerRaid)
+      {
+        log.DoLogWarn("LongShortRatioMaxRequestsPerRaid is outside the allowed 0–" +
+          FuturesLongShortRatioDataService.MaximumRequestsPerRaid + " range.");
+        return;
+      }
+      if (budget == 0) return;
+
+      var requests = new List<FuturesLongShortRatioSeriesRequest>();
+      foreach (var group in trends.SelectMany(x => x.Metrics.Select(metric => new
+      {
+        x.Trend, Metric = metric, Source = FuturesLongShortRatioFeatureEngine.SourceForMetric(metric)
+      })).GroupBy(x => x.Source))
+      {
+        var validTrends = group.Where(x => x.Trend.TrendMinutes >= 5 &&
+          x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&
+          x.Trend.TrendMinutes % 5 == 0).ToArray();
+        if (validTrends.Length == 0) continue;
+        int horizon = validTrends.Max(x => x.Trend.TrendMinutes);
+        var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in validTrends)
+        {
+          MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
+            item.Trend, recentMarkets ?? new Dictionary<string, Market>(),
+            universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
+          symbols.UnionWith(population.AssetSymbols);
+        }
+        requests.Add(new FuturesLongShortRatioSeriesRequest
+        {
+          Source = group.Key, HorizonMinutes = horizon, Symbols = symbols.ToArray()
+        });
+      }
+
+      string apiKey = configuration.GeneralSettings?.Application?.BinanceFuturesApiKey?.Trim() ?? "";
+      FuturesLongShortRatioRefreshReport report = await LongShortRatioDataServiceInstance.RefreshAsync(
+        requests, pin.Value, budget,
+        (source, symbol, from, until, limit, ct) =>
+          BinanceFuturesLongShortRatioClient.GetHistoryPageAsync(source, symbol, from, until,
+            limit, apiKey, log, ct),
+        log, cancellationToken).ConfigureAwait(false);
+      log.DoLogInfo("Phase 2 long/short ratios: " + report.Requests + "/" + budget +
+        " page requests; " + report.Failures + " failed (" + report.AuthenticationFailures +
+        " authentication); " + report.CompleteSeries + "/" + report.SelectedSeries +
+        " source/symbol series fully verified. Missing or incomplete observations remain UNAVAILABLE.");
+    }
+
+    /// <summary>
     /// Calculates explicitly configured normalized metrics for Exchange MarketTrends after
     /// the legacy PTMagic trend pipeline has resolved each trend's market population.
     /// Empty Metrics selects normalized PriceTrend by default; omitted trigger
@@ -592,7 +675,9 @@ namespace Core.MarketAnalyzer.MarketData
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
           OpenInterestDataServiceInstance,
           systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
-          FundingDataServiceInstance);
+          FundingDataServiceInstance,
+          LongShortRatioDataServiceInstance,
+          !String.IsNullOrWhiteSpace(systemConfiguration.GeneralSettings?.Application?.BinanceFuturesApiKey));
         analyses[marketTrend.Name] = analysis;
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)
@@ -601,6 +686,12 @@ namespace Core.MarketAnalyzer.MarketData
           {
             log.DoLogDebug("Phase 2 funding history for '" + marketTrend.Name + "' / " +
               requirement.Metric + ": " + requirement.Basis + " " + requirement.Diagnostic);
+            continue;
+          }
+          if (requirement.SourceDataFamily == "BinanceFuturesLongShortRatio")
+          {
+            log.DoLogDebug("Phase 2 long/short ratio history for '" + marketTrend.Name + "' / " +
+              requirement.Metric + ": " + requirement.Basis);
             continue;
           }
           if (requirement.SourceDataFamily == "BinanceFuturesOpenInterest")
