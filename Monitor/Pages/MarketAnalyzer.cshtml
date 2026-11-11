@@ -7,6 +7,43 @@
 @section Styles {
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/tablesaw/css/tablesaw.css" rel="stylesheet" type="text/css" />
   <link href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/nvd3/nv.d3.min.css" rel="stylesheet" type="text/css" />
+  <style>
+    .market-wide-grouped th,
+    .market-wide-grouped td,
+    .market-wide-grouped .market-wide-group-heading,
+    .market-wide-grouped .market-wide-group-line {
+      text-align: center !important;
+      vertical-align: middle !important;
+    }
+    .market-wide-grouped th.market-wide-group,
+    .market-wide-grouped td.market-wide-group {
+      min-width: 145px;
+      white-space: nowrap;
+    }
+    .market-wide-grouped .market-wide-group-heading {
+      display: block;
+      width: 100%;
+      color: #ffffff !important;
+      text-transform: uppercase !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .market-wide-grouped thead .market-wide-subheadings .market-wide-group-line {
+      display: block;
+      width: 100%;
+      color: #8f9fb3 !important;
+      font-weight: 400 !important;
+      white-space: nowrap;
+    }
+    .market-wide-grouped .market-wide-group-line {
+      display: block;
+      width: 100%;
+      min-height: 20px;
+      line-height: 20px;
+      white-space: nowrap;
+    }
+  </style>
 }
 @if (!Model.PTMagicConfiguration.GeneralSettings.Monitor.AnalyzerChart.Equals(""))
 {
@@ -209,6 +246,96 @@ else
     </div>
   </div>
 </div>
+
+
+@if (Model.HasConfiguredMarketWideMetrics)
+{
+  @if (!String.IsNullOrWhiteSpace(Model.AnalyticsLoadError))
+  {
+    <div class="row">
+      <div class="col-sm-12">
+        <div class="card-box">
+          <h4 class="m-t-0 m-b-20 header-title"><b>Market-Wide Metrics</b></h4>
+          <div class="alert alert-warning">@Model.AnalyticsLoadError</div>
+        </div>
+      </div>
+    </div>
+  }
+  else
+  {
+    List<Core.MarketAnalyzer.MarketData.MarketTrendAnalyticsMonitorTrend> analyticsTrends = Model.OrderedAnalyticsTrends().ToList();
+    <div class="row">
+      <div class="col-sm-12">
+        <div class="card-box">
+          <h4 class="m-t-0 m-b-10 header-title"><b>Market-Wide Metrics</b></h4>
+          <p class="text-muted m-b-20">
+            Snapshot: @Model.Analytics.TimestampUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+          </p>
+
+          @if (analyticsTrends.Count == 0)
+          {
+            <div class="alert alert-info">No market-wide metrics are available in the current analytics snapshot.</div>
+          }
+          else
+          {
+            <div class="table-responsive">
+              <table class="table table-sm m-b-0 market-wide-grouped">
+                <thead>
+                  <tr class="market-wide-group-titles">
+                    <th rowspan="2" scope="col">Trend</th>
+                    <th rowspan="2" scope="col">Timeframe</th>
+                    <th rowspan="2" scope="col">Markets</th>
+                    @foreach (MarketAnalyzerModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                    {
+                      <th scope="col" class="market-wide-group">
+                        <div class="market-wide-group-heading">@group.Heading.ToUpperInvariant()</div>
+                      </th>
+                    }
+                  </tr>
+                  <tr class="market-wide-subheadings">
+                    @foreach (MarketAnalyzerModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                    {
+                      <th scope="col" class="market-wide-group">
+                        @foreach (string metric in group.Metrics)
+                        {
+                          <div class="market-wide-group-line text-muted" data-toggle="tooltip" data-placement="top" title="@Model.MetricTooltip(metric)">
+                            @Model.GlobalMetricSubheading(metric)
+                          </div>
+                        }
+                      </th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @foreach (Core.MarketAnalyzer.MarketData.MarketTrendAnalyticsMonitorTrend trend in analyticsTrends)
+                  {
+                    <tr>
+                      <td>@Core.Helper.SystemHelper.SplitCamelCase(trend.Name)</td>
+                      <td>@Model.FormatTimeframe(trend.TrendMinutes)</td>
+                      <td>@(trend.GlobalSymbols?.Count ?? 0)</td>
+                      @foreach (MarketAnalyzerModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                      {
+                        <td class="market-wide-group">
+                          @foreach (string metric in group.Metrics)
+                          {
+                            Core.MarketAnalyzer.MarketData.FeatureValueSnapshot feature = Model.GetGlobalMetric(trend, metric);
+                            <div class="market-wide-group-line text-autocolor" data-toggle="tooltip" data-placement="top" title="@Model.FeatureTooltip(feature)">
+                              @Model.FormatMetric(metric, feature)
+                            </div>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+}
 
 <div class="row">
   <div class="col-sm-12">
