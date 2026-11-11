@@ -44,6 +44,9 @@ internal static class Program
       TestSharedIPWeight();
       TestCooldowns();
       await TestFamilyFairness();
+      await TestRecoverableCapacityWait();
+      await TestDelayedFamilyDoesNotBlockOthers();
+      await TestCancellationWhileWaiting();
       await TestFreshnessAndCapacityVeto();
       await TestUnboundedProductionOI();
       await TestUnboundedProductionFunding();
@@ -144,6 +147,75 @@ internal static class Program
     Passed("Family admission follows round-robin scheduling");
   }
 
+  private static async Task TestRecoverableCapacityWait()
+  {
+    DateTimeOffset clock = Now;
+    int checks = 0;
+    var waited = new List<TimeSpan>();
+    var scheduler = new BinanceDerivativeAcquisitionScheduler(Now.AddMinutes(1),
+      _ =>
+      {
+        checks++;
+        return checks == 1 ? TimeSpan.FromSeconds(12) :
+          checks == 2 ? TimeSpan.FromSeconds(7) : TimeSpan.Zero;
+      },
+      () => clock,
+      (delay, ct) =>
+      {
+        waited.Add(delay);
+        clock = clock.Add(delay);
+        return Task.CompletedTask;
+      });
+    Check(await scheduler.TryPermitAsync(FuturesDerivativeFamily.Funding) &&
+      checks == 3 && waited.Count == 2 && clock == Now.AddSeconds(19),
+      "An available quota window within the freshness deadline must be awaited and rechecked.");
+    Passed("Recoverable quota delay waits and rechecks before the deadline");
+  }
+
+  private static async Task TestDelayedFamilyDoesNotBlockOthers()
+  {
+    bool oiBlocked = true;
+    var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var scheduler = new BinanceDerivativeAcquisitionScheduler(Now.AddMinutes(1),
+      uri => uri.AbsolutePath.Contains("openInterestHist") && oiBlocked
+        ? TimeSpan.FromSeconds(10) : TimeSpan.Zero,
+      () => Now,
+      (_, ct) => release.Task);
+    Task<bool> blocked = scheduler.TryPermitAsync(FuturesDerivativeFamily.OpenInterest);
+    Task<bool> ready = scheduler.TryPermitAsync(FuturesDerivativeFamily.Funding);
+    Task completed = await Task.WhenAny(ready, Task.Delay(TimeSpan.FromSeconds(2)));
+    Check(ReferenceEquals(completed, ready) && await ready,
+      "A delayed OI family must not prevent an eligible funding family from proceeding.");
+    oiBlocked = false;
+    release.TrySetResult(true);
+    Check(await blocked, "Delayed OI family must resume when capacity returns.");
+    Passed("A delayed derivative family does not block another ready family");
+  }
+
+  private static async Task TestCancellationWhileWaiting()
+  {
+    using var cancellation = new CancellationTokenSource();
+    var waiting = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var scheduler = new BinanceDerivativeAcquisitionScheduler(Now.AddMinutes(1),
+      _ => TimeSpan.FromSeconds(10), () => Now,
+      async (_, ct) =>
+      {
+        waiting.TrySetResult(true);
+        await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+      });
+    Task<bool> permit = scheduler.TryPermitAsync(FuturesDerivativeFamily.GlobalAccountRatio, cancellation.Token);
+    Check(ReferenceEquals(await Task.WhenAny(waiting.Task, Task.Delay(TimeSpan.FromSeconds(2))), waiting.Task),
+      "Scheduler must enter its cancellation-aware quota wait.");
+    cancellation.Cancel();
+    try
+    {
+      await permit;
+      throw new InvalidOperationException("Cancellation during a quota wait was not propagated.");
+    }
+    catch (OperationCanceledException) { }
+    Passed("Quota waiting propagates cancellation");
+  }
+
   private static async Task TestFreshnessAndCapacityVeto()
   {
     var stale = new BinanceDerivativeAcquisitionScheduler(Now.AddSeconds(-1),
@@ -151,7 +223,7 @@ internal static class Program
     Check(!await stale.TryPermitAsync(FuturesDerivativeFamily.OpenInterest),
       "Expired analysis must not acquire another derivative page.");
     var saturated = new BinanceDerivativeAcquisitionScheduler(Now.AddMinutes(1),
-      _ => TimeSpan.FromSeconds(10), () => Now);
+      _ => TimeSpan.FromMinutes(2), () => Now);
     Check(!await saturated.TryPermitAsync(FuturesDerivativeFamily.Funding),
       "Saturated provider capacity must defer additional pages.");
     using var cts = new CancellationTokenSource();
