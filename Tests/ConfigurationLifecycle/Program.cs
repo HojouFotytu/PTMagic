@@ -379,6 +379,68 @@ internal static class Program
         using var fixture = new Fixture(); var wire = new FakeHttp(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
         Require(!Http(fixture, wire).Succeeded && wire.Calls == 1);
       });
+      Check("HTTP 503 recovers within the same raid with 2s and 5s waits", () =>
+      {
+        using var fixture = new Fixture(); var waits = new List<TimeSpan>();
+        var wire = new FakeHttp(index => new HttpResponseMessage(index <= 2
+          ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK));
+        var result = Http(fixture, wire, waitBefore503Retry: waits.Add);
+        Require(result.Succeeded && wire.Calls == 3 &&
+          waits.SequenceEqual(new[] { TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5) }) &&
+          wire.Bodies.All(body => body == wire.Bodies[0]));
+      });
+      Check("HTTP 503 stops after four attempts and three bounded waits", () =>
+      {
+        using var fixture = new Fixture(); var waits = new List<TimeSpan>();
+        var wire = new FakeHttp(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var result = Http(fixture, wire, waitBefore503Retry: waits.Add);
+        Require(!result.Succeeded && wire.Calls == 4 &&
+          waits.SequenceEqual(new[] { TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10) }));
+      });
+      Check("HTTP 503 respects a longer Retry-After delta inside the wait budget", () =>
+      {
+        using var fixture = new Fixture(); var waits = new List<TimeSpan>();
+        var wire = new FakeHttp(index =>
+        {
+          var response = new HttpResponseMessage(index == 1
+            ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK);
+          if (index == 1) response.Headers.RetryAfter =
+            new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(4));
+          return response;
+        });
+        Require(Http(fixture, wire, waitBefore503Retry: waits.Add).Succeeded &&
+          wire.Calls == 2 && waits.SequenceEqual(new[] { TimeSpan.FromSeconds(4) }));
+      });
+      Check("HTTP 503 defers if Retry-After exceeds the same-raid wait budget", () =>
+      {
+        using var fixture = new Fixture(); var waits = new List<TimeSpan>();
+        var wire = new FakeHttp(_ =>
+        {
+          var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+          response.Headers.RetryAfter =
+            new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+          return response;
+        });
+        Require(!Http(fixture, wire, waitBefore503Retry: waits.Add).Succeeded &&
+          wire.Calls == 1 && waits.Count == 0);
+      });
+      Check("HTTP 503 retry rechecks freshness before the next POST", () =>
+      {
+        using var fixture = new Fixture(); bool fresh = true;
+        var wire = new FakeHttp(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var result = Http(fixture, wire, () => fresh, _ => fresh = false);
+        Require(!result.Succeeded && wire.Calls == 1);
+      });
+      Check("HTTP 503 on second PT target retries that target only", () =>
+      {
+        using var fixture = new Fixture(); fixture.AddSecondTarget();
+        var waits = new List<TimeSpan>();
+        var wire = new FakeHttp(index => new HttpResponseMessage(index == 2
+          ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK));
+        Require(Http(fixture, wire, waitBefore503Retry: waits.Add).Succeeded &&
+          wire.Calls == 3 && waits.SequenceEqual(new[] { TimeSpan.FromSeconds(2) }) &&
+          wire.Hosts.SequenceEqual(new[] { "pt-one.invalid", "pt-two.invalid", "pt-two.invalid" }));
+      });
       Check("HTTP timeout retries three times then fails without waiting", () =>
       {
         using var fixture = new Fixture(); var wire = new FakeHttp(_ => throw new TaskCanceledException("deterministic fake timeout"));
@@ -795,9 +857,10 @@ internal static class Program
       ("BinanceUS", (quote, token) => Core.MarketAnalyzer.BinanceUS.GetMarketDataAsync(quote, fixture.Bot.MarketInfos, fixture.Configuration, Log, token))
     };
 
-  private static ConfigurationDeliveryResult Http(Fixture fixture, FakeHttp wire, Func<bool> canSend = null) =>
+  private static ConfigurationDeliveryResult Http(Fixture fixture, FakeHttp wire, Func<bool> canSend = null,
+    Action<TimeSpan> waitBefore503Retry = null) =>
     SettingsAPI.SendPropertyLinesToAPI(new List<string> { "MARKET = USDT" }, new List<string> { "DEFAULT_DCA_enabled = true" },
-      new List<string> { "RSI_candle_period = 300" }, fixture.Configuration, Log, wire.Client, canSend);
+      new List<string> { "RSI_candle_period = 300" }, fixture.Configuration, Log, wire.Client, canSend, waitBefore503Retry);
 
   private static ConfigurationDeliveryResult SomHttp(Fixture fixture, FakeHttp wire, bool enabled, Func<bool> canSend = null) =>
     GlobalSellOnlyModeAPI.Set(fixture.Configuration, enabled, Log, wire.Client, canSend);
