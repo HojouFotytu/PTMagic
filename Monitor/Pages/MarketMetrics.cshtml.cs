@@ -60,7 +60,10 @@ namespace Monitor.Pages
       MarketTrendMetrics.RelativeStrengthBTC,
       MarketTrendMetrics.ATRP,
       MarketTrendMetrics.VolumeExpansion,
-      MarketTrendMetrics.CorrelationToBTC
+      MarketTrendMetrics.CorrelationToBTC,
+      MarketTrendMetrics.GlobalLongShortAccountRatio,
+      MarketTrendMetrics.TopTraderLongShortAccountRatio,
+      MarketTrendMetrics.TopTraderLongShortPositionRatio
     };
 
     public void OnGet()
@@ -188,6 +191,9 @@ namespace Monitor.Pages
         MarketTrendMetrics.BTCVolumeShare => "BTC Volume Share",
         MarketTrendMetrics.BTCETHVolumeShare => "BTC+ETH Volume Share",
         MarketTrendMetrics.CorrelationToBTC => "Correlation to BTC",
+        MarketTrendMetrics.GlobalLongShortAccountRatio => "Global Account L/S Ratio",
+        MarketTrendMetrics.TopTraderLongShortAccountRatio => "Top Trader Account L/S Ratio",
+        MarketTrendMetrics.TopTraderLongShortPositionRatio => "Top Trader Position L/S Ratio",
         MarketTrendMetrics.MeanCorrelationToBTC => "Mean BTC Correlation",
         MarketTrendMetrics.MedianCorrelationToBTC => "Median BTC Correlation",
         _ => metric
@@ -234,6 +240,9 @@ namespace Monitor.Pages
         MarketTrendMetrics.BTCVolumeShare => "BTC quote-volume share of the complete eligible global universe in latest complete trend period, percent.",
         MarketTrendMetrics.BTCETHVolumeShare => "Combined BTC and ETH quote-volume share of complete eligible global universe in latest complete trend period, percent.",
         MarketTrendMetrics.CorrelationToBTC => "Pearson correlation of this market and BTC across CorrelationLookback synchronized simple returns. Each return spans exactly TrendMinutes; missing, stale or flat series are unavailable. Unitless coefficient from -1 to 1.",
+        MarketTrendMetrics.GlobalLongShortAccountRatio => "Binance global long/short account ratio for this symbol, calculated from complete 5-minute observations over this MarketTrend window. 1.0 is neutral; above 1.0 indicates a larger long-account share.",
+        MarketTrendMetrics.TopTraderLongShortAccountRatio => "Binance top-trader long/short account ratio for this symbol, using the exchange-defined top 20% by margin balance. Requires a read-only API key. 1.0 is neutral.",
+        MarketTrendMetrics.TopTraderLongShortPositionRatio => "Binance top-trader long/short position ratio for this symbol, using the exchange-defined top 20% by margin balance. Measures position proportions, not account counts. Requires a read-only API key. 1.0 is neutral.",
         MarketTrendMetrics.MeanCorrelationToBTC => "Arithmetic mean of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         MarketTrendMetrics.MedianCorrelationToBTC => "Median of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         _ => metric
