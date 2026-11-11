@@ -68,6 +68,21 @@ namespace Core.MarketAnalyzer.MarketData
           });
           continue;
         }
+        if (FuturesLongShortRatioFeatureEngine.IsMetric(metric))
+        {
+          result.Add(new MarketTrendHistoryRequirement
+          {
+            Metric = metric, SourceDataFamily = "BinanceFuturesLongShortRatio",
+            Basis = "Exactly " + trend.TrendMinutes +
+              " minutes of completed Binance USD-M 5m long/short ratio observations. Binance exposes only the latest 30 days; every expected 5m timestamp must exist. No interpolation or nearest-time substitution.",
+            CalculationWindowMinutes = trend.TrendMinutes,
+            MinimumClosedSourceCandles = trend.TrendMinutes / 5,
+            RequiredStoredSourceCandles = 0, RequiredStoreDataMaxHours = 0,
+            RecommendedStoreDataMaxHours = 0, ConfiguredStoreDataMaxHours = null,
+            HasCurrentRaidCapacity = null, HasAllAlignmentCapacity = null, Diagnostic = ""
+          });
+          continue;
+        }
         if (FuturesOpenInterestFeatureEngine.IsMetric(metric))
         {
           result.Add(new MarketTrendHistoryRequirement
