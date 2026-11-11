@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -46,6 +47,41 @@ internal static class Program
       new[] { Event(symbol, 120, 0.0001m), Event(symbol, 60, -0.0002m) }
         .Where(row => row.FundingTimeUtc >= from && row.FundingTimeUtc <= to)
         .Take(limit).ToArray());
+
+  private static void TestFundingDiskCache()
+  {
+    string root = Path.Combine(Path.GetTempPath(), "PTM_FundingCache_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+      var disk = new FuturesFundingDiskCache(root);
+      var rows = new[]
+      {
+        new FuturesFundingObservation
+        {
+          Symbol = "BTCUSDT", FundingTimeUtc = Pin.AddHours(-1),
+          NativeRate = -0.0002m, RateType = "Regular", MarkPrice = 123.45m
+        }
+      };
+      long start = Pin.AddDays(-1).ToUnixTimeMilliseconds();
+      long end = Pin.ToUnixTimeMilliseconds();
+      Assert(disk.TrySave("BTCUSDT", rows, new[] { (start, end) }, Pin, Log),
+        "Funding cache should save observations and verified query coverage.");
+      var restored = disk.TryRestore("BTCUSDT", Pin, Log);
+      Assert(restored.Rows.Count == 1 && restored.CompleteIntervals.Count == 1 &&
+        restored.Rows[0].NativeRate == -0.0002m && restored.Rows[0].MarkPrice == 123.45m,
+        "Funding cache should restore exact native decimals and coverage after restart.");
+      string corrupt = disk.CachePath("ETHUSDT");
+      Directory.CreateDirectory(Path.GetDirectoryName(corrupt)!);
+      File.WriteAllText(corrupt, "corrupt");
+      Assert(disk.TryRestore("ETHUSDT", Pin, Log).Rows.Count == 0 && !File.Exists(corrupt),
+        "Corrupt funding cache should be discarded without fabricating data.");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+    _passed++;
+  }
 
   private static void TestPayload()
   {
@@ -301,6 +337,7 @@ internal static class Program
   {
     try
     {
+      TestFundingDiskCache();
       TestPayload();
       TestSpecialAndUnknownTypes();
       TestPayloadFailures();
