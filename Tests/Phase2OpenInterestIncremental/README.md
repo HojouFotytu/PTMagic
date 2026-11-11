@@ -4,7 +4,7 @@ This harness is synthetic/offline. The new OI collector and feature registry
 are independent of the existing normalized OHLCV source and ProfitTrailer
 configuration-delivery lifecycle.
 
-17 case groups cover explicit opt-in, zero request budget, user-derived
+17 case groups cover explicit opt-in, service-level zero-budget behavior, user-derived
 MarketTrend history horizons, 5m exact endpoints, bounded page size, pagination, fair request
 scheduling, empty and missing provider periods, repeated-raid reuse, disk cache
 restoration/corruption, no symbol mixing, quantity versus reported-value
@@ -36,4 +36,7 @@ foreach ($project in @(
 
 The configured runtime/API/Monitor/browser acceptance work is separately
 deferred. Normal deployments with no OI metric configured produce no new OI
-network requests, and the default OI request budget is 60 pages per raid.
+network requests. As of D-051.1, there is no user-configurable derivative request
+budget. The runtime temporarily uses the service's internal 60-page-per-raid
+safety ceiling pending adaptive acquisition. Legacy budget keys are ignored;
+metric opt-in, not a zero budget property, controls whether requests occur.

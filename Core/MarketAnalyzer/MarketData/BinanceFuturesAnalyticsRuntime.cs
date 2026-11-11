@@ -373,7 +373,8 @@ namespace Core.MarketAnalyzer.MarketData
     /// <summary>
     /// Optional Phase 2 acquisition after the frozen universe exists and
     /// before synchronous metric evaluation. Only explicit OI metrics cause
-    /// requests. The request budget is global to this raid/instance.
+    /// requests. The runtime uses temporary internal service ceilings pending
+    /// adaptive derivative acquisition.
     /// </summary>
     public static async Task RefreshOpenInterestAsync(
       PTMagicConfiguration configuration, LogHelper log,
@@ -405,13 +406,8 @@ namespace Core.MarketAnalyzer.MarketData
         log.DoLogWarn("Phase 2 open-interest acquisition deferred: frozen universe or pinned raid time is unavailable.");
         return;
       }
-      var options = configuration.AnalyzerSettings.MarketAnalyzer;
-      int budget = options.OpenInterestMaxRequestsPerRaid;
-      if (budget < 0 || budget > FuturesOpenInterestDataService.MaximumRequestsPerRaid)
-      {
-        log.DoLogWarn("Phase 2 open-interest request budget is outside allowed bounds.");
-        return;
-      }
+      // Transitional internal safeguard; D-051 adaptive acquisition will replace this ceiling.
+      int budget = FuturesOpenInterestDataService.DefaultRequestsPerRaid;
 
       var usable = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
       int maximumHorizon = FuturesOpenInterestDataService.RequiredHorizonMinutes(usable);
@@ -473,12 +469,8 @@ namespace Core.MarketAnalyzer.MarketData
         log.DoLogWarn("Funding history unavailable: analyzer universe/raid pin missing.");
         return;
       }
-      int budget = configuration.AnalyzerSettings.MarketAnalyzer.FundingMaxRequestsPerRaid;
-      if (budget < 0 || budget > FuturesFundingDataService.MaximumRequestsPerRaid)
-      {
-        log.DoLogWarn("Funding request budget is outside allowed bounds.");
-        return;
-      }
+      // Transitional internal safeguard; no user-configured request budget.
+      int budget = FuturesFundingDataService.DefaultRequestsPerRaid;
       var enabled = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
       int horizon = FuturesFundingDataService.RequiredHorizonMinutes(enabled);
       if (horizon <= 0) return;
@@ -503,9 +495,8 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     /// <summary>
-    /// Optional three-source USD-M long/short ratio acquisition. All requested
-    /// source/symbol series share one per-raid budget and use the frozen asset
-    /// populations and pinned raid boundary.
+    /// Optional public USD-M global-account long/short ratio acquisition.
+    /// Uses frozen asset populations and the pinned raid boundary.
     /// </summary>
     public static async Task RefreshLongShortRatiosAsync(PTMagicConfiguration configuration,
       LogHelper log, IReadOnlyDictionary<string, Market> recentMarkets = null,
@@ -536,14 +527,8 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
 
-      int budget = configuration.AnalyzerSettings.MarketAnalyzer.LongShortRatioMaxRequestsPerRaid;
-      if (budget < 0 || budget > FuturesLongShortRatioDataService.MaximumRequestsPerRaid)
-      {
-        log.DoLogWarn("LongShortRatioMaxRequestsPerRaid is outside the allowed 0–" +
-          FuturesLongShortRatioDataService.MaximumRequestsPerRaid + " range.");
-        return;
-      }
-      if (budget == 0) return;
+      // Transitional internal safeguard; no user-configured request budget.
+      int budget = FuturesLongShortRatioDataService.DefaultRequestsPerRaid;
 
       var validTrends = trends.Where(x => x.Trend.TrendMinutes >= 5 &&
         x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&

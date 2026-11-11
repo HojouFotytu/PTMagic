@@ -112,8 +112,23 @@ internal static class Program
       .SequenceEqual(new[] { MarketTrendMetrics.PriceTrend }),
       "OI must not be selected by default.");
     MarketAnalyzer cfg = new MarketAnalyzer();
-    Check(cfg.OpenInterestMaxRequestsPerRaid == 60,
-      "Only the OI request budget is configured; historical depth comes from MarketTrends.");
+    string[] removedSettings =
+    {
+      "OpenInterestMaxRequestsPerRaid",
+      "FundingMaxRequestsPerRaid",
+      "LongShortRatioMaxRequestsPerRaid"
+    };
+    Check(removedSettings.All(name => typeof(MarketAnalyzer).GetProperty(name) == null),
+      "Derivative request budgets must not be exposed by MarketAnalyzer settings.");
+    MarketAnalyzer legacy = Newtonsoft.Json.JsonConvert.DeserializeObject<MarketAnalyzer>(
+      "{\"OpenInterestMaxRequestsPerRaid\":0,\"FundingMaxRequestsPerRaid\":0,\"LongShortRatioMaxRequestsPerRaid\":0}") ?? new MarketAnalyzer();
+    string serialized = Newtonsoft.Json.JsonConvert.SerializeObject(legacy);
+    Check(removedSettings.All(name => !serialized.Contains("\"" + name + "\"", StringComparison.Ordinal)),
+      "Legacy budget keys must be ignored and not serialized.");
+    Check(FuturesOpenInterestDataService.DefaultRequestsPerRaid == 60 &&
+          FuturesFundingDataService.DefaultRequestsPerRaid == 60 &&
+          FuturesLongShortRatioDataService.DefaultRequestsPerRaid == 60,
+      "Temporary internal derivative ceilings remain until adaptive acquisition replaces them.");
     Check(FuturesOpenInterestFeatureEngine.HasMetrics(new[] { "OpenInterestChange" }) &&
       !FuturesOpenInterestFeatureEngine.HasMetrics(new[] { "PriceTrend" }),
       "Only explicit OI metric selection triggers collection.");
