@@ -48,6 +48,10 @@ namespace Core.MarketAnalyzer.MarketData
       new MarketDataWarmStartCache(Path.Combine(Environment.CurrentDirectory, "_data", "NormalizedOhlcvCache")));
     private static readonly FuturesOpenInterestDataService OpenInterestDataServiceInstance =
       new FuturesOpenInterestDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesOpenInterestCache"));
+    private static readonly FuturesFundingDataService FundingDataServiceInstance =
+      new FuturesFundingDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesFundingCache"));
+    private static readonly FuturesLongShortRatioDataService LongShortRatioDataServiceInstance =
+      new FuturesLongShortRatioDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesLongShortRatioCache"));
     private static AnalyzerUniverseSnapshot _currentUniverse;
     private static MarketAnalysisSnapshot _currentAnalysis;
     private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> _currentTrendAnalyses =
@@ -59,9 +63,7 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static MarketDataService DataService => DataServiceInstance;
     public static FuturesOpenInterestDataService OpenInterestDataService => OpenInterestDataServiceInstance;
-    private static readonly FuturesFundingDataService FundingDataServiceInstance = new FuturesFundingDataService();
     public static FuturesFundingDataService FundingDataService => FundingDataServiceInstance;
-    private static readonly FuturesLongShortRatioDataService LongShortRatioDataServiceInstance = new FuturesLongShortRatioDataService();
     public static FuturesLongShortRatioDataService LongShortRatioDataService => LongShortRatioDataServiceInstance;
 
     public static DateTimeOffset? CurrentRaidAsOfUtc
