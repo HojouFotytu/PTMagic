@@ -754,23 +754,6 @@ internal static class Program
     catch (Exception error) { Console.Error.WriteLine("Configuration lifecycle FAILED: " + error); return 1; }
   }
 
-  private static GlobalSetting ConfigureIndeterminateFallback(Fixture fixture)
-  {
-    var settings = fixture.Configuration.AnalyzerSettings;
-    var defaultSetting = settings.GlobalSettings.Single(setting => setting.SettingName == "Default");
-    var risk = settings.GlobalSettings.Single(setting => setting.SettingName == "Risk");
-    risk.Triggers = new List<Trigger> { new Trigger { MarketTrendName = "DeletedTrend", Tag = "Missing" } };
-    risk.TriggerConnection = "Missing";
-    var fallback = new GlobalSetting
-    {
-      SettingName = "DirectionUnconfirmed",
-      IsIndeterminateFallback = true,
-      PairsProperties = new Dictionary<string, object> { ["DEFAULT_sell_only_mode_enabled"] = true }
-    };
-    settings.GlobalSettings = new List<GlobalSetting> { risk, fallback, defaultSetting };
-    return fallback;
-  }
-
   private static Fixture OffFixture(string connection)
   {
     var fixture = new Fixture(); fixture.Bot.MarketList = new List<string> { "BTCUSDT" }; fixture.RecentVolume(1);
