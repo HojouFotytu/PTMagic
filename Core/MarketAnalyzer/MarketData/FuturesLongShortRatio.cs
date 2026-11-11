@@ -122,6 +122,7 @@ namespace Core.MarketAnalyzer.MarketData
         !String.Equals(row.Symbol, NormalizeSymbol(expectedSymbol), StringComparison.OrdinalIgnoreCase) ||
         row.Source != expectedSource || row.Period != SourcePeriod ||
         row.TimestampUtc.ToUnixTimeMilliseconds() <= 0 ||
+        row.TimestampUtc.ToUnixTimeMilliseconds() % (long)SourcePeriod.TotalMilliseconds != 0 ||
         row.LongShortRatio < 0m ||
         row.LongSideShare < 0m || row.LongSideShare > 1m ||
         row.ShortSideShare < 0m || row.ShortSideShare > 1m)
