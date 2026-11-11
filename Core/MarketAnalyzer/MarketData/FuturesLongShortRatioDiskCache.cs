@@ -172,7 +172,10 @@ namespace Core.MarketAnalyzer.MarketData
 
         if (File.Exists(path) &&
           DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < MinimumSaveInterval)
-          return false;
+        {
+          FuturesLongShortRatioDiskSnapshot existing = TryRestore(source, normalized, asOfUtc, log);
+          if (MatchesSnapshot(existing, rows, intervals)) return false;
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -223,6 +226,31 @@ namespace Core.MarketAnalyzer.MarketData
           catch (UnauthorizedAccessException) { }
         }
       }
+    }
+
+    private static bool MatchesSnapshot(FuturesLongShortRatioDiskSnapshot snapshot,
+      IReadOnlyList<FuturesLongShortRatioObservation> rows,
+      IReadOnlyList<(long Start, long End)> intervals)
+    {
+      if (snapshot.Rows.Count != rows.Count || snapshot.CompleteIntervals.Count != intervals.Count)
+        return false;
+      for (int index = 0; index < rows.Count; index++)
+      {
+        FuturesLongShortRatioObservation saved = snapshot.Rows[index];
+        FuturesLongShortRatioObservation current = rows[index];
+        if (saved.TimestampUtc.ToUnixTimeMilliseconds() != current.TimestampUtc.ToUnixTimeMilliseconds() ||
+          saved.LongShortRatio != current.LongShortRatio ||
+          saved.LongSideShare != current.LongSideShare ||
+          saved.ShortSideShare != current.ShortSideShare)
+          return false;
+      }
+      for (int index = 0; index < intervals.Count; index++)
+      {
+        if (snapshot.CompleteIntervals[index].Start != intervals[index].Start ||
+          snapshot.CompleteIntervals[index].End != intervals[index].End)
+          return false;
+      }
+      return true;
     }
 
     private static decimal ParseDecimal(string raw, bool allowNegative)
