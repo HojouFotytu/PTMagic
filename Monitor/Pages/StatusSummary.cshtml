@@ -169,8 +169,9 @@
           <td>
             @if (marketMetricEntries.Count > 0) {
               foreach (StatusSummaryModel.GlobalSettingLogMetricEntry entry in marketMetricEntries) {
-                string metricClass = entry.TriggerConditionTrue ? "text-success" : "text-white";
-                <div class="@metricClass" title="@entry.Tooltip">@entry.Text</div>
+                string metricClass = entry.TriggerConditionTrue ? "text-success" : "";
+                string metricStyle = entry.TriggerConditionTrue ? "" : "color: #ffffff !important; opacity: 1 !important;";
+                <div class="@metricClass" style="@metricStyle" title="@entry.Tooltip">@entry.Text</div>
               }
             } else {
               <small class="text-white">No market metrics recorded for this activation.</small>
