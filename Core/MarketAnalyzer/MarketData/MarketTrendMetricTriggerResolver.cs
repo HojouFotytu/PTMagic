@@ -144,6 +144,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         return "";
       }
+      if (FuturesLongShortRatioFeatureEngine.IsMetric(metricName)) return " ratio";
       if (metricName == MarketTrendMetrics.VolumeExpansion || metricName == MarketTrendMetrics.MedianVolumeExpansion)
       {
         return "x";
@@ -190,6 +191,13 @@ namespace Core.MarketAnalyzer.MarketData
         !String.Equals(configuration.GeneralSettings.Application.Exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase))
       {
         error = "Metric '" + normalizedMetric + "' requires BinanceFutures; funding is unavailable on Spot/BinanceUS.";
+        return false;
+      }
+
+      if (FuturesLongShortRatioFeatureEngine.IsMetric(normalizedMetric) &&
+        !String.Equals(configuration.GeneralSettings.Application.Exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase))
+      {
+        error = "Metric '" + normalizedMetric + "' requires Binance USD-M Futures.";
         return false;
       }
 
