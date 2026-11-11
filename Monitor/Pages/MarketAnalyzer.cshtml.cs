@@ -27,6 +27,8 @@ namespace Monitor.Pages
     public MarketTrendAnalyticsMonitorSnapshot Analytics { get; set; } = new MarketTrendAnalyticsMonitorSnapshot();
     public string AnalyticsLoadError { get; set; } = "";
 
+    // Only explicit global/both-scope Metrics entries create this panel. A blank Metrics
+    // field retains legacy PriceTrend behavior but does not count as a configured metrics view.
     public bool HasConfiguredMarketWideMetrics
     {
       get

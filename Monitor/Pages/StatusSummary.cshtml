@@ -160,13 +160,6 @@
         DateTimeOffset settingActivationTime = gss.SwitchDateTime;
         settingActivationTime = settingActivationTime.ToOffset(offsetTimeSpan);
 
-        string marketTrendsSummary = "";
-        foreach (string mt in gss.MarketTrendChanges.Keys) {
-          if (!marketTrendsSummary.Equals("")) {
-            marketTrendsSummary += "<br />";
-          }
-          marketTrendsSummary += Core.Helper.SystemHelper.SplitCamelCase(mt) + ": " + gss.MarketTrendChanges[mt].TrendChange.ToString("#,#0.00", new System.Globalization.CultureInfo("en-US")) + "%";
-        }
         <tr>
           <td>@settingActivationTime.DateTime.ToShortDateString() @settingActivationTime.DateTime.ToShortTimeString()</td>
           <td>@Core.Helper.SystemHelper.SplitCamelCase(gss.SettingName)</td>
