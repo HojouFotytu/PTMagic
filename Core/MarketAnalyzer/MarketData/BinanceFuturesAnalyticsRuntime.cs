@@ -545,48 +545,36 @@ namespace Core.MarketAnalyzer.MarketData
       }
       if (budget == 0) return;
 
-      string apiKey = configuration.GeneralSettings?.Application?.BinanceFuturesApiKey?.Trim() ?? "";
-      if (String.IsNullOrWhiteSpace(apiKey) && trends.SelectMany(x => x.Metrics)
-        .Any(metric => FuturesLongShortRatio.RequiresApiKey(FuturesLongShortRatioFeatureEngine.SourceForMetric(metric))))
-        log.DoLogWarn("Top-trader long/short ratio metrics are configured but no Binance read-only API key is set; those metrics remain UNAVAILABLE.");
-
-      var requests = new List<FuturesLongShortRatioSeriesRequest>();
-      foreach (var group in trends.SelectMany(x => x.Metrics.Select(metric => new
+      var validTrends = trends.Where(x => x.Trend.TrendMinutes >= 5 &&
+        x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&
+        x.Trend.TrendMinutes % 5 == 0).ToArray();
+      if (validTrends.Length == 0) return;
+      int horizon = validTrends.Max(x => x.Trend.TrendMinutes);
+      var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var item in validTrends)
       {
-        x.Trend, Metric = metric, Source = FuturesLongShortRatioFeatureEngine.SourceForMetric(metric)
-      })).GroupBy(x => x.Source))
-      {
-        if (FuturesLongShortRatio.RequiresApiKey(group.Key) && String.IsNullOrWhiteSpace(apiKey))
-          continue;
-        var validTrends = group.Where(x => x.Trend.TrendMinutes >= 5 &&
-          x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&
-          x.Trend.TrendMinutes % 5 == 0).ToArray();
-        if (validTrends.Length == 0) continue;
-        int horizon = validTrends.Max(x => x.Trend.TrendMinutes);
-        var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in validTrends)
-        {
-          MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
-            item.Trend, recentMarkets ?? new Dictionary<string, Market>(),
-            universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
-          symbols.UnionWith(population.AssetSymbols);
-        }
-        requests.Add(new FuturesLongShortRatioSeriesRequest
-        {
-          Source = group.Key, HorizonMinutes = horizon, Symbols = symbols.ToArray()
-        });
+        MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
+          item.Trend, recentMarkets ?? new Dictionary<string, Market>(),
+          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
+        symbols.UnionWith(population.AssetSymbols);
       }
 
+      var request = new FuturesLongShortRatioSeriesRequest
+      {
+        Source = FuturesLongShortRatioSource.GlobalAccount,
+        HorizonMinutes = horizon,
+        Symbols = symbols.ToArray()
+      };
       FuturesLongShortRatioRefreshReport report = await LongShortRatioDataServiceInstance.RefreshAsync(
-        requests, pin.Value, budget,
+        new[] { request }, pin.Value, budget,
         (source, symbol, from, until, limit, ct) =>
           BinanceFuturesLongShortRatioClient.GetHistoryPageAsync(source, symbol, from, until,
-            limit, apiKey, log, ct),
+            limit, log, ct),
         log, cancellationToken).ConfigureAwait(false);
-      log.DoLogInfo("Phase 2 long/short ratios: " + report.Requests + "/" + budget +
-        " page requests; " + report.Failures + " failed (" + report.AuthenticationFailures +
-        " authentication); " + report.CompleteSeries + "/" + report.SelectedSeries +
-        " source/symbol series fully verified. Missing or incomplete observations remain UNAVAILABLE.");
+      log.DoLogInfo("Phase 2 global long/short account ratio: " + report.Requests + "/" + budget +
+        " page requests; " + report.Failures + " failed; " +
+        report.CompleteSeries + "/" + report.SelectedSeries +
+        " symbol histories fully verified. Missing or incomplete observations remain UNAVAILABLE.");
     }
 
     /// <summary>
@@ -684,8 +672,7 @@ namespace Core.MarketAnalyzer.MarketData
           OpenInterestDataServiceInstance,
           systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
           FundingDataServiceInstance,
-          LongShortRatioDataServiceInstance,
-          !String.IsNullOrWhiteSpace(systemConfiguration.GeneralSettings?.Application?.BinanceFuturesApiKey));
+          LongShortRatioDataServiceInstance);
         analyses[marketTrend.Name] = analysis;
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)

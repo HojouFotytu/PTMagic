@@ -16,9 +16,7 @@ namespace Core.MarketAnalyzer.MarketData
   {
     private static readonly string[] MetricNames =
     {
-      MarketTrendMetrics.GlobalLongShortAccountRatio,
-      MarketTrendMetrics.TopTraderLongShortAccountRatio,
-      MarketTrendMetrics.TopTraderLongShortPositionRatio
+      MarketTrendMetrics.GlobalLongShortAccountRatio
     };
 
     public static bool IsMetric(string metric) =>
@@ -32,17 +30,13 @@ namespace Core.MarketAnalyzer.MarketData
       string name = MarketTrendMetrics.Normalize(metric);
       if (name == MarketTrendMetrics.GlobalLongShortAccountRatio)
         return FuturesLongShortRatioSource.GlobalAccount;
-      if (name == MarketTrendMetrics.TopTraderLongShortAccountRatio)
-        return FuturesLongShortRatioSource.TopTraderAccount;
-      if (name == MarketTrendMetrics.TopTraderLongShortPositionRatio)
-        return FuturesLongShortRatioSource.TopTraderPosition;
       throw new ArgumentException("Unknown long/short ratio metric: " + name, nameof(metric));
     }
 
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> Calculate(
       IEnumerable<string> assetSymbols, IReadOnlyCollection<string> enabledMetrics,
       int trendMinutes, DateTimeOffset asOfUtc, string exchange,
-      FuturesLongShortRatioDataService dataService, bool apiKeyConfigured)
+      FuturesLongShortRatioDataService dataService)
     {
       var result = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
         StringComparer.OrdinalIgnoreCase);
@@ -65,11 +59,9 @@ namespace Core.MarketAnalyzer.MarketData
           FuturesLongShortRatioSource source = SourceForMetric(metric);
           string reason = !futures
             ? "Long/short ratio metrics require Binance USD-M Futures, not Binance Spot or Binance US."
-            : FuturesLongShortRatio.RequiresApiKey(source) && !apiKeyConfigured
-              ? "This top-trader ratio endpoint requires an optional read-only Binance Futures API key in General Settings."
-              : dataService == null
-                ? "Long/short ratio collection was not initialized for this raid."
-                : "";
+            : dataService == null
+              ? "Long/short ratio collection was not initialized for this raid."
+              : "";
 
           if (reason.Length > 0)
           {

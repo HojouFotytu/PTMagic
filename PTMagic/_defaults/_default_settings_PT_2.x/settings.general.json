@@ -17,7 +17,6 @@
       "ProfitTrailerMonitorURLXtra": "", // URLs for additional bots you want PTM to update (optional  - comma separated list)
       "ProfitTrailerDefaultSettingName": "default", // Your Profit Trailer default setting name (needed to change your settings)
       "Exchange": "BinanceFutures", // The exchange your are running Profit Trailer on
-      "BinanceFuturesApiKey": "", // Optional read-only Binance API key for top-trader Futures ratio metrics; no API secret required
        "FloodProtectionMinutes": 0, // If a price trend is just zig-zagging around its trigger, you may want to protect your settings from 
                                     // getting switched back and forth every minute
       "InstanceName": "MyBTCbot", // The name of the instance of this bot. This will be used in your monitor and your Telegram messages. 

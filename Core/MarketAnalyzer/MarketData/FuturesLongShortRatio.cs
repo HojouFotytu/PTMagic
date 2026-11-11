@@ -9,17 +9,13 @@ namespace Core.MarketAnalyzer.MarketData
 {
   public enum FuturesLongShortRatioSource
   {
-    GlobalAccount,
-    TopTraderAccount,
-    TopTraderPosition
+    GlobalAccount
   }
 
   /// <summary>
-  /// One native Binance USD-M 5m long/short observation. The provider ratio and
-  /// its two component shares are retained independently; Binance's examples
-  /// are not always internally consistent, so the ratio is never reconstructed.
-  /// For the position endpoint, the API still names the component fields
-  /// longAccount/shortAccount even though they represent position proportions.
+  /// One native Binance USD-M global-account 5m long/short observation.
+  /// The provider ratio and its two component shares are retained independently;
+  /// the ratio is never reconstructed from the component shares.
   /// </summary>
   public sealed class FuturesLongShortRatioObservation
   {
@@ -44,23 +40,15 @@ namespace Core.MarketAnalyzer.MarketData
       return source switch
       {
         FuturesLongShortRatioSource.GlobalAccount => MarketTrendMetrics.GlobalLongShortAccountRatio,
-        FuturesLongShortRatioSource.TopTraderAccount => MarketTrendMetrics.TopTraderLongShortAccountRatio,
-        FuturesLongShortRatioSource.TopTraderPosition => MarketTrendMetrics.TopTraderLongShortPositionRatio,
         _ => throw new ArgumentOutOfRangeException(nameof(source))
       };
     }
-
-    public static bool RequiresApiKey(FuturesLongShortRatioSource source) =>
-      source == FuturesLongShortRatioSource.TopTraderAccount ||
-      source == FuturesLongShortRatioSource.TopTraderPosition;
 
     public static string EndpointPath(FuturesLongShortRatioSource source)
     {
       return source switch
       {
         FuturesLongShortRatioSource.GlobalAccount => "/futures/data/globalLongShortAccountRatio",
-        FuturesLongShortRatioSource.TopTraderAccount => "/futures/data/topLongShortAccountRatio",
-        FuturesLongShortRatioSource.TopTraderPosition => "/futures/data/topLongShortPositionRatio",
         _ => throw new ArgumentOutOfRangeException(nameof(source))
       };
     }

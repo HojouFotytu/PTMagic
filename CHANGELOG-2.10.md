@@ -22,7 +22,7 @@ The last confirmed local focused Monitor run reported **75/75 PASS** on a prior 
 
 ## Phase 2 — Binance Futures long/short ratio metrics and derivative persistence (November 11)
 
-Three opt-in asset metrics are implemented: `GlobalLongShortAccountRatio`, `TopTraderLongShortAccountRatio`, and `TopTraderLongShortPositionRatio`. They use distinct Binance USD-M Futures endpoints and preserve global-account participation separately from top-trader account counts and top-trader position-size participation. Five-minute observations are evaluated over each MarketTrend's exact `TrendMinutes` window. The window ratio averages implied long-side shares `r/(1+r)` and converts the mean back to a ratio; neutral remains 1.0. Missing observations remain unavailable. Top-trader endpoints use an optional read-only Binance API key; no API secret is required. No exchange-wide aggregate is added in this metric batch.
+One opt-in asset metric is implemented: `GlobalLongShortAccountRatio`, using Binance's public global-account endpoint. Five-minute observations are evaluated over each MarketTrend's exact `TrendMinutes` window. The window ratio averages implied long-side shares `r/(1+r)` and converts the mean back to a ratio; neutral remains 1.0. Missing observations remain unavailable. No additional Binance API key is required. No exchange-wide aggregate is added in this metric batch.
 
 The .NET 10.0.403 solution build and all **17/17 offline harnesses passed** at exact source `875b4feb71104fbc609bd07dc3120405218d325f` (17.4s). The ratio harness passed 29 groups; funding 18; raw OI 18; incremental OI 17. Eight nonfatal nullable warnings were reported in two existing test projects.
 
@@ -68,7 +68,7 @@ The Global Settings Log now uses **Market Trends** and **Market Metrics** as its
 
 **User validation at exact source `fb94373d8928b681e3ebe1f7209bd1439db42e72`:** the .NET 10.0.403 Core/PTMagic/Monitor solution built successfully twice (15.6s, then 10.3s); all **16/16 offline harnesses and 337/337 test groups PASSED twice**. New Global Settings Log metric snapshot tests, SOM enable-only API and lifecycle tests, and two-raid red ticker assertions were included. The first run reported eight nonfatal existing nullable-source warnings in test projects; the second printed none. This is deterministic development acceptance only: actual Binance/ProfitTrailer API integration, configured runtime raids, and browser-visible Monitor behavior are still independently unverified.
 
-The previous source-specific "not yet executed" statements below describe the **earlier state** when those features were published, and are **superseded for the now-verified source** by this result. Further Phase 2 work continues with distinct global account, top-trader account and top-trader position long/short ratios; no re-run of the accepted suite is required before starting that work.
+The previous source-specific "not yet executed" statements below describe the **earlier state** when those features were published, and are **superseded for the now-verified source** by this result. Further Phase 2 work continues with configured runtime acceptance of the retained global-account ratio and derivative persistence; no re-run of the accepted suite is required before starting that work.
 
 **Evidence:** [November 10 SOM and Monitor offline validation](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-10-som-monitor-offline-validation.md).
 
@@ -217,8 +217,6 @@ Sources: [OHLCV aggregation and formulas][period-metrics] and [global volatility
 | `FundingRate` | Asset | Latest regular settled funding rate in the window, in percentage points. |
 | `FundingSum` | Asset | Sum of regular settled funding rates in the window, in percentage points. |
 | `GlobalLongShortAccountRatio` | Asset | Binance all-trader long/short account ratio for the symbol. Neutral is 1.0. |
-| `TopTraderLongShortAccountRatio` | Asset | Top-trader account long/short ratio for the symbol. Requires the optional read-only API key. |
-| `TopTraderLongShortPositionRatio` | Asset | Top-trader position-size long/short ratio for the symbol. Distinct from account count; requires the optional read-only API key. |
 
 OI, funding and ratio metrics are opt-in, Binance USD-M Futures-only asset metrics. Funding and ratio history now use versioned disk caches as recorded above. Missing source data remains unavailable; no cache coverage record is treated as a synthetic metric value.
 

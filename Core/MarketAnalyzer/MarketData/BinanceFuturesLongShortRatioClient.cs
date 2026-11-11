@@ -12,8 +12,7 @@ using Newtonsoft.Json.Linq;
 namespace Core.MarketAnalyzer.MarketData
 {
   /// <summary>
-  /// Read-only USD-M long/short ratio history. The two top-trader endpoints
-  /// require only X-MBX-APIKEY (MARKET_DATA); no API secret or signature is used.
+  /// Read-only public USD-M global-account long/short ratio history.
   /// </summary>
   public static class BinanceFuturesLongShortRatioClient
   {
@@ -37,20 +36,14 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static async Task<IReadOnlyList<FuturesLongShortRatioObservation>> GetHistoryPageAsync(
       FuturesLongShortRatioSource source, string symbol, DateTimeOffset startInclusiveUtc,
-      DateTimeOffset endInclusiveUtc, int limit, string apiKey, LogHelper log,
+      DateTimeOffset endInclusiveUtc, int limit, LogHelper log,
       CancellationToken cancellationToken = default)
     {
       if (log == null) throw new ArgumentNullException(nameof(log));
-      if (FuturesLongShortRatio.RequiresApiKey(source) && String.IsNullOrWhiteSpace(apiKey))
-        throw new InvalidOperationException("This top-trader Binance endpoint requires a read-only API key.");
-
-      (string header, string value)[] headers = FuturesLongShortRatio.RequiresApiKey(source)
-        ? new[] { ("X-MBX-APIKEY", apiKey.Trim()) }
-        : null;
 
       string response = await BaseAnalyzer.GetJsonStringFromURLAsync(
         HistoryUrl(source, symbol, startInclusiveUtc, endInclusiveUtc, limit),
-        log, headers, cancellationToken).ConfigureAwait(false);
+        log, cancellationToken: cancellationToken).ConfigureAwait(false);
       if (String.IsNullOrWhiteSpace(response))
         throw new InvalidOperationException("Binance long/short ratio history returned no response.");
 

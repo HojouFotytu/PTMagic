@@ -25,7 +25,7 @@ namespace Core.MarketAnalyzer.MarketData
       int? configuredStoreDataMaxHours = null,
       FuturesOpenInterestDataService openInterestData = null, string exchangeName = "BinanceFutures",
       FuturesFundingDataService fundingData = null,
-      FuturesLongShortRatioDataService longShortRatioData = null, bool longShortRatioApiKeyConfigured = false)
+      FuturesLongShortRatioDataService longShortRatioData = null)
     {
       if (marketTrend == null)
       {
@@ -314,7 +314,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         var ratios = FuturesLongShortRatioFeatureEngine.Calculate(assetUniverse, enabledMetrics,
           marketTrend.TrendMinutes, calculatedAtUtc, exchangeName,
-          longShortRatioData, longShortRatioApiKeyConfigured);
+          longShortRatioData);
         foreach (var asset in ratios)
         {
           Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,

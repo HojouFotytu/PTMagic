@@ -2,8 +2,6 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Helper;
@@ -26,14 +24,12 @@ namespace Core.MarketAnalyzer.MarketData
     public int SelectedSeries { get; init; }
     public int Requests { get; init; }
     public int Failures { get; init; }
-    public int AuthenticationFailures { get; init; }
     public int CompleteSeries { get; init; }
   }
 
   /// <summary>
-  /// Bounded, incremental per-symbol 5m ratio history. The three Binance sources
-  /// share one per-raid request budget and are scheduled fairly. Exact samples
-  /// are checked by the feature engine; missing periods are never interpolated.
+  /// Bounded, incremental per-symbol 5m global-account ratio history.
+  /// Exact samples are checked by the feature engine; missing periods are never interpolated.
   /// </summary>
   public sealed class FuturesLongShortRatioDataService
   {
@@ -178,8 +174,6 @@ namespace Core.MarketAnalyzer.MarketData
 
         int requestsMade = 0;
         int failures = 0;
-        int authenticationFailures = 0;
-        var authenticationBlocked = new HashSet<FuturesLongShortRatioSource>();
         bool madeProgress = true;
 
         while (requestsMade < requestBudget && madeProgress)
@@ -188,7 +182,7 @@ namespace Core.MarketAnalyzer.MarketData
           foreach (Work item in schedule)
           {
             if (requestsMade >= requestBudget) break;
-            if (item.Pages >= PagesPerSeriesPerRaid || authenticationBlocked.Contains(item.Source))
+            if (item.Pages >= PagesPerSeriesPerRaid)
               continue;
 
             long from;
@@ -268,17 +262,6 @@ namespace Core.MarketAnalyzer.MarketData
             {
               throw;
             }
-            catch (HttpRequestException ex) when (
-              ex.StatusCode == HttpStatusCode.Unauthorized || ex.StatusCode == HttpStatusCode.Forbidden)
-            {
-              failures++;
-              authenticationFailures++;
-              authenticationBlocked.Add(item.Source);
-              item.Pages = PagesPerSeriesPerRaid;
-              log.DoLogWarn("Binance Futures " + item.Source +
-                " long/short ratio endpoint rejected its API key (HTTP " + (int)ex.StatusCode.Value +
-                "); remaining requests for this source are paused for this raid.");
-            }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
               failures++;
@@ -302,7 +285,7 @@ namespace Core.MarketAnalyzer.MarketData
         return new FuturesLongShortRatioRefreshReport
         {
           SelectedSeries = work.Count, Requests = requestsMade,
-          Failures = failures, AuthenticationFailures = authenticationFailures,
+          Failures = failures,
           CompleteSeries = complete
         };
       }

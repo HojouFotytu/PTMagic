@@ -1,7 +1,7 @@
-# Phase 2 — Binance Futures Long/Short Ratio Checks
+# Phase 2 — Binance Futures Global Account Long/Short Ratio Checks
 
-Focused offline checks for the three opt-in Binance USD-M Futures ratio feeds:
-global account, top-trader account, and top-trader position.
+Focused offline checks for the single opt-in public Binance USD-M Futures
+global-account long/short ratio feed. No API key or API secret is required.
 
 Run from the PTMagic repository root:
 
@@ -9,4 +9,4 @@ Run from the PTMagic repository root:
 dotnet run --project .\Tests\Phase2LongShortRatios\Phase2LongShortRatios.csproj
 ```
 
-No live Binance calls, API credentials, PT instance, or trading actions are required.
+No live Binance calls, PT instance, or trading actions are required.

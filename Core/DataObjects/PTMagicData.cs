@@ -54,8 +54,6 @@ namespace Core.Main.DataObjects.PTMagicData
     public int FloodProtectionMinutes { get; set; } = 15;
     public string Exchange { get; set; }
     public string InstanceName { get; set; } = "PT Magic";
-    // Public API key for read-only Binance Futures market-data endpoints. No secret/signature is used.
-    public string BinanceFuturesApiKey { get; set; } = "";
     //public string TimezoneOffset { get; set; } = "+0:00";
     //public string FreeCurrencyConverterAPIKey { get; set; }
   }

@@ -177,9 +177,6 @@ try
     DateTimeOffset.FromUnixTimeMilliseconds(endCoverage), null);
   Check(restored.Rows.Count == 1 && restored.CompleteIntervals.Count == 1 &&
     restored.Rows[0].LongShortRatio == 1.5m, "ratio cache restores after service restart");
-  Check(disk.TryRestore(FuturesLongShortRatioSource.TopTraderAccount, "BTCUSDT",
-    DateTimeOffset.FromUnixTimeMilliseconds(endCoverage), null).Rows.Count == 0,
-    "ratio cache isolates endpoint sources");
   string corruptPath = disk.CachePath(FuturesLongShortRatioSource.GlobalAccount, "ETHUSDT");
   Directory.CreateDirectory(Path.GetDirectoryName(corruptPath)!);
   File.WriteAllText(corruptPath, "corrupt");
@@ -192,20 +189,10 @@ finally
   if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, recursive: true);
 }
 
-var sources = new[]
-{
-  FuturesLongShortRatioSource.GlobalAccount,
-  FuturesLongShortRatioSource.TopTraderAccount,
-  FuturesLongShortRatioSource.TopTraderPosition
-};
-var names = sources.Select(FuturesLongShortRatio.MetricName).ToArray();
-Check(names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 3, "three metric identities are distinct");
-Check(!FuturesLongShortRatio.RequiresApiKey(FuturesLongShortRatioSource.GlobalAccount), "global account endpoint is public");
-Check(FuturesLongShortRatio.RequiresApiKey(FuturesLongShortRatioSource.TopTraderAccount), "top-trader account requires API key");
-Check(FuturesLongShortRatio.RequiresApiKey(FuturesLongShortRatioSource.TopTraderPosition), "top-trader position requires API key");
-Check(FuturesLongShortRatio.EndpointPath(FuturesLongShortRatioSource.GlobalAccount).EndsWith("globalLongShortAccountRatio"), "global account endpoint path");
-Check(FuturesLongShortRatio.EndpointPath(FuturesLongShortRatioSource.TopTraderAccount).EndsWith("topLongShortAccountRatio"), "top-trader account endpoint path");
-Check(FuturesLongShortRatio.EndpointPath(FuturesLongShortRatioSource.TopTraderPosition).EndsWith("topLongShortPositionRatio"), "top-trader position endpoint path");
+Check(FuturesLongShortRatio.MetricName(FuturesLongShortRatioSource.GlobalAccount) ==
+  MarketTrendMetrics.GlobalLongShortAccountRatio, "global account is the sole ratio metric");
+Check(FuturesLongShortRatio.EndpointPath(FuturesLongShortRatioSource.GlobalAccount)
+  .EndsWith("globalLongShortAccountRatio"), "global account public endpoint path");
 
 string url = BinanceFuturesLongShortRatioClient.HistoryUrl(
   FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT",
@@ -260,10 +247,6 @@ Check(mapped.Count == 2, "maps two ordered 5m observations");
 Check(mapped[0].LongShortRatio == 1.5m && mapped[0].LongSideShare == 0.60m &&
   mapped[0].ShortSideShare == 0.40m, "preserves ratio and source components independently");
 Check(mapped[0].Period == TimeSpan.FromMinutes(5), "records native 5m period");
-Check(FuturesLongShortRatio.MapHistory(JArray.Parse(json),
-  FuturesLongShortRatioSource.TopTraderPosition, "BTCUSDT",
-  DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_300_000))[0].Source ==
-  FuturesLongShortRatioSource.TopTraderPosition, "same provider fields map with distinct position source identity");
 
 string mismatch = json.Replace("BTCUSDT","ETHUSDT");
 Throws<InvalidDataException>(() => FuturesLongShortRatio.MapHistory(JArray.Parse(mismatch),
@@ -335,11 +318,9 @@ Throws<InvalidDataException>(() => FuturesLongShortRatio.Validate(
     LongSideShare = .5m, ShortSideShare = .5m },
   FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT"), "foreign symbol observation rejected");
 
-Check(FuturesLongShortRatioFeatureEngine.IsMetric(MarketTrendMetrics.GlobalLongShortAccountRatio) &&
-  FuturesLongShortRatioFeatureEngine.IsMetric(MarketTrendMetrics.TopTraderLongShortAccountRatio) &&
-  FuturesLongShortRatioFeatureEngine.IsMetric(MarketTrendMetrics.TopTraderLongShortPositionRatio),
-  "all three ratio metrics recognized");
+Check(FuturesLongShortRatioFeatureEngine.IsMetric(MarketTrendMetrics.GlobalLongShortAccountRatio),
+  "global account ratio is recognized");
 Check(!FuturesLongShortRatioFeatureEngine.IsMetric(MarketTrendMetrics.FundingRate),
-  "unrelated funding metric not classified as ratio");
+  "unrelated funding metric is not classified as ratio");
 
 Console.WriteLine("PASS: " + passed + " Phase2LongShortRatios checks.");
