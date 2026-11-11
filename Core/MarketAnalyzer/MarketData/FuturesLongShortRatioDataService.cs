@@ -132,6 +132,7 @@ namespace Core.MarketAnalyzer.MarketData
             _series.Remove(key);
           foreach (var key in _served.Keys.Where(key => !active.Contains(key)).ToArray())
             _served.Remove(key);
+          _restored.RemoveWhere(key => !active.Contains(key));
 
           foreach (Work item in work)
           {
