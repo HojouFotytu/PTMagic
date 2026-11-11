@@ -17,8 +17,9 @@ namespace Core.MarketAnalyzer.MarketData
   /// Fair per-page admission for an analysis raid. No fixed request count:
   /// the shared Binance limiter owns IP/provider capacity, and the existing
   /// analysis-freshness deadline bounds acquisition time. A blocked family
-  /// defers its remaining history to a future raid rather than waiting through
-  /// an entire exchange quota window and making the current decision stale.
+  /// waits asynchronously for capacity that can return before the deadline.
+  /// If capacity cannot return in time, its missing history is deferred.
+  /// Waiting for one family must not prevent other families from acquiring.
   /// </summary>
   public sealed class BinanceDerivativeAcquisitionScheduler
   {
@@ -43,6 +44,7 @@ namespace Core.MarketAnalyzer.MarketData
     };
     private readonly Func<DateTimeOffset> _now;
     private readonly Func<Uri, TimeSpan> _estimatedDelay;
+    private readonly Func<TimeSpan, CancellationToken, Task> _waitAsync;
     private int _nextFamily;
     private bool _dispatching;
 
@@ -50,11 +52,13 @@ namespace Core.MarketAnalyzer.MarketData
 
     public BinanceDerivativeAcquisitionScheduler(DateTimeOffset deadlineUtc,
       Func<Uri, TimeSpan> estimatedDelay = null,
-      Func<DateTimeOffset> utcNow = null)
+      Func<DateTimeOffset> utcNow = null,
+      Func<TimeSpan, CancellationToken, Task> waitAsync = null)
     {
       DeadlineUtc = deadlineUtc.ToUniversalTime();
       _estimatedDelay = estimatedDelay ?? BinanceRateLimiter.EstimatedDelay;
       _now = utcNow ?? (() => DateTimeOffset.UtcNow);
+      _waitAsync = waitAsync ?? ((delay, ct) => Task.Delay(delay, ct));
     }
 
     public Task<bool> TryPermitAsync(FuturesDerivativeFamily family,
@@ -101,19 +105,53 @@ namespace Core.MarketAnalyzer.MarketData
           }
         }
 
-        try
-        {
-          if (selected.CancellationToken.IsCancellationRequested)
-            selected.Completion.TrySetCanceled(selected.CancellationToken);
-          else
-            selected.Completion.TrySetResult(_now().ToUniversalTime() < DeadlineUtc &&
-              _estimatedDelay(Endpoints[family]) <= TimeSpan.Zero);
-        }
-        catch (Exception exception)
-        {
-          selected.Completion.TrySetException(exception);
-        }
+        // A family waiting for its quota must not hold up ready families.
+        _ = CompleteWhenReadyAsync(selected, family);
         await Task.Yield();
+      }
+    }
+
+    private async Task CompleteWhenReadyAsync(Pending selected, int family)
+    {
+      try
+      {
+        while (true)
+        {
+          selected.CancellationToken.ThrowIfCancellationRequested();
+          DateTimeOffset now = _now().ToUniversalTime();
+          TimeSpan remaining = DeadlineUtc - now;
+          if (remaining <= TimeSpan.Zero)
+          {
+            selected.Completion.TrySetResult(false);
+            return;
+          }
+
+          TimeSpan delay = _estimatedDelay(Endpoints[family]);
+          if (delay <= TimeSpan.Zero)
+          {
+            selected.Completion.TrySetResult(true);
+            return;
+          }
+
+          // Do not wait past the existing raid freshness cutoff.
+          if (delay >= remaining)
+          {
+            selected.Completion.TrySetResult(false);
+            return;
+          }
+
+          // Re-estimate after every wait: other traffic can consume the
+          // newly released quota before this family gets to use it.
+          await _waitAsync(delay, selected.CancellationToken).ConfigureAwait(false);
+        }
+      }
+      catch (OperationCanceledException) when (selected.CancellationToken.IsCancellationRequested)
+      {
+        selected.Completion.TrySetCanceled(selected.CancellationToken);
+      }
+      catch (Exception exception)
+      {
+        selected.Completion.TrySetException(exception);
       }
     }
   }
