@@ -533,11 +533,13 @@ internal static class Program
       Check("market-wide metric headers have two centered rows with clear hierarchy", () =>
       {
         string root = Directory.GetCurrentDirectory();
-        string viewPath = Path.Combine(root, "Monitor", "Pages", "MarketMetrics.cshtml");
+        string viewPath = Path.Combine(root, "Monitor", "Pages", "MarketAnalyzer.cshtml");
+        string metricsNavigationPath = Path.Combine(root, "Monitor", "Pages", "MarketMetrics.cshtml");
         string cssPath = Path.Combine(root, "Monitor", "wwwroot", "assets", "css", "custom.css");
-        if (!File.Exists(viewPath) || !File.Exists(cssPath))
+        if (!File.Exists(viewPath) || !File.Exists(metricsNavigationPath) || !File.Exists(cssPath))
           throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
         string view = File.ReadAllText(viewPath);
+        string metricsNavigation = File.ReadAllText(metricsNavigationPath);
         string css = File.ReadAllText(cssPath);
         Require(view.Contains("market-wide-group-titles", StringComparison.Ordinal)
           && view.Contains("market-wide-subheadings", StringComparison.Ordinal)
@@ -546,10 +548,13 @@ internal static class Program
           && view.Contains("Model.GlobalMetricSubheading(metric)", StringComparison.Ordinal)
           && view.Contains("Heading.ToUpperInvariant()", StringComparison.Ordinal)
           && view.Contains("market-wide-group-line text-muted", StringComparison.Ordinal)
-          && view.Contains("Page-local rules avoid stale cached custom.css", StringComparison.Ordinal)
+          && view.Contains("@section Styles", StringComparison.Ordinal)
+          && view.Contains(".market-wide-grouped th,", StringComparison.Ordinal)
           && view.Contains("text-align: center !important", StringComparison.Ordinal)
           && view.Contains("color: #8f9fb3 !important", StringComparison.Ordinal)
           && view.Contains("Model.FormatMetric(metric, feature)", StringComparison.Ordinal)
+          && metricsNavigation.Contains("Market-wide metrics are now displayed on the main Market Analyzer page.", StringComparison.Ordinal)
+          && metricsNavigation.Contains("Open Market Analyzer", StringComparison.Ordinal)
           && css.Contains(".market-wide-grouped th,", StringComparison.Ordinal)
           && css.Contains("text-align: center !important", StringComparison.Ordinal)
           && css.Contains("text-transform: uppercase", StringComparison.Ordinal)
