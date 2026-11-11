@@ -1,4 +1,5 @@
-﻿{
+// PTMagic 2.10.0 development settings | Version: 2.10.0 | Updated: 20261111
+{
   "GeneralSettings": {
     "Application": {
       "IsEnabled": true, // Enables the PTMagic bot (needs restart to take effect)
