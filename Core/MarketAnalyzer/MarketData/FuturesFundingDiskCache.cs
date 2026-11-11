@@ -182,7 +182,10 @@ namespace Core.MarketAnalyzer.MarketData
 
         if (File.Exists(path) &&
           DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < MinimumSaveInterval)
-          return false;
+        {
+          FuturesFundingDiskSnapshot existing = TryRestore(normalized, asOfUtc, log);
+          if (MatchesSnapshot(existing, rows, intervals)) return false;
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -234,6 +237,30 @@ namespace Core.MarketAnalyzer.MarketData
           catch (UnauthorizedAccessException) { }
         }
       }
+    }
+
+    private static bool MatchesSnapshot(FuturesFundingDiskSnapshot snapshot,
+      IReadOnlyList<FuturesFundingObservation> rows,
+      IReadOnlyList<(long Start, long End)> intervals)
+    {
+      if (snapshot.Rows.Count != rows.Count || snapshot.CompleteIntervals.Count != intervals.Count)
+        return false;
+      for (int index = 0; index < rows.Count; index++)
+      {
+        FuturesFundingObservation saved = snapshot.Rows[index];
+        FuturesFundingObservation current = rows[index];
+        if (saved.FundingTimeUtc.ToUnixTimeMilliseconds() != current.FundingTimeUtc.ToUnixTimeMilliseconds() ||
+          !String.Equals(saved.RateType, current.RateType, StringComparison.Ordinal) ||
+          saved.NativeRate != current.NativeRate || saved.MarkPrice != current.MarkPrice)
+          return false;
+      }
+      for (int index = 0; index < intervals.Count; index++)
+      {
+        if (snapshot.CompleteIntervals[index].Start != intervals[index].Start ||
+          snapshot.CompleteIntervals[index].End != intervals[index].End)
+          return false;
+      }
+      return true;
     }
 
     private static decimal ParseDecimal(string raw, bool allowNegative)
