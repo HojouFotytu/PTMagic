@@ -16,6 +16,8 @@ The entire November 10–11 Possible Buys zero-limit count/card experiment, sepa
 
 **Remaining defect (not resolved):** The owner reports stale PBL and Positions data even after full rollback. November 2 changes `ec19a5e` and `26ce2d8` made DashboardTop polling callback-dependent, added a hidden-tab guard, and placed tooltip and color updates before the request-running flag is cleared. These are possible source-level failure paths, **not a runtime-confirmed cause**. Ticker tooltip preservation resides separately in `_Layout.cshtml`/`TickerWidgets.cshtml`. The next proposed correction must be described to the owner **before any implementation**, must preserve the existing `$("#dashboardTop").load(...)` method unless explicitly approved otherwise, and must not reintroduce the experimental count endpoint/cache.
 
+Any next refresh correction is restricted to **scheduling logic in `Monitor/Pages/Index.cshtml`**. Preserve the original `.load()` request and callback; do not change PBL/Positions data retrieval, calculations, DashboardTop rendering, ticker refresh, tooltips or autocoloring. The exact proposed change must be explained before source edits.
+
 The last confirmed local focused Monitor run reported **75/75 PASS** on a prior revision, and the last complete suite reported **337/337 PASS** at `fb94373`. Neither establishes correct refresh after the rollback. See the [November 11 investigation and current status](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-dashboard-refresh-history-and-current-state.md).
 
 ## Monitor — enforce centered market-wide headings and gray labels (November 10)
