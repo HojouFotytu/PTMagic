@@ -121,7 +121,7 @@ namespace Core.MarketAnalyzer.MarketData
                 state.Rows[key] = row;
               }
               state.Complete.AddRange(saved.CompleteIntervals);
-              foreach (long key in state.Rows.Keys.Where(value => value.At < start).ToArray()) state.Rows.Remove(key);
+              foreach (var key in state.Rows.Keys.Where(value => value.At < start).ToArray()) state.Rows.Remove(key);
               state.Complete.RemoveAll(value => value.End < start);
             }
             if (saved.Rows.Count > 0 || saved.CompleteIntervals.Count > 0) restored++;
