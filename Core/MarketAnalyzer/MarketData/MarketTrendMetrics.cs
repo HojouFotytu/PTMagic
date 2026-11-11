@@ -47,6 +47,9 @@ namespace Core.MarketAnalyzer.MarketData
     public const string OpenInterestValueChange = "OpenInterestValueChange";
     public const string FundingRate = "FundingRate";
     public const string FundingSum = "FundingSum";
+    public const string GlobalLongShortAccountRatio = "GlobalLongShortAccountRatio";
+    public const string TopTraderLongShortAccountRatio = "TopTraderLongShortAccountRatio";
+    public const string TopTraderLongShortPositionRatio = "TopTraderLongShortPositionRatio";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -76,7 +79,10 @@ namespace Core.MarketAnalyzer.MarketData
         [OpenInterestChange] = MarketTrendMetricScope.Asset,
         [OpenInterestValueChange] = MarketTrendMetricScope.Asset,
         [FundingRate] = MarketTrendMetricScope.Asset,
-        [FundingSum] = MarketTrendMetricScope.Asset
+        [FundingSum] = MarketTrendMetricScope.Asset,
+        [GlobalLongShortAccountRatio] = MarketTrendMetricScope.Asset,
+        [TopTraderLongShortAccountRatio] = MarketTrendMetricScope.Asset,
+        [TopTraderLongShortPositionRatio] = MarketTrendMetricScope.Asset
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();
