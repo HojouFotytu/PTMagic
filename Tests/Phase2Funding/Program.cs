@@ -83,6 +83,56 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestServiceRestartPersistence()
+  {
+    string root = Path.Combine(Path.GetTempPath(), "PTM_FundingServiceRestart_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+      int firstRequests = 0;
+      var first = new FuturesFundingDataService(root);
+      var initial = await first.RefreshAsync(new[] { "BTCUSDT" }, 180, Pin, 2,
+        (symbol, from, to, limit, ct) =>
+        {
+          firstRequests++;
+          return Read(symbol, from, to, limit, ct);
+        }, Log);
+      Assert(firstRequests == 1 && initial.CompleteSymbols == 1, "First funding service persists complete coverage.");
+
+      int restartRequests = 0;
+      var restarted = new FuturesFundingDataService(root);
+      var restored = await restarted.RefreshAsync(new[] { "BTCUSDT" }, 180, Pin, 2,
+        (symbol, from, to, limit, ct) =>
+        {
+          restartRequests++;
+          return Read(symbol, from, to, limit, ct);
+        }, Log);
+      Assert(restored.CompleteSymbols == 1 && restartRequests == 0,
+        "New funding service restores complete coverage without another provider request.");
+      Assert(restarted.TrySnapshot("BTCUSDT", 180, Pin, out var history) &&
+        history.Count == 2 && history.Sum(row => row.NativeRate) == -0.0001m,
+        "Restarted funding service exposes the same restored observations.");
+
+      string corruptPath = new FuturesFundingDiskCache(root).CachePath("ETHUSDT");
+      Directory.CreateDirectory(Path.GetDirectoryName(corruptPath)!);
+      File.WriteAllText(corruptPath, "corrupt");
+      int repairRequests = 0;
+      var repair = new FuturesFundingDataService(root);
+      var repaired = await repair.RefreshAsync(new[] { "ETHUSDT" }, 180, Pin, 1,
+        (symbol, from, to, limit, ct) =>
+        {
+          repairRequests++;
+          return Read(symbol, from, to, limit, ct);
+        }, Log);
+      Assert(repairRequests == 1 && repaired.Requests == 1 && repaired.CompleteSymbols == 1 &&
+        !File.Exists(corruptPath), "Corrupt funding cache is discarded and repaired with one bounded request.");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+    _passed++;
+  }
+
   private static void TestPayload()
   {
     var raw = new JArray(new JObject
@@ -338,6 +388,7 @@ internal static class Program
     try
     {
       TestFundingDiskCache();
+      await TestServiceRestartPersistence();
       TestPayload();
       TestSpecialAndUnknownTypes();
       TestPayloadFailures();
