@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using Core.MarketAnalyzer.MarketData;
@@ -16,6 +17,44 @@ void Throws<T>(Action action, string name) where T : Exception
   try { action(); }
   catch (T) { passed++; Console.WriteLine("PASS: " + name); return; }
   throw new InvalidOperationException("FAIL: " + name);
+}
+
+string cacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioCache_" + Guid.NewGuid().ToString("N"));
+try
+{
+  var disk = new FuturesLongShortRatioDiskCache(cacheRoot);
+  var cacheRows = new[]
+  {
+    new FuturesLongShortRatioObservation
+    {
+      Symbol = "BTCUSDT", Source = FuturesLongShortRatioSource.GlobalAccount,
+      TimestampUtc = DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_100_000),
+      Period = TimeSpan.FromMinutes(5), LongShortRatio = 1.5m,
+      LongSideShare = .6m, ShortSideShare = .4m
+    }
+  };
+  long startCoverage = 1_700_000_000_000;
+  long endCoverage = 1_700_000_400_000;
+  Check(disk.TrySave(FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT",
+    cacheRows, new[] { (startCoverage, endCoverage) },
+    DateTimeOffset.FromUnixTimeMilliseconds(endCoverage), null), "ratio cache saves raw rows and verified coverage");
+  var restored = disk.TryRestore(FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT",
+    DateTimeOffset.FromUnixTimeMilliseconds(endCoverage), null);
+  Check(restored.Rows.Count == 1 && restored.CompleteIntervals.Count == 1 &&
+    restored.Rows[0].LongShortRatio == 1.5m, "ratio cache restores after service restart");
+  Check(disk.TryRestore(FuturesLongShortRatioSource.TopTraderAccount, "BTCUSDT",
+    DateTimeOffset.FromUnixTimeMilliseconds(endCoverage), null).Rows.Count == 0,
+    "ratio cache isolates endpoint sources");
+  string corruptPath = disk.CachePath(FuturesLongShortRatioSource.GlobalAccount, "ETHUSDT");
+  Directory.CreateDirectory(Path.GetDirectoryName(corruptPath)!);
+  File.WriteAllText(corruptPath, "corrupt");
+  Check(disk.TryRestore(FuturesLongShortRatioSource.GlobalAccount, "ETHUSDT",
+    DateTimeOffset.FromUnixTimeMilliseconds(endCoverage), null).Rows.Count == 0 &&
+    !File.Exists(corruptPath), "corrupt ratio cache is discarded fail-open");
+}
+finally
+{
+  if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, recursive: true);
 }
 
 var sources = new[]
