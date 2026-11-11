@@ -97,7 +97,7 @@ namespace Core.MarketAnalyzer.MarketData
             };
             FuturesFunding.Validate(row, normalized);
             string typeKey = rateType.ToUpperInvariant();
-            if (milliseconds <= previousTime ||
+            if (milliseconds < previousTime ||
               (milliseconds == previousTime && String.CompareOrdinal(typeKey, previousType) <= 0) ||
               milliseconds > maximumTime)
               throw new InvalidDataException("Funding cache rows are unordered, duplicated or future-dated.");
