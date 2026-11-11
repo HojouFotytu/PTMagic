@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -31,7 +32,14 @@ namespace Core.MarketAnalyzer.MarketData
     public const int MaximumRequestsPerRaid = 400;
     private const int PageSize = 1000;
     private const int PagesPerSymbol = 2;
+    private readonly FuturesFundingDiskCache _disk;
+    private readonly HashSet<string> _restored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+
+    public FuturesFundingDataService(string cacheDirectory = null)
+    {
+      _disk = String.IsNullOrWhiteSpace(cacheDirectory) ? null : new FuturesFundingDiskCache(cacheDirectory);
+    }
     private readonly object _sync = new object();
     private sealed class Series
     {
@@ -69,8 +77,8 @@ namespace Core.MarketAnalyzer.MarketData
       string[] symbols = (eligible ?? Array.Empty<string>()).Where(s => !String.IsNullOrWhiteSpace(s))
         .Select(FuturesOpenInterest.NormalizeSymbol).Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(s => s, StringComparer.Ordinal).ToArray();
-      if (symbols.Length == 0 || requestBudget == 0)
-        return new FundingRefreshReport { SelectedSymbols = symbols.Length };
+      if (symbols.Length == 0)
+        return new FundingRefreshReport { SelectedSymbols = 0 };
 
       long end = asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
       long start = end - (long)horizonMinutes * 60000L + 1;
@@ -92,6 +100,31 @@ namespace Core.MarketAnalyzer.MarketData
           }
           schedule = symbols.OrderBy(s => _served.TryGetValue(s, out long last) ? last : long.MinValue)
             .ThenBy(s => s, StringComparer.Ordinal).ToArray();
+        }
+
+        int restored = 0;
+        if (_disk != null)
+        {
+          foreach (string symbol in symbols)
+          {
+            bool restore;
+            lock (_sync) restore = _restored.Add(symbol);
+            if (!restore) continue;
+            FuturesFundingDiskSnapshot saved = _disk.TryRestore(symbol, asOfUtc, log);
+            lock (_sync)
+            {
+              Series state = Ensure(symbol);
+              foreach (FuturesFundingObservation row in saved.Rows)
+              {
+                var key = (row.FundingTimeUtc.ToUnixTimeMilliseconds(), row.RateType.ToUpperInvariant());
+                state.Rows[key] = row;
+              }
+              state.Complete.AddRange(saved.CompleteIntervals);
+              foreach (long key in state.Rows.Keys.Where(value => value.At < start).ToArray()) state.Rows.Remove(key);
+              state.Complete.RemoveAll(value => value.End < start);
+            }
+            if (saved.Rows.Count > 0 || saved.CompleteIntervals.Count > 0) restored++;
+          }
         }
 
         int requests = 0, failures = 0;
@@ -153,6 +186,18 @@ namespace Core.MarketAnalyzer.MarketData
                 foreach (var entry in pending) state.Rows[entry.Key] = entry.Value;
                 if (exhausted) state.Complete.Add((from, end));
                 else if (last > from) state.Complete.Add((from, last - 1));
+              }
+              if (_disk != null)
+              {
+                IReadOnlyList<FuturesFundingObservation> snapshot;
+                (long Start, long End)[] coverage;
+                lock (_sync)
+                {
+                  Series saved = Ensure(symbol);
+                  snapshot = saved.Rows.Values.ToArray();
+                  coverage = saved.Complete.ToArray();
+                }
+                _disk.TrySave(symbol, snapshot, coverage, asOfUtc, log);
               }
               if (exhausted) break;
             }
