@@ -748,6 +748,66 @@ internal static class Program
         object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() }; Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments);
         Require(((GlobalSetting)arguments[0]).SettingName == "Default" && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
       });
+      Check("indeterminate active DEFAULT selects configured final fallback", () =>
+      {
+        using var fixture = new Fixture(); var fallback = ConfigureIndeterminateFallback(fixture);
+        object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() };
+        Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments);
+        Require(((GlobalSetting)arguments[0]).SettingName == fallback.SettingName);
+        Require(Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Require(Get<string>(fixture.Bot, "_selectedGlobalSelectionBasis").StartsWith("Indeterminate fallback:", StringComparison.Ordinal));
+        Require(((List<string>)arguments[1]).Count == 0);
+      });
+      Check("indeterminate selection retains an active specialist instead of downgrading it", () =>
+      {
+        using var fixture = new Fixture(); ConfigureIndeterminateFallback(fixture); fixture.SelectRisk();
+        object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() };
+        Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments);
+        Require(((GlobalSetting)arguments[0]).SettingName == "Risk");
+        Require(Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Require(!Get<string>(fixture.Bot, "_selectedGlobalSelectionBasis").StartsWith("Indeterminate fallback:", StringComparison.Ordinal));
+      });
+      Check("indeterminate fallback bypasses flood protection", () =>
+      {
+        using var fixture = new Fixture(); var fallback = ConfigureIndeterminateFallback(fixture);
+        Set(fixture.Bot, "_firstSuccessfulRaidPending", false); fixture.Bot.LastSettingsChange = DateTime.UtcNow;
+        object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() };
+        Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments); Call(fixture.Bot, "ActivateSetting", arguments);
+        Require(fixture.Bot.ActiveSettingName == fallback.SettingName && fixture.Bot.LastRuntimeSummary.FloodProtectedSetting == null);
+      });
+      Check("fresh indeterminate fallback can be delivered while startup SOM awaits manual release", () =>
+      {
+        using var fixture = new Fixture(); var fallback = ConfigureIndeterminateFallback(fixture);
+        Set(fixture.Bot, "_firstSuccessfulRaidPending", false); Set(fixture.Bot, "_startupGuardManualReviewRequired", true);
+        object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() };
+        Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments); Call(fixture.Bot, "ActivateSetting", arguments);
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 && fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == fallback.SettingName);
+        Require(fixture.SomCalls.Count == 0 && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+      });
+      Check("indeterminate fallback still obeys stale-analysis delivery protection", () =>
+      {
+        using var fixture = new Fixture(); ConfigureIndeterminateFallback(fixture);
+        Set(fixture.Bot, "_firstSuccessfulRaidPending", false);
+        object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() };
+        Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments); Call(fixture.Bot, "ActivateSetting", arguments);
+        SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 0 && fixture.Bot.ActiveSettingName == "Default");
+        Require(fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
+      });
+      Check("failed indeterminate fallback delivery does not commit over confirmed DEFAULT", () =>
+      {
+        using var fixture = new Fixture(); var fallback = ConfigureIndeterminateFallback(fixture);
+        Set(fixture.Bot, "_firstSuccessfulRaidPending", false); fixture.Next = ConfigurationDeliveryResult.Failed("fake fallback failure");
+        object[] arguments = { fixture.Bot.ActiveSetting, new List<string>() };
+        Call(fixture.Bot, "CheckGlobalSettingsTriggers", arguments); Call(fixture.Bot, "ActivateSetting", arguments);
+        string confirmedBefore = fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName;
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 && fixture.Bot.ActiveSettingName == "Default");
+        Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == confirmedBefore && fixture.Bot.ConfigurationDelivery.Pending);
+        Require(fixture.Bot.LastRuntimeSummary.DesiredGlobalSettingName == fallback.SettingName);
+      });
       Console.WriteLine("Configuration lifecycle checks passed: " + _passed + ".");
       return 0;
     }
