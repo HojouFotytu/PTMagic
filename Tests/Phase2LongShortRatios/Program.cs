@@ -217,6 +217,36 @@ Throws<ArgumentOutOfRangeException>(() => BinanceFuturesLongShortRatioClient.His
   FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 501),
   "page size over 500 rejected");
 
+const string unicodeSymbol = "我踏马来了USDT";
+string unicodeCacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioUnicode_" + Guid.NewGuid().ToString("N"));
+try
+{
+  var unicodeService = new FuturesLongShortRatioDataService(unicodeCacheRoot);
+  int unicodeRequests = 0;
+  var unicodeReport = await unicodeService.RefreshAsync(new[] { Request(unicodeSymbol) }, servicePin, 2,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      unicodeRequests++;
+      return ServiceRows(source, symbol, from, to, limit, ct);
+    }, serviceLog);
+  Check(unicodeRequests == 1 && unicodeReport.CompleteSeries == 1 &&
+    unicodeService.Snapshot(FuturesLongShortRatioSource.GlobalAccount, unicodeSymbol, 60, servicePin).Count == 12,
+    "ratio service accepts Unicode Binance symbol and stores its observations");
+  var unicodeRestored = new FuturesLongShortRatioDiskCache(unicodeCacheRoot)
+    .TryRestore(FuturesLongShortRatioSource.GlobalAccount, unicodeSymbol, servicePin, serviceLog);
+  Check(unicodeRestored.Rows.Count == 12 && unicodeRestored.Rows.All(row => row.Symbol == unicodeSymbol),
+    "ratio disk cache restores Unicode symbol identity");
+  string unicodeUrl = BinanceFuturesLongShortRatioClient.HistoryUrl(
+    FuturesLongShortRatioSource.GlobalAccount, unicodeSymbol,
+    servicePin.AddMinutes(-60), servicePin, 500);
+  Check(unicodeUrl.Contains(Uri.EscapeDataString(unicodeSymbol), StringComparison.Ordinal),
+    "ratio request URL encodes Unicode Binance symbols");
+}
+finally
+{
+  if (Directory.Exists(unicodeCacheRoot)) Directory.Delete(unicodeCacheRoot, recursive: true);
+}
+
 string json = """
 [
  {"symbol":"BTCUSDT","longShortRatio":"1.5","longAccount":"0.60","shortAccount":"0.40","timestamp":1700000100000},
