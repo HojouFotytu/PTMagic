@@ -61,38 +61,9 @@ namespace Core.Helper
       }
       else
       {
-        GlobalSetting[] defaultSettings = settings.GlobalSettings.Where(setting => setting != null && setting.SettingName != null
-          && setting.SettingName.IndexOf("default", StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
-        if (defaultSettings.Length == 0)
+        if (!settings.GlobalSettings.Any(setting => setting != null && setting.SettingName != null
+          && setting.SettingName.IndexOf("default", StringComparison.OrdinalIgnoreCase) >= 0))
           errors.Add("GlobalSettings must contain a default fallback setting (a SettingName containing 'default').");
-
-        GlobalSetting[] indeterminateFallbacks = settings.GlobalSettings
-          .Where(setting => setting != null && setting.IsIndeterminateFallback).ToArray();
-        if (indeterminateFallbacks.Length > 1)
-        {
-          errors.Add("At most one GlobalSetting may set IsIndeterminateFallback=true.");
-        }
-        else if (indeterminateFallbacks.Length == 1)
-        {
-          GlobalSetting fallback = indeterminateFallbacks[0];
-          if (String.IsNullOrWhiteSpace(fallback.SettingName)
-            || fallback.SettingName.IndexOf("default", StringComparison.OrdinalIgnoreCase) >= 0)
-            errors.Add("IsIndeterminateFallback cannot be set on DEFAULT.");
-          if (defaultSettings.Length != 1)
-          {
-            errors.Add("An IsIndeterminateFallback setting requires exactly one DEFAULT GlobalSetting.");
-          }
-          else
-          {
-            int defaultIndex = settings.GlobalSettings.IndexOf(defaultSettings[0]);
-            int fallbackIndex = settings.GlobalSettings.IndexOf(fallback);
-            if (defaultIndex != settings.GlobalSettings.Count - 1)
-              errors.Add("DEFAULT must remain the final GlobalSetting when IsIndeterminateFallback is configured.");
-            if (fallbackIndex != settings.GlobalSettings.Count - 2 || fallbackIndex != defaultIndex - 1)
-              errors.Add("The IsIndeterminateFallback GlobalSetting must appear immediately before DEFAULT.");
-          }
-        }
-
         HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (GlobalSetting setting in settings.GlobalSettings)
         {
