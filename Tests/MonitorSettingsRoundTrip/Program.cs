@@ -22,6 +22,13 @@ internal static class Program
         var source = Baseline();
         Equal(source, AnalyzerSettingsForm.Apply(source, Form(source)));
       });
+      Check("indeterminate fallback designation survives Monitor form edits", () =>
+      {
+        var source = Baseline();
+        source.GlobalSettings[0].IsIndeterminateFallback = true;
+        var saved = AnalyzerSettingsForm.Apply(source, Form(source));
+        Require(saved.GlobalSettings[0].IsIndeterminateFallback);
+      });
       Check("same-trend global row edits only its own metric", () =>
       {
         var source = Baseline(); var form = Form(source);
