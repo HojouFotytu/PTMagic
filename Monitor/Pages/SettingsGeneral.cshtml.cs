@@ -53,6 +53,9 @@ namespace Monitor.Pages
         PTMagicConfiguration.GeneralSettings.Application.StartupSellOnlyMode = HttpContext.Request.Form["Application_StartupSellOnlyMode"].Equals("on");
       PTMagicConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName = HttpContext.Request.Form["Application_ProfitTrailerDefaultSettingName"];
       PTMagicConfiguration.GeneralSettings.Application.Exchange = HttpContext.Request.Form["Application_Exchange"];
+      if (HttpContext.Request.Form.ContainsKey("Application_BinanceFuturesApiKey"))
+        PTMagicConfiguration.GeneralSettings.Application.BinanceFuturesApiKey =
+          HttpContext.Request.Form["Application_BinanceFuturesApiKey"].ToString().Trim();
       PTMagicConfiguration.GeneralSettings.Application.ProfitTrailerMonitorURL = HttpContext.Request.Form["Application_ProfitTrailerMonitorURL"];
       PTMagicConfiguration.GeneralSettings.Application.ProfitTrailerServerAPIToken = HttpContext.Request.Form["Application_ProfitTrailerServerAPIToken"];
       if (HttpContext.Request.Form.ContainsKey("Application_ProfitTrailerServerAPITokenXtra"))
