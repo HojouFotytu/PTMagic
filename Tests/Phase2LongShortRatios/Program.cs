@@ -19,6 +19,77 @@ void Throws<T>(Action action, string name) where T : Exception
   throw new InvalidOperationException("FAIL: " + name);
 }
 
+var servicePin = new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero);
+var serviceLog = new Core.Helper.LogHelper(Microsoft.Extensions.Logging.Abstractions.NullLogger<Core.Helper.LogHelper>.Instance);
+FuturesLongShortRatioSeriesRequest Request(string symbol) => new()
+{
+  Source = FuturesLongShortRatioSource.GlobalAccount,
+  HorizonMinutes = 60,
+  Symbols = new[] { symbol }
+};
+Task<IReadOnlyList<FuturesLongShortRatioObservation>> ServiceRows(
+  FuturesLongShortRatioSource source, string symbol, DateTimeOffset from,
+  DateTimeOffset to, int limit, System.Threading.CancellationToken ct)
+{
+  long end = to.ToUnixTimeMilliseconds();
+  var rows = Enumerable.Range(1, 12).Select(index => new FuturesLongShortRatioObservation
+  {
+    Symbol = symbol, Source = source,
+    TimestampUtc = DateTimeOffset.FromUnixTimeMilliseconds(end - (12 - index) * 300_000L),
+    Period = TimeSpan.FromMinutes(5), LongShortRatio = 1.5m,
+    LongSideShare = .6m, ShortSideShare = .4m
+  }).Where(row => row.TimestampUtc >= from && row.TimestampUtc <= to).Take(limit).ToArray();
+  return Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(rows);
+}
+
+string serviceCacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioServiceRestart_" + Guid.NewGuid().ToString("N"));
+try
+{
+  int firstRequests = 0;
+  var firstService = new FuturesLongShortRatioDataService(serviceCacheRoot);
+  var firstReport = await firstService.RefreshAsync(new[] { Request("BTCUSDT") }, servicePin, 2,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      firstRequests++;
+      return ServiceRows(source, symbol, from, to, limit, ct);
+    }, serviceLog);
+  Check(firstRequests == 1 && firstReport.CompleteSeries == 1,
+    "first ratio service persists a complete series");
+
+  int restartRequests = 0;
+  var restartedService = new FuturesLongShortRatioDataService(serviceCacheRoot);
+  var restartReport = await restartedService.RefreshAsync(new[] { Request("BTCUSDT") }, servicePin, 2,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      restartRequests++;
+      return ServiceRows(source, symbol, from, to, limit, ct);
+    }, serviceLog);
+  Check(restartReport.CompleteSeries == 1 && restartRequests == 0,
+    "new ratio service restores complete coverage without another provider request");
+  Check(restartedService.Snapshot(FuturesLongShortRatioSource.GlobalAccount, "BTCUSDT", 60, servicePin).Count == 12,
+    "restarted ratio service exposes the same twelve observations");
+
+  string corruptPath = new FuturesLongShortRatioDiskCache(serviceCacheRoot)
+    .CachePath(FuturesLongShortRatioSource.GlobalAccount, "ETHUSDT");
+  Directory.CreateDirectory(Path.GetDirectoryName(corruptPath)!);
+  File.WriteAllText(corruptPath, "corrupt");
+  int repairRequests = 0;
+  var repairService = new FuturesLongShortRatioDataService(serviceCacheRoot);
+  var repairReport = await repairService.RefreshAsync(new[] { Request("ETHUSDT") }, servicePin, 1,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      repairRequests++;
+      return ServiceRows(source, symbol, from, to, limit, ct);
+    }, serviceLog);
+  Check(repairRequests == 1 && repairReport.Requests == 1 && repairReport.CompleteSeries == 1 &&
+    !File.Exists(corruptPath),
+    "corrupt ratio cache is discarded and repaired with one bounded provider request");
+}
+finally
+{
+  if (Directory.Exists(serviceCacheRoot)) Directory.Delete(serviceCacheRoot, recursive: true);
+}
+
 string cacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioCache_" + Guid.NewGuid().ToString("N"));
 try
 {
