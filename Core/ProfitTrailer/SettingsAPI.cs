@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Core.Main;
 using Core.Helper;
@@ -13,11 +14,15 @@ namespace Core.ProfitTrailer
 {
   public static class SettingsAPI
   {
+    private static readonly TimeSpan[] ServiceUnavailableRetryDelays =
+      { TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10) };
+    private static readonly TimeSpan ServiceUnavailableWaitBudget = TimeSpan.FromSeconds(17);
+
     // Save config back to Profit Trailer
-    public static ConfigurationDeliveryResult SendPropertyLinesToAPI(List<string> pairsLines, List<string> dcaLines, List<string> indicatorsLines, PTMagicConfiguration systemConfiguration, LogHelper log, Func<HttpClient> clientFactory = null, Func<bool> canSend = null)
+    public static ConfigurationDeliveryResult SendPropertyLinesToAPI(List<string> pairsLines, List<string> dcaLines, List<string> indicatorsLines, PTMagicConfiguration systemConfiguration, LogHelper log, Func<HttpClient> clientFactory = null, Func<bool> canSend = null, Action<TimeSpan> waitBefore503Retry = null)
     {
       int retryCount = 0;
-      int maxRetries = 3;
+      int maxRetries = ServiceUnavailableRetryDelays.Length;
       bool transferCompleted = false;
       bool transferCanceled = false;
       bool allTransfersCompleted = true;
@@ -52,6 +57,7 @@ namespace Core.ProfitTrailer
         transferCompleted = false;
         transferCanceled = false;
         retryCount = 0;
+        TimeSpan waitedFor503 = TimeSpan.Zero;
         while (!transferCompleted && !transferCanceled)
         {
           // Recheck before every target and retry: a slow earlier request must
@@ -61,6 +67,7 @@ namespace Core.ProfitTrailer
             log.DoLogWarn("Configuration delivery stopped because the analysis is no longer fresh; a fresh raid will retry.");
             return ConfigurationDeliveryResult.Failed("Analysis expired during configuration delivery.");
           }
+          TimeSpan? serverRetryAfter = null;
           try
           {
             using (HttpClientHandler handler = new HttpClientHandler())
@@ -92,6 +99,8 @@ namespace Core.ProfitTrailer
                   string endpoint = urlList[i].TrimEnd('/') + "/settingsapi/settings/saveAll";
                   using (HttpResponseMessage response = httpClient.PostAsync(endpoint, content).GetAwaiter().GetResult())
                   {
+                    if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+                      serverRetryAfter = RetryAfterDelay(response);
                     if (response.StatusCode == HttpStatusCode.NotModified)
                     {
                       log.DoLogInfo("Properties already up to date in ProfitTrailer.");
@@ -116,6 +125,43 @@ namespace Core.ProfitTrailer
             {
               log.DoLogError("Saving Properties failed for setting '" + systemConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName + "': Unauthorized! The specified Profit Trailer license key '" + systemConfiguration.GetProfitTrailerLicenseKeyMasked() + "' is invalid!");
               transferCanceled = true;
+            }
+            else if (ex.StatusCode == HttpStatusCode.ServiceUnavailable)
+            {
+              if (retryCount >= maxRetries)
+              {
+                transferCanceled = true;
+                log.DoLogError("Saving Properties failed for setting '" +
+                  systemConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName +
+                  "': HTTP 503 after " + (retryCount + 1) +
+                  " attempts. Configuration remains pending until a fresh raid.");
+              }
+              else
+              {
+                TimeSpan delay = ServiceUnavailableRetryDelays[retryCount];
+                if (serverRetryAfter.HasValue && serverRetryAfter.Value > delay)
+                  delay = serverRetryAfter.Value;
+                if (delay > ServiceUnavailableWaitBudget - waitedFor503)
+                {
+                  transferCanceled = true;
+                  log.DoLogWarn("Saving Properties for setting '" +
+                    systemConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName +
+                    "' returned HTTP 503; Retry-After exceeds the bounded retry wait budget. " +
+                    "Configuration remains pending until a fresh raid.");
+                }
+                else
+                {
+                  retryCount++;
+                  waitedFor503 += delay;
+                  log.DoLogWarn("Saving Properties for setting '" +
+                    systemConfiguration.GeneralSettings.Application.ProfitTrailerDefaultSettingName +
+                    "' returned HTTP 503; retry " + retryCount + "/" + maxRetries +
+                    " after " + delay.TotalSeconds + " seconds.");
+                  if (waitBefore503Retry != null) waitBefore503Retry(delay);
+                  else Thread.Sleep(delay);
+                  // The existing freshness gate runs before every new POST.
+                }
+              }
             }
             else
             {
@@ -159,6 +205,15 @@ namespace Core.ProfitTrailer
       }
       return allTransfersCompleted ? ConfigurationDeliveryResult.Applied()
         : ConfigurationDeliveryResult.Failed("One or more ProfitTrailer targets did not acknowledge the complete configuration.");
+    }
+
+    private static TimeSpan? RetryAfterDelay(HttpResponseMessage response)
+    {
+      var header = response.Headers.RetryAfter;
+      if (header == null) return null;
+      TimeSpan delay = header.Delta ??
+        (header.Date.HasValue ? header.Date.Value - DateTimeOffset.UtcNow : TimeSpan.Zero);
+      return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
     }
   }
 }
