@@ -54,6 +54,8 @@ namespace Core.Main.DataObjects.PTMagicData
     public int FloodProtectionMinutes { get; set; } = 15;
     public string Exchange { get; set; }
     public string InstanceName { get; set; } = "PT Magic";
+    // Public API key for read-only Binance Futures market-data endpoints. No secret/signature is used.
+    public string BinanceFuturesApiKey { get; set; } = "";
     //public string TimezoneOffset { get; set; } = "+0:00";
     //public string FreeCurrencyConverterAPIKey { get; set; }
   }
@@ -141,6 +143,10 @@ namespace Core.Main.DataObjects.PTMagicData
     // Funding history spans the longest enabled Funding MarketTrend;
     // no fixed retention hours. This separate knob only caps API calls.
     public int FundingMaxRequestsPerRaid { get; set; } = 60;
+
+    // Shared bounded request budget for the three optional Binance Futures long/short ratio feeds.
+    // 0 disables all ratio acquisition; the required history is derived from enabled MarketTrends.
+    public int LongShortRatioMaxRequestsPerRaid { get; set; } = 60;
   }
 
   public class MarketTrend
