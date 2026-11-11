@@ -33,6 +33,7 @@ internal static class Program
       TestMixedScopeOrPeriod();
       TestPinnedRequestAndBounds();
       TestSupportedPeriodsAndInputGuard();
+      TestUnicodeFuturesSymbols();
       Console.WriteLine("PASS: Phase 2 open-interest raw foundation, " + _passed + " offline case groups.");
       Console.WriteLine("LIMIT: No live Binance requests, no ordinary-raid integration, no PT/Monitor acceptance.");
       return 0;
@@ -241,6 +242,24 @@ internal static class Program
     Throws<ArgumentOutOfRangeException>(() =>
       BinanceFuturesOpenInterestClient.HistoryUrl("BTCUSDT", TimeSpan.FromMinutes(5), Pin, 501),
       "Never exceed provider page size.");
+    _passed++;
+  }
+
+  private static void TestUnicodeFuturesSymbols()
+  {
+    string[] symbols = { "哈基米USDT", "币安人生USDT", "我踏马来了USDT", "牛来USDT", "龙虾USDT" };
+    foreach (string symbol in symbols)
+    {
+      Check(FuturesOpenInterest.NormalizeSymbol(symbol) == symbol,
+        "Legitimate Unicode futures symbol is preserved: " + symbol);
+      string url = BinanceFuturesOpenInterestClient.CurrentUrl(symbol);
+      Check(url.Contains(Uri.EscapeDataString(symbol), StringComparison.Ordinal),
+        "Unicode futures symbol is safely URL-encoded: " + symbol);
+    }
+    Throws<ArgumentException>(() => FuturesOpenInterest.NormalizeSymbol("BTCUSDT&evil=true"),
+      "Query separators remain invalid in futures symbols.");
+    Throws<ArgumentException>(() => FuturesOpenInterest.NormalizeSymbol("BTC USDT"),
+      "Embedded whitespace remains invalid in futures symbols.");
     _passed++;
   }
 
