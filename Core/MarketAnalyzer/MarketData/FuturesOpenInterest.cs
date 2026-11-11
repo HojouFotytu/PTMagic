@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Newtonsoft.Json.Linq;
 
 namespace Core.MarketAnalyzer.MarketData
@@ -47,9 +48,13 @@ namespace Core.MarketAnalyzer.MarketData
     {
       if (String.IsNullOrWhiteSpace(symbol)) throw new ArgumentException("A futures symbol is required.", nameof(symbol));
       string value = symbol.Trim().ToUpperInvariant();
-      if (value.Length < 2 || value.Length > 40 || value.Any(c =>
-        !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_'))
+      if (value.Length < 2 || value.Length > 40)
         throw new ArgumentException("A futures symbol contains unsupported characters.", nameof(symbol));
+      foreach (Rune rune in value.EnumerateRunes())
+      {
+        if (!Rune.IsLetterOrDigit(rune) && rune.Value != '_')
+          throw new ArgumentException("A futures symbol contains unsupported characters.", nameof(symbol));
+      }
       return value;
     }
 
