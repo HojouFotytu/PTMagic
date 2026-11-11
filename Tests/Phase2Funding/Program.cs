@@ -123,8 +123,11 @@ internal static class Program
           repairRequests++;
           return Read(symbol, from, to, limit, ct);
         }, Log);
+      var repairedCache = new FuturesFundingDiskCache(root).TryRestore("ETHUSDT", Pin, Log);
       Assert(repairRequests == 1 && repaired.Requests == 1 && repaired.CompleteSymbols == 1 &&
-        !File.Exists(corruptPath), "Corrupt funding cache is discarded and repaired with one bounded request.");
+        File.Exists(corruptPath) && repairedCache.Rows.Count == 2 &&
+        repairedCache.CompleteIntervals.Count > 0,
+        "Corrupt funding cache is replaced with valid observations and coverage after one bounded request.");
     }
     finally
     {
