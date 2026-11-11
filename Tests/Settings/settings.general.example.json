@@ -1,0 +1,32 @@
+// TESTING ONLY — local template. Replace placeholders locally; never commit credentials or API keys.
+// SetIdentity = TESTING-ALL-METRICS-GENERAL
+// SetVersion = 1.0.0
+// SetDate = 2026-11-11
+// SetTimestamp = 2026-11-11T17:12:00+09:00
+{
+  "GeneralSettings": {
+    "Application": {
+      "IsEnabled": true,
+      "TestMode": true,
+      "StartupSellOnlyMode": true,
+      "ProfitTrailerLicense": "REPLACE_LOCALLY_NEVER_COMMIT",
+      "ProfitTrailerServerAPIToken": "REPLACE_LOCALLY_NEVER_COMMIT",
+      "ProfitTrailerMonitorURL": "http://localhost:8081/",
+      "ProfitTrailerDefaultSettingName": "REPLACE_WITH_EXISTING_PT_DEFAULT_SETTING_NAME",
+      "Exchange": "BinanceFutures",
+      "BinanceFuturesApiKey": "",
+      "FloodProtectionMinutes": 15,
+      "InstanceName": "TESTING_METRICS_ONLY"
+    },
+    "Monitor": {
+      "MaxDashboardBuyEntries": 0
+    },
+    "Backup": {
+      "IsEnabled": true,
+      "MaxHours": 120
+    },
+    "Telegram": {
+      "IsEnabled": false
+    }
+  }
+}
