@@ -125,10 +125,13 @@ internal static class Program
     string serialized = Newtonsoft.Json.JsonConvert.SerializeObject(legacy);
     Check(removedSettings.All(name => !serialized.Contains("\"" + name + "\"", StringComparison.Ordinal)),
       "Legacy budget keys must be ignored and not serialized.");
-    Check(FuturesOpenInterestDataService.DefaultRequestsPerRaid == 60 &&
-          FuturesFundingDataService.DefaultRequestsPerRaid == 60 &&
-          FuturesLongShortRatioDataService.DefaultRequestsPerRaid == 60,
-      "Temporary internal derivative ceilings remain until adaptive acquisition replaces them.");
+    FuturesOpenInterestDataService.ValidateBudget(int.MaxValue);
+    FuturesFundingDataService.ValidateBudget(int.MaxValue);
+    FuturesLongShortRatioDataService.ValidateBudget(int.MaxValue);
+    Check(typeof(FuturesOpenInterestDataService).GetField("DefaultRequestsPerRaid") == null &&
+          typeof(FuturesFundingDataService).GetField("DefaultRequestsPerRaid") == null &&
+          typeof(FuturesLongShortRatioDataService).GetField("DefaultRequestsPerRaid") == null,
+      "Fixed sixty-request derivative defaults must not remain in production.");
     Check(FuturesOpenInterestFeatureEngine.HasMetrics(new[] { "OpenInterestChange" }) &&
       !FuturesOpenInterestFeatureEngine.HasMetrics(new[] { "PriceTrend" }),
       "Only explicit OI metric selection triggers collection.");

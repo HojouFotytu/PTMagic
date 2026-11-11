@@ -28,7 +28,6 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public sealed class FuturesFundingDataService
   {
-    public const int DefaultRequestsPerRaid = 60;
     public const int MaximumRequestsPerRaid = 400;
     private const int PageSize = 1000;
     private const int PagesPerSymbol = 2;
@@ -62,13 +61,14 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static void ValidateBudget(int budget)
     {
-      if (budget < 0 || budget > MaximumRequestsPerRaid)
+      if (budget != int.MaxValue && (budget < 0 || budget > MaximumRequestsPerRaid))
         throw new ArgumentOutOfRangeException(nameof(budget));
     }
 
     public async Task<FundingRefreshReport> RefreshAsync(IEnumerable<string> eligible,
       int horizonMinutes, DateTimeOffset asOfUtc, int requestBudget,
-      FundingHistoryLoader loader, LogHelper log, CancellationToken ct = default)
+      FundingHistoryLoader loader, LogHelper log, CancellationToken ct = default,
+      Func<CancellationToken, Task<bool>> requestPermit = null)
     {
       if (loader == null) throw new ArgumentNullException(nameof(loader));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -129,8 +129,10 @@ namespace Core.MarketAnalyzer.MarketData
         }
 
         int requests = 0, failures = 0;
+        bool deferRemaining = false;
         foreach (string symbol in schedule)
         {
+          if (deferRemaining) break;
           for (int page = 0; page < PagesPerSymbol && requests < requestBudget; page++)
           {
             ct.ThrowIfCancellationRequested();
@@ -144,6 +146,11 @@ namespace Core.MarketAnalyzer.MarketData
               _served[symbol] = end;
             }
 
+            if (requestPermit != null && !await requestPermit(ct).ConfigureAwait(false))
+            {
+              deferRemaining = true;
+              break;
+            }
             requests++;
             try
             {

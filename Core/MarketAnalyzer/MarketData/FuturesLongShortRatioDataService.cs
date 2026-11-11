@@ -33,7 +33,6 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public sealed class FuturesLongShortRatioDataService
   {
-    public const int DefaultRequestsPerRaid = 60;
     public const int MaximumRequestsPerRaid = 80;
     private const int PageSize = FuturesLongShortRatio.MaximumRowsPerRequest;
     private const int PagesPerSeriesPerRaid = 2;
@@ -73,7 +72,7 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static void ValidateBudget(int budget)
     {
-      if (budget < 0 || budget > MaximumRequestsPerRaid)
+      if (budget != int.MaxValue && (budget < 0 || budget > MaximumRequestsPerRaid))
         throw new ArgumentOutOfRangeException(nameof(budget),
           "Internal long/short ratio request budget must be between 0 and " + MaximumRequestsPerRaid + ".");
     }
@@ -82,7 +81,8 @@ namespace Core.MarketAnalyzer.MarketData
       IEnumerable<FuturesLongShortRatioSeriesRequest> requests,
       DateTimeOffset pinnedAsOfUtc, int requestBudget,
       FuturesLongShortRatioHistoryLoader loader, LogHelper log,
-      CancellationToken cancellationToken = default)
+      CancellationToken cancellationToken = default,
+      Func<CancellationToken, Task<bool>> requestPermit = null)
     {
       if (loader == null) throw new ArgumentNullException(nameof(loader));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -175,8 +175,9 @@ namespace Core.MarketAnalyzer.MarketData
         int requestsMade = 0;
         int failures = 0;
         bool madeProgress = true;
+        bool deferRemaining = false;
 
-        while (requestsMade < requestBudget && madeProgress)
+        while (requestsMade < requestBudget && madeProgress && !deferRemaining)
         {
           madeProgress = false;
           foreach (Work item in schedule)
@@ -198,6 +199,11 @@ namespace Core.MarketAnalyzer.MarketData
               _served[(item.Source, item.Symbol)] = item.End;
             }
 
+            if (requestPermit != null && !await requestPermit(cancellationToken).ConfigureAwait(false))
+            {
+              deferRemaining = true;
+              break;
+            }
             requestsMade++;
             item.Pages++;
             madeProgress = true;

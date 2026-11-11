@@ -32,6 +32,7 @@ try {
         "Phase2OpenInterest",
         "Phase2OpenInterestIncremental",
         "Phase2LongShortRatios",
+        "Phase2AdaptiveAcquisition",
         "Phase1AReadiness",
         "Phase1AnalyticsReliability",
         "Phase1COhlcv",

@@ -371,6 +371,45 @@ namespace Core.MarketAnalyzer.MarketData
 
 
     /// <summary>
+    /// Collect all explicitly enabled Futures derivative families concurrently.
+    /// Fair per-page admission is shared, while metric caches remain independent.
+    /// The existing analysis-freshness deadline ends acquisition; unfilled
+    /// history remains unavailable and is resumed from cache on later raids.
+    /// </summary>
+    public static async Task RefreshDerivativesAsync(
+      PTMagicConfiguration configuration, LogHelper log,
+      IReadOnlyDictionary<string, Market> recentMarkets = null,
+      CancellationToken cancellationToken = default)
+    {
+      if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+      if (log == null) throw new ArgumentNullException(nameof(log));
+      DateTimeOffset pin = CurrentRaidAsOfUtc ?? DateTimeOffset.UtcNow;
+      int maxAgeSeconds = configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300;
+      DateTimeOffset deadline = pin.AddSeconds(maxAgeSeconds);
+      TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
+      if (remaining <= TimeSpan.Zero)
+      {
+        log.DoLogWarn("Derivative acquisition deferred: pinned analysis freshness has expired.");
+        return;
+      }
+      var scheduler = new BinanceDerivativeAcquisitionScheduler(deadline);
+      using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+      deadlineCts.CancelAfter(remaining);
+      try
+      {
+        await Task.WhenAll(
+          RefreshOpenInterestAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler),
+          RefreshFundingAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler),
+          RefreshLongShortRatiosAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler))
+          .ConfigureAwait(false);
+      }
+      catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadlineCts.IsCancellationRequested)
+      {
+        log.DoLogWarn("Derivative acquisition reached the analysis freshness deadline; incomplete histories remain unavailable.");
+      }
+    }
+
+    /// <summary>
     /// Optional Phase 2 acquisition after the frozen universe exists and
     /// before synchronous metric evaluation. Only explicit OI metrics cause
     /// requests. The runtime uses temporary internal service ceilings pending
@@ -379,7 +418,8 @@ namespace Core.MarketAnalyzer.MarketData
     public static async Task RefreshOpenInterestAsync(
       PTMagicConfiguration configuration, LogHelper log,
       IReadOnlyDictionary<string, Market> recentMarkets = null,
-      CancellationToken cancellationToken = default)
+      CancellationToken cancellationToken = default,
+      BinanceDerivativeAcquisitionScheduler scheduler = null)
     {
       if (configuration == null) throw new ArgumentNullException(nameof(configuration));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -407,7 +447,9 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
       // Transitional internal safeguard; D-051 adaptive acquisition will replace this ceiling.
-      int budget = FuturesOpenInterestDataService.DefaultRequestsPerRaid;
+      int budget = int.MaxValue; // Unbounded by raid count; scheduler owns admission.
+      var acquisition = scheduler ?? new BinanceDerivativeAcquisitionScheduler(
+        pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
 
       var usable = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
       int maximumHorizon = FuturesOpenInterestDataService.RequiredHorizonMinutes(usable);
@@ -428,8 +470,9 @@ namespace Core.MarketAnalyzer.MarketData
         assets, maximumHorizon, pin.Value, budget,
         (symbol, end, limit, ct) => BinanceFuturesOpenInterestClient.GetHistoryPageAsync(
           symbol, FuturesOpenInterest.SourcePeriod, end, limit, log, ct),
-        log, cancellationToken).ConfigureAwait(false);
-      log.DoLogInfo("Phase 2 OI: " + report.Requests + "/" + budget +
+        log, cancellationToken,
+        ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.OpenInterest, ct)).ConfigureAwait(false);
+      log.DoLogInfo("Phase 2 OI: " + report.Requests +
         " page requests; " + report.SuccessfulPages + " succeeded, " + report.FailedPages +
         " failed; " + report.AvailableSymbols + "/" + report.EligibleSymbols +
         " selected assets have exact " + maximumHorizon +
@@ -444,7 +487,8 @@ namespace Core.MarketAnalyzer.MarketData
     /// or any independent cache retention setting.
     /// </summary>
     public static async Task RefreshFundingAsync(PTMagicConfiguration configuration, LogHelper log,
-      IReadOnlyDictionary<string, Market> recentMarkets = null, CancellationToken cancellationToken = default)
+      IReadOnlyDictionary<string, Market> recentMarkets = null, CancellationToken cancellationToken = default,
+      BinanceDerivativeAcquisitionScheduler scheduler = null)
     {
       if (configuration == null) throw new ArgumentNullException(nameof(configuration));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -470,7 +514,9 @@ namespace Core.MarketAnalyzer.MarketData
         return;
       }
       // Transitional internal safeguard; no user-configured request budget.
-      int budget = FuturesFundingDataService.DefaultRequestsPerRaid;
+      int budget = int.MaxValue; // Unbounded by raid count; scheduler owns admission.
+      var acquisition = scheduler ?? new BinanceDerivativeAcquisitionScheduler(
+        pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
       var enabled = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
       int horizon = FuturesFundingDataService.RequiredHorizonMinutes(enabled);
       if (horizon <= 0) return;
@@ -487,8 +533,9 @@ namespace Core.MarketAnalyzer.MarketData
         assets, horizon, pin.Value, budget,
         (symbol, from, until, limit, ct) => BinanceFuturesFundingClient.GetHistoryPageAsync(
           symbol, from, until, limit, log, ct),
-        log, cancellationToken).ConfigureAwait(false);
-      log.DoLogInfo("Phase 2 funding: " + report.Requests + "/" + budget +
+        log, cancellationToken,
+        ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.Funding, ct)).ConfigureAwait(false);
+      log.DoLogInfo("Phase 2 funding: " + report.Requests +
         " page requests; " + report.Failures + " failed; " +
         report.CompleteSymbols + "/" + report.SelectedSymbols + " selected markets have verified " +
         horizon + "m funding history. Missing/pending history is UNAVAILABLE.");
@@ -500,7 +547,8 @@ namespace Core.MarketAnalyzer.MarketData
     /// </summary>
     public static async Task RefreshLongShortRatiosAsync(PTMagicConfiguration configuration,
       LogHelper log, IReadOnlyDictionary<string, Market> recentMarkets = null,
-      CancellationToken cancellationToken = default)
+      CancellationToken cancellationToken = default,
+      BinanceDerivativeAcquisitionScheduler scheduler = null)
     {
       if (configuration == null) throw new ArgumentNullException(nameof(configuration));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -528,7 +576,9 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       // Transitional internal safeguard; no user-configured request budget.
-      int budget = FuturesLongShortRatioDataService.DefaultRequestsPerRaid;
+      int budget = int.MaxValue; // Unbounded by raid count; scheduler owns admission.
+      var acquisition = scheduler ?? new BinanceDerivativeAcquisitionScheduler(
+        pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
 
       var validTrends = trends.Where(x => x.Trend.TrendMinutes >= 5 &&
         x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&
@@ -555,8 +605,9 @@ namespace Core.MarketAnalyzer.MarketData
         (source, symbol, from, until, limit, ct) =>
           BinanceFuturesLongShortRatioClient.GetHistoryPageAsync(source, symbol, from, until,
             limit, log, ct),
-        log, cancellationToken).ConfigureAwait(false);
-      log.DoLogInfo("Phase 2 global long/short account ratio: " + report.Requests + "/" + budget +
+        log, cancellationToken,
+        ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.GlobalAccountRatio, ct)).ConfigureAwait(false);
+      log.DoLogInfo("Phase 2 global long/short account ratio: " + report.Requests +
         " page requests; " + report.Failures + " failed; " +
         report.CompleteSeries + "/" + report.SelectedSeries +
         " symbol histories fully verified. Missing or incomplete observations remain UNAVAILABLE.");

@@ -33,7 +33,6 @@ namespace Core.MarketAnalyzer.MarketData
   {
     // Historical coverage is calculated from OI-enabled MarketTrends, not a
     // separate fixed hour setting. Provider availability is independent.
-    public const int DefaultRequestsPerRaid = 60;
     public const int MaximumRequestsPerRaid = 400;
     private const int MaxPagesPerSymbolPerRaid = 2;
     private const int PageSize = 500;
@@ -98,7 +97,7 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static void ValidateBudget(int requestsPerRaid)
     {
-      if (requestsPerRaid < 0 || requestsPerRaid > MaximumRequestsPerRaid)
+      if (requestsPerRaid != int.MaxValue && (requestsPerRaid < 0 || requestsPerRaid > MaximumRequestsPerRaid))
         throw new ArgumentOutOfRangeException(nameof(requestsPerRaid), "OI request budget must be between 0 and 400.");
     }
 
@@ -110,7 +109,8 @@ namespace Core.MarketAnalyzer.MarketData
     public async Task<OpenInterestRefreshReport> RefreshAsync(
       IEnumerable<string> eligibleSymbols, int maximumTrendMinutes,
       DateTimeOffset pinnedAsOfUtc, int requestsPerRaid,
-      OpenInterestHistoryLoader loader, LogHelper log, CancellationToken cancellationToken = default)
+      OpenInterestHistoryLoader loader, LogHelper log, CancellationToken cancellationToken = default,
+      Func<CancellationToken, Task<bool>> requestPermit = null)
     {
       if (loader == null) throw new ArgumentNullException(nameof(loader));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -172,9 +172,10 @@ namespace Core.MarketAnalyzer.MarketData
             .ThenBy(symbol => symbol, StringComparer.Ordinal).ToArray();
 
         int requests = 0, succeeded = 0, failed = 0;
+        bool deferRemaining = false;
         foreach (string symbol in candidates)
         {
-          if (requests >= requestsPerRaid) break;
+          if (deferRemaining || requests >= requestsPerRaid) break;
           cancellationToken.ThrowIfCancellationRequested();
           var attemptedEnds = new HashSet<long>();
           for (int pageNumber = 0; pageNumber < MaxPagesPerSymbolPerRaid && requests < requestsPerRaid; pageNumber++)
@@ -182,6 +183,11 @@ namespace Core.MarketAnalyzer.MarketData
             (long end, int limit)? plan = Plan(symbol, endpointMs, requiredStart, maximumTrendMinutes);
             if (!plan.HasValue || !attemptedEnds.Add(plan.Value.end)) break;
 
+            if (requestPermit != null && !await requestPermit(cancellationToken).ConfigureAwait(false))
+            {
+              deferRemaining = true;
+              break;
+            }
             lock (_sync) _lastAttemptBucket[symbol] = endpointMs;
             requests++;
             try
@@ -235,7 +241,7 @@ namespace Core.MarketAnalyzer.MarketData
       return "Historical Binance futures OI has no exact " +
         (HasTimestamp(symbol, end) ? "reference" : "current") +
         " endpoint over the configured " + trendMinutes +
-        " minute MarketTrend. Source polling is budgeted; provider history availability and missing buckets are not interpolated.";
+        " minute MarketTrend. Source acquisition is rate-limited; provider history availability and missing buckets are not interpolated.";
     }
 
     private (long end, int limit)? Plan(string symbol, long endpointMs, long referenceMs, int trendMinutes)

@@ -37,6 +37,6 @@ foreach ($project in @(
 The configured runtime/API/Monitor/browser acceptance work is separately
 deferred. Normal deployments with no OI metric configured produce no new OI
 network requests. As of D-051.1, there is no user-configurable derivative request
-budget. The runtime temporarily uses the service's internal 60-page-per-raid
-safety ceiling pending adaptive acquisition. Legacy budget keys are ignored;
-metric opt-in, not a zero budget property, controls whether requests occur.
+budget. Production uses shared Binance admission and the configured analysis
+freshness deadline; old bounded overloads remain only for deterministic tests.
+Legacy budget keys are ignored. Metric opt-in controls whether requests occur.
