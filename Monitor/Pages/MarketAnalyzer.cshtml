@@ -43,6 +43,17 @@
       line-height: 20px;
       white-space: nowrap;
     }
+    /* Asset metrics remain invisible until expanded inside an existing market row. */
+    .asset-metric-toggle {
+      padding: 0 6px 0 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+    .asset-metric-toggle:focus { outline: 1px dotted currentColor; }
+    .asset-metric-detail-row td { padding-top: 3px; padding-bottom: 3px; font-size: 0.9em; }
+    .asset-metric-detail-row .asset-metric-label { padding-left: 22px; }
   </style>
 }
 @if (!Model.PTMagicConfiguration.GeneralSettings.Monitor.AnalyzerChart.Equals(""))
@@ -419,9 +430,19 @@ else
                 }
               </th>
               @if (mps.ActiveSingleSettings == null || mps.ActiveSingleSettings.Count == 0) {
-                <th><a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a></th>
+                <th>
+                  @if (Model.HasAssetMetricsForMarket(market))
+                  {
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                  }
+                  <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a></th>
               } else {
-                <th><a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a> <i class="fa fa-exclamation-triangle text-highlight" data-toggle="tooltip" data-placement="top" data-html="true" title="@await Component.InvokeAsync("PairIcon", mps)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner pair-tooltip'></div></div>"></i></th>
+                <th>
+                  @if (Model.HasAssetMetricsForMarket(market))
+                  {
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                  }
+                  <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a> <i class="fa fa-exclamation-triangle text-highlight" data-toggle="tooltip" data-placement="top" data-html="true" title="@await Component.InvokeAsync("PairIcon", mps)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner pair-tooltip'></div></div>"></i></th>
               }
               <td>@Model.GetMarketUnderlyingType(market)</td>
               <td class="text-right">@mps.LatestPrice.ToString("#,#0.00000000", new System.Globalization.CultureInfo("en-US")) @Model.Summary.MainMarket</td>
@@ -486,9 +507,19 @@ else
                 }
               </th>
               @if (mps.ActiveSingleSettings == null || mps.ActiveSingleSettings.Count == 0) {
-                <th><a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a></th>
+                <th>
+                  @if (Model.HasAssetMetricsForMarket(market))
+                  {
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                  }
+                  <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a></th>
               } else {
-                <th><a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a> <i class="fa fa-exclamation-triangle text-highlight" data-toggle="tooltip" data-placement="top" data-html="true" title="@await Component.InvokeAsync("PairIcon", mps)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner pair-tooltip'></div></div>"></i></th>
+                <th>
+                  @if (Model.HasAssetMetricsForMarket(market))
+                  {
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                  }
+                  <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a> <i class="fa fa-exclamation-triangle text-highlight" data-toggle="tooltip" data-placement="top" data-html="true" title="@await Component.InvokeAsync("PairIcon", mps)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner pair-tooltip'></div></div>"></i></th>
               }
               <td>@Model.GetMarketUnderlyingType(market)</td>
               <td class="text-right">@mps.LatestPrice.ToString("#,#0.00000000", new System.Globalization.CultureInfo("en-US"))</td>
@@ -522,7 +553,95 @@ else
 
   <script type="text/javascript">
       $(function () {
+        // Each market is initially a single row; metric rows are created only on expansion.
+        var inlineAssetMetrics = @Html.Raw(Model.InlineAssetMetricRowsJson);
+
+        function collapseAssetRows(table) {
+          if (!table) return;
+          $(table).find('tr.asset-metric-detail-row').remove();
+          $(table).find('.asset-metric-toggle[aria-expanded="true"]').each(function () {
+            $(this).attr('aria-expanded', 'false')
+              .attr('title', 'Show configured per-asset metrics')
+              .find('i').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+          });
+        }
+
+        $('#trends-absolute, #trends-relative').on('click', '.asset-metric-toggle', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          var button = this;
+          var table = button.closest('table');
+          var market = button.getAttribute('data-market');
+          var rows = inlineAssetMetrics[market] || [];
+          var mainRow = button.closest('tr');
+          if (!table || !mainRow || !rows.length) return;
+
+          if (button.getAttribute('aria-expanded') === 'true') {
+            var next = mainRow.nextElementSibling;
+            while (next && next.classList.contains('asset-metric-detail-row')) {
+              var removeRow = next;
+              next = next.nextElementSibling;
+              removeRow.parentNode.removeChild(removeRow);
+            }
+            $(button).attr('aria-expanded', 'false')
+              .attr('title', 'Show configured per-asset metrics')
+              .find('i').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+            return;
+          }
+
+          var fragment = document.createDocumentFragment();
+          var trendColumnCount = table.querySelectorAll('thead th').length - 7;
+          rows.forEach(function (metric) {
+            var detailRow = document.createElement('tr');
+            detailRow.className = 'asset-metric-detail-row';
+            for (var column = 0; column < 7 + trendColumnCount; column++) {
+              var cell = document.createElement('td');
+              if (column === 3) {
+                cell.className = 'asset-metric-label text-muted';
+                cell.textContent = metric.Label;
+                cell.title = metric.Description || '';
+              } else if (column >= 7) {
+                var value = metric.Cells[column - 7];
+                if (value) {
+                  cell.className = 'text-right text-muted';
+                  cell.textContent = value.Value;
+                  cell.title = value.Tooltip || '';
+                }
+              }
+              detailRow.appendChild(cell);
+            }
+            fragment.appendChild(detailRow);
+          });
+          mainRow.parentNode.insertBefore(fragment, mainRow.nextSibling);
+          $(button).attr('aria-expanded', 'true')
+            .attr('title', 'Hide configured per-asset metrics')
+            .find('i').removeClass('fa-chevron-right').addClass('fa-chevron-down');
+        });
+
+        // Tablesaw sorts all tbody rows. Remove expanded details before every sort
+        // so they never become detached from the market that owns them.
+        ['trends-absolute', 'trends-relative'].forEach(function (id) {
+          var table = document.getElementById(id);
+          if (!table) return;
+          table.addEventListener('click', function (event) {
+            if (event.target.closest('thead')) collapseAssetRows(table);
+          }, true);
+          table.addEventListener('keydown', function (event) {
+            if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('thead')) {
+              collapseAssetRows(table);
+            }
+          }, true);
+        });
+        document.addEventListener('change', function (event) {
+          if (event.target.matches('.tablesaw-sortable-switch select')) {
+            var toolbar = event.target.closest('.tablesaw-bar');
+            collapseAssetRows(toolbar ? $(toolbar).next('table')[0] : null);
+          }
+        }, true);
+
         $('.btn-trend-relation').click(function () {
+          collapseAssetRows(document.getElementById('trends-absolute'));
+          collapseAssetRows(document.getElementById('trends-relative'));
           var relation = $(this).data('trend-relation');
 
           $('.btn-trend-relation').addClass('btn-custom');

@@ -27,6 +27,37 @@ namespace Monitor.Pages
     public MarketTrendAnalyticsMonitorSnapshot Analytics { get; set; } = new MarketTrendAnalyticsMonitorSnapshot();
     public string AnalyticsLoadError { get; set; } = "";
 
+    // The inline rows use the existing analytics export; no separate metric source or page.
+    public sealed class InlineAssetMetricCell
+    {
+      public string Value { get; set; } = "";
+      public string Tooltip { get; set; } = "";
+    }
+
+    public sealed class InlineAssetMetricRow
+    {
+      public string Label { get; set; } = "";
+      public string Description { get; set; } = "";
+      public List<InlineAssetMetricCell> Cells { get; set; } = new List<InlineAssetMetricCell>();
+    }
+
+    public Dictionary<string, List<InlineAssetMetricRow>> InlineAssetMetricRows { get; } =
+      new Dictionary<string, List<InlineAssetMetricRow>>(StringComparer.OrdinalIgnoreCase);
+    public string InlineAssetMetricRowsJson { get; private set; } = "{}";
+
+    public bool HasAssetMetricsForMarket(string market) =>
+      !String.IsNullOrWhiteSpace(market) && InlineAssetMetricRows.ContainsKey(market);
+
+    public bool HasConfiguredDisplayAssetMetrics =>
+      MarketTrends != null && MarketTrends.Any(trend =>
+        trend != null
+        && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
+        && trend.DisplayOnMarketAnalyzerList
+        && MarketTrendMetrics.ParseEnabled(trend).Any(metric =>
+          !String.Equals(metric, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
+          && MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
+          && (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both)));
+
     // Only explicit global/both-scope Metrics entries create this panel. A blank Metrics
     // field retains legacy PriceTrend behavior but does not count as a configured metrics view.
     public bool HasConfiguredMarketWideMetrics
@@ -82,6 +113,128 @@ namespace Monitor.Pages
         .OrderBy(trend => trend.TrendMinutes)
         .ThenBy(trend => trend.Name, StringComparer.OrdinalIgnoreCase)
         ?? Enumerable.Empty<MarketTrendAnalyticsMonitorTrend>();
+    }
+
+    private void BuildInlineAssetMetricRows()
+    {
+      InlineAssetMetricRows.Clear();
+      InlineAssetMetricRowsJson = "{}";
+      if (Analytics?.Trends == null || Analytics.Trends.Count == 0 || Summary?.MarketSummary == null)
+      {
+        return;
+      }
+
+      // These columns must match the existing Absolute / Relative Trend tables exactly.
+      MarketTrend[] displayedTrends = MarketTrends
+        .Where(trend => trend != null
+          && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
+          && trend.DisplayOnMarketAnalyzerList)
+        .ToArray();
+      if (displayedTrends.Length == 0)
+      {
+        return;
+      }
+
+      string[][] configuredAssetMetrics = displayedTrends
+        .Select(trend => MarketTrendMetrics.ParseEnabled(trend)
+          .Where(metric =>
+            !String.Equals(metric, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
+            && MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
+            && (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both))
+          .ToArray())
+        .ToArray();
+      string[] metrics = configuredAssetMetrics.SelectMany(items => items)
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      if (metrics.Length == 0)
+      {
+        return;
+      }
+
+      MarketTrendAnalyticsMonitorTrend[] snapshots = displayedTrends.Select(trend =>
+      {
+        Analytics.Trends.TryGetValue(trend.Name, out MarketTrendAnalyticsMonitorTrend snapshot);
+        return snapshot;
+      }).ToArray();
+      HashSet<string>[] eligibleSymbols = snapshots.Select(snapshot =>
+        new HashSet<string>(snapshot?.AssetSymbols ?? new List<string>(), StringComparer.OrdinalIgnoreCase))
+        .ToArray();
+
+      foreach (string market in Summary.MarketSummary.Keys)
+      {
+        List<InlineAssetMetricRow> rows = new List<InlineAssetMetricRow>();
+        foreach (string metric in metrics)
+        {
+          InlineAssetMetricRow row = new InlineAssetMetricRow
+          {
+            Label = MetricTitle(metric),
+            Description = MetricTooltip(metric)
+          };
+          bool hasApplicableTrend = false;
+
+          for (int index = 0; index < displayedTrends.Length; index++)
+          {
+            MarketTrendAnalyticsMonitorTrend snapshot = snapshots[index];
+            if (!configuredAssetMetrics[index].Contains(metric, StringComparer.OrdinalIgnoreCase)
+              || snapshot == null || !eligibleSymbols[index].Contains(market))
+            {
+              row.Cells.Add(null);
+              continue;
+            }
+
+            hasApplicableTrend = true;
+            FeatureValueSnapshot feature = null;
+            if (snapshot.AssetMetrics != null
+              && snapshot.AssetMetrics.TryGetValue(market, out Dictionary<string, FeatureValueSnapshot> marketMetrics)
+              && marketMetrics != null)
+            {
+              marketMetrics.TryGetValue(metric, out feature);
+            }
+
+            row.Cells.Add(new InlineAssetMetricCell
+            {
+              Value = FormatInlineAssetMetric(metric, feature),
+              Tooltip = feature == null
+                ? "Metric was configured but no value was published for this MarketTrend."
+                : FeatureTooltip(feature)
+            });
+          }
+
+          if (hasApplicableTrend)
+          {
+            rows.Add(row);
+          }
+        }
+
+        if (rows.Count > 0)
+        {
+          InlineAssetMetricRows[market] = rows;
+        }
+      }
+
+      // Escapes HTML-sensitive characters when embedded inside the Razor script tag.
+      InlineAssetMetricRowsJson = JsonConvert.SerializeObject(InlineAssetMetricRows,
+        new JsonSerializerSettings { StringEscapeHandling = StringEscapeHandling.EscapeHtml });
+    }
+
+    public string FormatInlineAssetMetric(string metric, FeatureValueSnapshot feature)
+    {
+      if (feature == null || !feature.IsValid || feature.IsStale || !feature.Value.HasValue
+        || !Double.IsFinite(feature.Value.Value))
+      {
+        return "--";
+      }
+
+      double value = feature.Value.Value;
+      if (metric == MarketTrendMetrics.GlobalLongShortAccountRatio
+        || metric == MarketTrendMetrics.CorrelationToBTC)
+      {
+        return value.ToString("0.0000", CultureInfo.InvariantCulture);
+      }
+      if (metric == MarketTrendMetrics.FundingRate || metric == MarketTrendMetrics.FundingSum)
+      {
+        return value.ToString("+0.000000;-0.000000;0.000000", CultureInfo.InvariantCulture) + "%";
+      }
+      return FormatMetric(metric, feature);
     }
 
     public FeatureValueSnapshot GetGlobalMetric(MarketTrendAnalyticsMonitorTrend trend, string metric)
@@ -162,6 +315,16 @@ namespace Monitor.Pages
         MarketTrendMetrics.BTCETHVolumeShare => "BTC+ETH Volume Share",
         MarketTrendMetrics.MeanCorrelationToBTC => "Mean BTC Correlation",
         MarketTrendMetrics.MedianCorrelationToBTC => "Median BTC Correlation",
+        MarketTrendMetrics.RelativeStrengthMarket => "Strength vs Market",
+        MarketTrendMetrics.RelativeStrengthBTC => "Strength vs BTC",
+        MarketTrendMetrics.ATRP => "ATRP",
+        MarketTrendMetrics.VolumeExpansion => "Volume Expansion",
+        MarketTrendMetrics.CorrelationToBTC => "BTC Correlation",
+        MarketTrendMetrics.OpenInterestChange => "OI Quantity Change",
+        MarketTrendMetrics.OpenInterestValueChange => "OI Value Change",
+        MarketTrendMetrics.FundingRate => "Funding Rate",
+        MarketTrendMetrics.FundingSum => "Funding Sum",
+        MarketTrendMetrics.GlobalLongShortAccountRatio => "Global L/S Account Ratio",
         _ => metric
       };
     }
@@ -202,6 +365,11 @@ namespace Monitor.Pages
         MarketTrendMetrics.BTCETHVolumeShare => "Combined BTC and ETH quote-volume share of complete eligible global universe in latest complete trend period, percent.",
         MarketTrendMetrics.MeanCorrelationToBTC => "Arithmetic mean of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         MarketTrendMetrics.MedianCorrelationToBTC => "Median of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
+        MarketTrendMetrics.OpenInterestChange => "Percent change in Binance Futures open-interest quantity between the exact historical endpoints for this MarketTrend timeframe.",
+        MarketTrendMetrics.OpenInterestValueChange => "Percent change in Binance Futures provider-reported open-interest value between exact historical endpoints; no proxy notional is inferred.",
+        MarketTrendMetrics.FundingRate => "Latest regular funding settlement in the configured MarketTrend window, as a percentage. Missing regular settlements remain unavailable.",
+        MarketTrendMetrics.FundingSum => "Sum of regular funding settlements in the configured MarketTrend window, as a percentage. Unverified history remains unavailable.",
+        MarketTrendMetrics.GlobalLongShortAccountRatio => "Binance Futures global-account long/short ratio over this MarketTrend window, averaged via the implied long-side share of each five-minute observation; neutral is 1.0.",
         _ => metric
       };
     }
@@ -273,11 +441,12 @@ namespace Monitor.Pages
         LoadMarketUnderlyingTypes();
       }
 
-      if (HasConfiguredMarketWideMetrics)
+      if (HasConfiguredMarketWideMetrics || HasConfiguredDisplayAssetMetrics)
       {
         LoadMarketTrendAnalytics();
       }
 
+      BuildInlineAssetMetricRows();
       BuildMarketTrendChartData();
     }
 
