@@ -1689,7 +1689,20 @@ namespace Core.Main
             GlobalSetting active = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
               .Find(setting => setting.SettingName.Equals(this.ActiveSettingName, StringComparison.OrdinalIgnoreCase))
               ?? this.ActiveSetting;
-            if (active != null)
+            GlobalSetting fallback = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
+              .Find(setting => setting != null && setting.IsIndeterminateFallback);
+            bool activeIsDefault = active != null
+              && String.Equals(active.SettingName, this.DefaultSettingName, StringComparison.OrdinalIgnoreCase);
+            if (activeIsDefault && fallback != null
+              && !String.Equals(fallback.SettingName, active.SettingName, StringComparison.OrdinalIgnoreCase))
+            {
+                triggeredSetting = fallback;
+                matchedTriggers = new List<string>();
+                _selectedGlobalSelectionBasis = "Indeterminate fallback: applied '" + fallback.SettingName
+                  + "' because active DEFAULT could not be re-evaluated (unavailable metrics)";
+                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate while DEFAULT was active; applying configured fallback '" + fallback.SettingName + "'.");
+            }
+            else if (active != null)
             {
                 triggeredSetting = active;
                 matchedTriggers = new List<string>();
