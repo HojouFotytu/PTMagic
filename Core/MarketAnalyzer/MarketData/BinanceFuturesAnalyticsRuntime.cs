@@ -543,12 +543,19 @@ namespace Core.MarketAnalyzer.MarketData
       }
       if (budget == 0) return;
 
+      string apiKey = configuration.GeneralSettings?.Application?.BinanceFuturesApiKey?.Trim() ?? "";
+      if (String.IsNullOrWhiteSpace(apiKey) && trends.SelectMany(x => x.Metrics)
+        .Any(metric => FuturesLongShortRatio.RequiresApiKey(FuturesLongShortRatioFeatureEngine.SourceForMetric(metric))))
+        log.DoLogWarn("Top-trader long/short ratio metrics are configured but no Binance read-only API key is set; those metrics remain UNAVAILABLE.");
+
       var requests = new List<FuturesLongShortRatioSeriesRequest>();
       foreach (var group in trends.SelectMany(x => x.Metrics.Select(metric => new
       {
         x.Trend, Metric = metric, Source = FuturesLongShortRatioFeatureEngine.SourceForMetric(metric)
       })).GroupBy(x => x.Source))
       {
+        if (FuturesLongShortRatio.RequiresApiKey(group.Key) && String.IsNullOrWhiteSpace(apiKey))
+          continue;
         var validTrends = group.Where(x => x.Trend.TrendMinutes >= 5 &&
           x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&
           x.Trend.TrendMinutes % 5 == 0).ToArray();
@@ -568,7 +575,6 @@ namespace Core.MarketAnalyzer.MarketData
         });
       }
 
-      string apiKey = configuration.GeneralSettings?.Application?.BinanceFuturesApiKey?.Trim() ?? "";
       FuturesLongShortRatioRefreshReport report = await LongShortRatioDataServiceInstance.RefreshAsync(
         requests, pin.Value, budget,
         (source, symbol, from, until, limit, ct) =>
