@@ -19,6 +19,7 @@ Coverage includes:
 - Success, failure, exception, missing acknowledgement, same-payload retry, unchanged suppression, forced replay and destination changes.
 - Confirmed A → partial B failure → desired A replay; a failed partial transfer cannot use the old confirmed hash to skip recovery.
 - Complete multi-target HTTP acknowledgement and expiration before the next target/retry.
+- Bounded HTTP 503 retries (2s, 5s, 10s; 17s total wait), response Retry-After handling, freshness checks between attempts, and no immediate retry when the server asks for a delay beyond the budget. Deterministic injected waits avoid real sleeps; HTTP 401/500 and timeout handling retain their existing behavior.
 - `POST api/v2/globalSellOnlyMode` with encoded `token` and `enabled` query values, preserved PT base/context paths, no property body, distinct additional-target tokens and the documented primary-token fallback.
 - Startup control changes no PAIRS, DCA or INDICATORS content and does not advance or overwrite normal configuration acknowledgement metadata.
 - Startup API guard persistence through indeterminate selection, stale raids and failed normal delivery, followed by the ordered sequence of normal configuration acknowledgement and `enabled=false`.
@@ -37,11 +38,13 @@ dotnet run --project Tests/ConfigurationLifecycle/ConfigurationLifecycle.csproj
 if ($LASTEXITCODE -ne 0) { throw "ConfigurationLifecycle failed." }
 ```
 
-Expected final line after a successful run:
+Expected final line after a successful run of this revision:
 
 ```text
-Configuration lifecycle checks passed: 66.
+Configuration lifecycle checks passed: 79.
 ```
+
+The recorded 66-check result above is historical; the new 503-specific cases require a fresh local run.
 
 This fixture does not execute the full scheduled raid loop, live exchange collection, a real ProfitTrailer server or Monitor Razor/JavaScript. The native build and harness have passed at the recorded source; configured TestMode observation, PT integration and the documented browser acceptance remain required before claiming release readiness. Reflection intentionally couples these cases to the production methods; a method/field rename must update the fixture rather than replace it with a simulated algorithm.
 
