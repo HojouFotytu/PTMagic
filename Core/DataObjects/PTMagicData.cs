@@ -425,6 +425,9 @@ namespace Core.Main.DataObjects.PTMagicData
     public string Tag { get; set; } = "";
     public string MarketTrendName { get; set; } = "";
     public string Metric { get; set; } = "";
+    // Distinguishes an explicitly selected metric from a legacy trend trigger
+    // whose omitted Metric is evaluated through the implicit PriceTrend.
+    public bool MetricWasExplicit { get; set; } = false;
     public double? Value { get; set; }
     public double MinChange { get; set; } = Constants.MinTrendChange;
     public double MaxChange { get; set; } = Constants.MaxTrendChange;

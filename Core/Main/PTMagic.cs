@@ -1550,6 +1550,7 @@ namespace Core.Main
                       Tag = trigger.Tag ?? "",
                       MarketTrendName = trigger.MarketTrendName ?? "",
                       Metric = Core.MarketAnalyzer.MarketData.MarketTrendMetrics.Normalize(trigger.Metric),
+                      MetricWasExplicit = !String.IsNullOrWhiteSpace(trigger.Metric),
                       MinChange = trigger.MinChange,
                       MaxChange = trigger.MaxChange,
                       Unit = Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.GetUnit(trigger.Metric)

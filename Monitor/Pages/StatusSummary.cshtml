@@ -159,35 +159,21 @@
         TimeSpan offsetTimeSpan = TimeSpan.Parse(Model.MiscData.TimeZoneOffset.Replace("+", ""));
         DateTimeOffset settingActivationTime = gss.SwitchDateTime;
         settingActivationTime = settingActivationTime.ToOffset(offsetTimeSpan);
+        List<StatusSummaryModel.GlobalSettingLogMetricEntry> marketMetricEntries =
+          Model.GetGlobalSettingLogMetrics(gss);
 
         <tr>
           <td>@settingActivationTime.DateTime.ToShortDateString() @settingActivationTime.DateTime.ToShortTimeString()</td>
           <td>@Core.Helper.SystemHelper.SplitCamelCase(gss.SettingName)</td>
           <td>@Core.Helper.SystemHelper.GetProperDurationTime(gss.ActiveSeconds)</td>
           <td>
-            @if (gss.MarketMetricSnapshots != null && gss.MarketMetricSnapshots.Count > 0) {
-              var referencedMetrics = gss.MarketMetricSnapshots
-                .Where(metric => metric != null && metric.UsedInTriggerSet)
-                .ToList();
-
-              if (referencedMetrics.Count > 0) {
-                foreach (Core.Main.DataObjects.PTMagicData.GlobalSettingMetricSummary metric in referencedMetrics) {
-                  string metricClass = metric.TriggerConditionTrue ? "text-success" : "text-white";
-                  string metricName = Core.Helper.SystemHelper.SplitCamelCase(metric.MarketTrendName)
-                    + " / " + Core.Helper.SystemHelper.SplitCamelCase(metric.Metric);
-                  string metricValue = metric.IsAssetMetric ? "" :
-                    metric.Value.HasValue
-                      ? ": " + metric.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + (metric.Unit ?? "")
-                      : ": UNAVAILABLE";
-                  <div class="@metricClass" title="@(metric.IsAssetMetric ? "Asset-level metric; no market-wide value" : metric.UnavailableReason)">
-                    @(metricName + metricValue)
-                  </div>
-                }
-              } else {
-                <small class="text-white">No market metrics referenced by this activation.</small>
+            @if (marketMetricEntries.Count > 0) {
+              foreach (StatusSummaryModel.GlobalSettingLogMetricEntry entry in marketMetricEntries) {
+                string metricClass = entry.TriggerConditionTrue ? "text-success" : "text-white";
+                <div class="@metricClass" title="@entry.Tooltip">@entry.Text</div>
               }
             } else {
-              <small class="text-white">Historical metric references not recorded.</small>
+              <small class="text-white">No market metrics recorded for this activation.</small>
             }
           </td>
         </tr>

@@ -6,6 +6,7 @@ using Core.Main;
 using Core.Helper;
 using Core.Main.DataObjects;
 using Core.Main.DataObjects.PTMagicData;
+using Core.MarketAnalyzer.MarketData;
 
 namespace Monitor.Pages
 {
@@ -33,6 +34,181 @@ namespace Monitor.Pages
       BuildChartColors();
       Build24hChartData();
       Build3dChartData();
+    }
+
+    public sealed class GlobalSettingLogMetricEntry
+    {
+      public string Text { get; set; } = "";
+      public bool TriggerConditionTrue { get; set; } = false;
+      public string Tooltip { get; set; } = "";
+    }
+
+    public List<GlobalSettingLogMetricEntry> GetGlobalSettingLogMetrics(GlobalSettingSummary summary)
+    {
+      List<GlobalSettingLogMetricEntry> entries = new List<GlobalSettingLogMetricEntry>();
+      if (summary == null)
+      {
+        return entries;
+      }
+
+      List<GlobalSettingTriggerSummary> triggerDetails = (summary.TriggerDetails
+        ?? new List<GlobalSettingTriggerSummary>())
+        .Where(trigger => trigger != null)
+        .ToList();
+      List<GlobalSettingMetricSummary> metricSnapshots = (summary.MarketMetricSnapshots
+        ?? new List<GlobalSettingMetricSummary>())
+        .Where(metric => metric != null)
+        .ToList();
+
+      bool IsPriceTrend(string metric)
+      {
+        return String.Equals(MarketTrendMetrics.Normalize(metric),
+          MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase);
+      }
+
+      bool IsExplicitMetricTrigger(GlobalSettingTriggerSummary trigger)
+      {
+        return trigger.MetricWasExplicit
+          || (!String.IsNullOrWhiteSpace(trigger.Metric) && !IsPriceTrend(trigger.Metric));
+      }
+
+      string MetricKey(string trendName, string metricName)
+      {
+        return (trendName ?? "").Trim().ToUpperInvariant() + "\u001f"
+          + MarketTrendMetrics.Normalize(metricName).ToUpperInvariant();
+      }
+
+      bool hasExplicitMetricReferences = triggerDetails.Any(IsExplicitMetricTrigger)
+        || metricSnapshots.Any(metric => metric.UsedInTriggerSet && !IsPriceTrend(metric.Metric));
+
+      List<GlobalSettingTriggerSummary> explicitMetricTriggers = triggerDetails
+        .Where(IsExplicitMetricTrigger)
+        .ToList();
+      List<GlobalSettingTriggerSummary> legacyTrendTriggers = triggerDetails
+        .Where(trigger => !IsExplicitMetricTrigger(trigger)
+          && !String.IsNullOrWhiteSpace(trigger.MarketTrendName))
+        .ToList();
+
+      HashSet<string> explicitPriceTrendNames = new HashSet<string>(
+        explicitMetricTriggers
+          .Where(trigger => IsPriceTrend(trigger.Metric))
+          .Select(trigger => trigger.MarketTrendName),
+        StringComparer.OrdinalIgnoreCase);
+
+      HashSet<string> renderedMetricKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (GlobalSettingMetricSummary metric in metricSnapshots.Where(metric =>
+        metric.UsedInTriggerSet
+        && (!IsPriceTrend(metric.Metric)
+          || explicitMetricTriggers.Any(trigger =>
+            String.Equals(trigger.MarketTrendName, metric.MarketTrendName, StringComparison.OrdinalIgnoreCase)
+            && IsPriceTrend(trigger.Metric)))))
+      {
+        string metricName = Core.Helper.SystemHelper.SplitCamelCase(metric.MarketTrendName)
+          + " / " + Core.Helper.SystemHelper.SplitCamelCase(MarketTrendMetrics.Normalize(metric.Metric));
+        string metricValue = metric.IsAssetMetric ? "" :
+          metric.Value.HasValue
+            ? ": " + metric.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture)
+              + (String.IsNullOrWhiteSpace(metric.Unit) ? MarketTrendMetricTriggerResolver.GetUnit(metric.Metric) : metric.Unit)
+            : ": UNAVAILABLE";
+
+        entries.Add(new GlobalSettingLogMetricEntry
+        {
+          Text = metricName + metricValue,
+          TriggerConditionTrue = metric.TriggerConditionTrue,
+          Tooltip = metric.IsAssetMetric ? "Asset-level metric; no market-wide value" : metric.UnavailableReason
+        });
+        renderedMetricKeys.Add(MetricKey(metric.MarketTrendName, metric.Metric));
+      }
+
+      // Trigger details are sufficient to show explicitly configured metrics
+      // for entries created before metric snapshots were persisted.
+      foreach (IGrouping<string, GlobalSettingTriggerSummary> group in explicitMetricTriggers
+        .GroupBy(trigger => MetricKey(trigger.MarketTrendName, trigger.Metric), StringComparer.OrdinalIgnoreCase))
+      {
+        if (renderedMetricKeys.Contains(group.Key))
+        {
+          continue;
+        }
+
+        GlobalSettingTriggerSummary detail = group.FirstOrDefault(trigger => trigger.Value.HasValue)
+          ?? group.First();
+        string unit = String.IsNullOrWhiteSpace(detail.Unit)
+          ? MarketTrendMetricTriggerResolver.GetUnit(detail.Metric)
+          : detail.Unit;
+        string value = detail.Value.HasValue
+          ? ": " + detail.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + unit
+          : ": UNAVAILABLE";
+
+        entries.Add(new GlobalSettingLogMetricEntry
+        {
+          Text = Core.Helper.SystemHelper.SplitCamelCase(detail.MarketTrendName)
+            + " / " + Core.Helper.SystemHelper.SplitCamelCase(MarketTrendMetrics.Normalize(detail.Metric)) + value,
+          TriggerConditionTrue = group.Any(trigger =>
+            String.Equals(trigger.Result, "TRUE", StringComparison.OrdinalIgnoreCase)),
+          Tooltip = detail.UnavailableReason
+        });
+      }
+
+      // A legacy trend is included in metric mode only when that same activation
+      // contains a legacy (implicit PriceTrend) trigger for it.
+      IEnumerable<string> legacyTrendNames;
+      if (triggerDetails.Count == 0 && !hasExplicitMetricReferences)
+      {
+        // Pre-metric history has no trigger details; MarketTrendChanges was
+        // already scoped to the activated setting by the legacy writer.
+        legacyTrendNames = (summary.MarketTrendChanges ?? new Dictionary<string, MarketTrendChange>()).Keys;
+      }
+      else
+      {
+        legacyTrendNames = legacyTrendTriggers
+          .Where(trigger => !explicitPriceTrendNames.Contains(trigger.MarketTrendName))
+          .Select(trigger => trigger.MarketTrendName)
+          .Distinct(StringComparer.OrdinalIgnoreCase);
+      }
+
+      Dictionary<string, MarketTrendChange> legacyChanges = summary.MarketTrendChanges
+        ?? new Dictionary<string, MarketTrendChange>();
+      foreach (string trendName in legacyTrendNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+      {
+        KeyValuePair<string, MarketTrendChange> changePair = legacyChanges.FirstOrDefault(pair =>
+          String.Equals(pair.Key, trendName, StringComparison.OrdinalIgnoreCase));
+        List<GlobalSettingTriggerSummary> matchingTriggers = legacyTrendTriggers
+          .Where(trigger => String.Equals(trigger.MarketTrendName, trendName, StringComparison.OrdinalIgnoreCase))
+          .ToList();
+        bool wasTrue = matchingTriggers.Any(trigger =>
+          String.Equals(trigger.Result, "TRUE", StringComparison.OrdinalIgnoreCase));
+
+        if (changePair.Value != null)
+        {
+          entries.Add(new GlobalSettingLogMetricEntry
+          {
+            Text = Core.Helper.SystemHelper.SplitCamelCase(trendName) + ": "
+              + changePair.Value.TrendChange.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture) + "%",
+            TriggerConditionTrue = wasTrue,
+            Tooltip = "Legacy MarketTrend value recorded at activation."
+          });
+        }
+        else
+        {
+          GlobalSettingTriggerSummary detail = matchingTriggers.FirstOrDefault(trigger => trigger.Value.HasValue)
+            ?? matchingTriggers.FirstOrDefault();
+          if (detail != null)
+          {
+            string value = detail.Value.HasValue
+              ? ": " + detail.Value.Value.ToString("#,#0.00", System.Globalization.CultureInfo.InvariantCulture)
+                + (String.IsNullOrWhiteSpace(detail.Unit) ? "%" : detail.Unit)
+              : ": UNAVAILABLE";
+            entries.Add(new GlobalSettingLogMetricEntry
+            {
+              Text = Core.Helper.SystemHelper.SplitCamelCase(trendName) + value,
+              TriggerConditionTrue = wasTrue,
+              Tooltip = detail.UnavailableReason
+            });
+          }
+        }
+      }
+
+      return entries;
     }
 
     private void BuildMarketsWithSingleSettings()
