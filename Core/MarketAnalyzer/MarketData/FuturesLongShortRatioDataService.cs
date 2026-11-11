@@ -223,8 +223,18 @@ namespace Core.MarketAnalyzer.MarketData
               {
                 FuturesLongShortRatio.Validate(row, item.Source, item.Symbol);
                 long timestamp = row.TimestampUtc.ToUnixTimeMilliseconds();
-                if (timestamp < from || timestamp > item.End)
-                  throw new InvalidOperationException("Long/short ratio page contains an observation outside the pinned request window.");
+                if (timestamp < from)
+                {
+                  // Binance may round startTime down to the preceding 5m
+                  // observation. Our exclusive prior boundary is passed as
+                  // the aligned timestamp + 1 ms; ignore only that one
+                  // known overlap, never unrelated earlier observations.
+                  if (from % IntervalMilliseconds == 1 && timestamp == from - 1)
+                    continue;
+                  throw new InvalidOperationException("Long/short ratio page contains an observation before the pinned request window.");
+                }
+                if (timestamp > item.End)
+                  throw new InvalidOperationException("Long/short ratio page contains an observation after the pinned request window.");
                 if (pending.TryGetValue(timestamp, out FuturesLongShortRatioObservation previous) &&
                   !Same(previous, row))
                   throw new InvalidOperationException("Conflicting long/short ratio rows share a page timestamp.");

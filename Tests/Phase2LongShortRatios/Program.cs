@@ -107,21 +107,60 @@ FuturesLongShortRatioObservation RatioAt(string symbol, DateTimeOffset timestamp
   TimestampUtc = timestamp, Period = TimeSpan.FromMinutes(5),
   LongShortRatio = 1.5m, LongSideShare = .6m, ShortSideShare = .4m
 };
+string boundaryCacheRoot = Path.Combine(Path.GetTempPath(), "PTM_RatioBoundaryOverlap_" + Guid.NewGuid().ToString("N"));
+try
+{
+  var boundaryService = new FuturesLongShortRatioDataService(boundaryCacheRoot);
+  DateTimeOffset requestedStart = default;
+  var accepted = await boundaryService.RefreshAsync(new[] { Request("SOLUSDT") }, servicePin, 1,
+    (source, symbol, from, to, limit, ct) =>
+    {
+      requestedStart = from;
+      // The live Binance endpoint returned 13 aligned observations for
+      // a 60m window, beginning exactly 1ms before requested startTime.
+      IReadOnlyList<FuturesLongShortRatioObservation> page = Enumerable.Range(0, 13)
+        .Select(index => RatioAt(symbol, to.AddMinutes(-60 + index * 5))).ToArray();
+      return Task.FromResult(page);
+    }, serviceLog);
+  Check(accepted.Requests == 1 && accepted.Failures == 0 && accepted.CompleteSeries == 1 &&
+    requestedStart.ToUnixTimeMilliseconds() == servicePin.AddHours(-1).ToUnixTimeMilliseconds() + 1 &&
+    boundaryService.Snapshot(FuturesLongShortRatioSource.GlobalAccount, "SOLUSDT", 60, servicePin).Count == 12,
+    "one-millisecond Binance startTime overlap is ignored; exactly twelve in-window samples remain");
+  Check(new FuturesLongShortRatioDiskCache(boundaryCacheRoot)
+    .TryRestore(FuturesLongShortRatioSource.GlobalAccount, "SOLUSDT", servicePin, serviceLog)
+    .Rows.Count == 12,
+    "out-of-window overlap is not persisted in the global-account ratio cache");
+
+  var invalidService = new FuturesLongShortRatioDataService(boundaryCacheRoot);
+  var invalid = await invalidService.RefreshAsync(new[] { Request("DOGEUSDT") }, servicePin, 1,
+    (source, symbol, from, to, limit, ct) =>
+      Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(
+        new[] { RatioAt(symbol, from.AddMilliseconds(-1).AddMinutes(-5)) }), serviceLog);
+  Check(invalid.Requests == 1 && invalid.Failures == 1 && invalid.CompleteSeries == 0 &&
+    invalidService.Snapshot(FuturesLongShortRatioSource.GlobalAccount, "DOGEUSDT", 60, servicePin).Count == 0,
+    "other out-of-window ratio observations still fail closed without caching invalid rows");
+}
+finally
+{
+  if (Directory.Exists(boundaryCacheRoot)) Directory.Delete(boundaryCacheRoot, recursive: true);
+}
+
 try
 {
   var firstPage = Enumerable.Range(0, 500)
-    .Select(index => RatioAt("XRPUSDT", servicePin.AddMinutes(-partialHorizon + 5 + index * 5)))
+    .Select(index => RatioAt("XRPUSDT", servicePin.AddMinutes(-partialHorizon + index * 5)))
     .ToArray();
   DateTimeOffset firstLast = firstPage[^1].TimestampUtc;
   var first = new FuturesLongShortRatioDataService(partialCacheRoot);
   var firstReport = await first.RefreshAsync(new[] { partialRequest }, servicePin, 1,
     (source, symbol, from, to, limit, ct) =>
       Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(firstPage), serviceLog);
-  Check(firstReport.Requests == 1 && firstReport.CompleteSeries == 0,
-    "first ratio service persists one bounded partial page");
+  Check(firstReport.Requests == 1 && firstReport.Failures == 0 && firstReport.CompleteSeries == 0 &&
+    first.Snapshot(FuturesLongShortRatioSource.GlobalAccount, "XRPUSDT", partialHorizon, servicePin).Count == 499,
+    "full 500-row provider page with one boundary overlap saves 499 rows without certifying complete coverage");
 
   DateTimeOffset secondFrom = default;
-  var secondPage = Enumerable.Range(1, 500)
+  var secondPage = Enumerable.Range(0, 500)
     .Select(index => RatioAt("XRPUSDT", firstLast.AddMinutes(index * 5)))
     .ToArray();
   DateTimeOffset secondLast = secondPage[^1].TimestampUtc;
@@ -132,9 +171,9 @@ try
       secondFrom = from;
       return Task.FromResult<IReadOnlyList<FuturesLongShortRatioObservation>>(secondPage);
     }, serviceLog);
-  Check(secondReport.Requests == 1 && secondReport.CompleteSeries == 0 &&
+  Check(secondReport.Requests == 1 && secondReport.Failures == 0 && secondReport.CompleteSeries == 0 &&
     secondFrom.ToUnixTimeMilliseconds() == firstLast.ToUnixTimeMilliseconds() + 1,
-    "restarted ratio service resumes immediately after the first covered range");
+    "restarted ratio service ignores one repeated boundary sample and retains the true full-page pagination state");
 
   DateTimeOffset thirdFrom = default;
   var third = new FuturesLongShortRatioDataService(partialCacheRoot);
