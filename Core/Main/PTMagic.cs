@@ -989,6 +989,8 @@ namespace Core.Main
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots).ConfigureAwait(false);
                 await BinanceFuturesAnalyticsRuntime.RefreshFundingAsync(
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots).ConfigureAwait(false);
+                await BinanceFuturesAnalyticsRuntime.RefreshLongShortRatiosAsync(
+                  this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots).ConfigureAwait(false);
                 BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
                   this.GlobalMarketTrendChanges, this.SingleMarketTrendChanges,
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots);
