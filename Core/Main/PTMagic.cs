@@ -2652,10 +2652,8 @@ namespace Core.Main
         this.DCALines, this.IndicatorsLines, DestinationFingerprint());
       _desiredPayloadHash = desired.PayloadHash;
       _decisionFresh = this.IsRaidFresh(out string freshnessReason);
-      bool indeterminateFallbackSelected = _selectionIndeterminate
-        && _selectedGlobalSelectionBasis.StartsWith("Indeterminate fallback:", StringComparison.OrdinalIgnoreCase);
       if (!_decisionFresh || _startupGuardPending ||
-          ((_firstSuccessfulRaidPending || _startupGuardManualReviewRequired) && _selectionIndeterminate && !indeterminateFallbackSelected))
+          ((_firstSuccessfulRaidPending || _startupGuardManualReviewRequired) && _selectionIndeterminate))
       {
         _raidDelivery = ConfigurationDeliveryResult.Deferred(!_decisionFresh ? freshnessReason :
           _startupGuardPending ? "Startup SOM enable is unconfirmed; manually inspect PT before configuration delivery." :
