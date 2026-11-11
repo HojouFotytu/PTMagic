@@ -24,7 +24,8 @@ namespace Core.MarketAnalyzer.MarketData
       string benchmarkSymbol = "BTCUSDT",
       int? configuredStoreDataMaxHours = null,
       FuturesOpenInterestDataService openInterestData = null, string exchangeName = "BinanceFutures",
-      FuturesFundingDataService fundingData = null)
+      FuturesFundingDataService fundingData = null,
+      FuturesLongShortRatioDataService longShortRatioData = null, bool longShortRatioApiKeyConfigured = false)
     {
       if (marketTrend == null)
       {
@@ -299,6 +300,22 @@ namespace Core.MarketAnalyzer.MarketData
         var funding = FuturesFundingFeatureEngine.Calculate(assetUniverse, enabledMetrics,
           marketTrend.TrendMinutes, calculatedAtUtc, exchangeName, fundingData);
         foreach (var asset in funding)
+        {
+          Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
+              out IReadOnlyDictionary<string, FeatureValueSnapshot> existing)
+            ? new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
+          assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+      }
+
+      if (FuturesLongShortRatioFeatureEngine.HasMetrics(enabledMetrics))
+      {
+        var ratios = FuturesLongShortRatioFeatureEngine.Calculate(assetUniverse, enabledMetrics,
+          marketTrend.TrendMinutes, calculatedAtUtc, exchangeName,
+          longShortRatioData, longShortRatioApiKeyConfigured);
+        foreach (var asset in ratios)
         {
           Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
               out IReadOnlyDictionary<string, FeatureValueSnapshot> existing)
