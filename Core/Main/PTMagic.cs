@@ -1719,7 +1719,9 @@ namespace Core.Main
     {
       // Prepare the desired preset. Applied state is committed only after delivery.
       bool changed = !String.Equals(this.ActiveSettingName, triggeredSetting.SettingName, StringComparison.OrdinalIgnoreCase);
-      if (changed && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
+      bool indeterminateFallbackSelected = _selectionIndeterminate
+        && _selectedGlobalSelectionBasis.StartsWith("Indeterminate fallback:", StringComparison.OrdinalIgnoreCase);
+      if (changed && !indeterminateFallbackSelected && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
         && this.LastSettingsChange > DateTime.UtcNow.AddMinutes(-PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes))
       {
         this.LastRuntimeSummary.FloodProtectedSetting = triggeredSetting;
