@@ -40,7 +40,7 @@ namespace Core.MarketAnalyzer.MarketData
         log, maxConcurrency, cancellationToken, refreshAsOfUtc);
     }
 
-    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null, string cacheExchange = null)
+    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null, string cacheExchange = null, IReadOnlyCollection<int> takerTrendMinutes = null)
     {
       if (symbols == null)
       {
@@ -110,7 +110,13 @@ namespace Core.MarketAnalyzer.MarketData
       }, async (index, ct) =>
       {
         string symbol = distinctSymbols[index];
+        bool needsTakerRepair = NeedsTakerRepair(symbol, interval, refreshStartedUtc, takerTrendMinutes);
         int requestedCandleCount = GetRequiredCandleCount(symbol, interval, targetHistoryCandles, refreshStartedUtc, diskRestoredSymbols.Contains(symbol));
+        if (needsTakerRepair)
+        {
+          int takerCount = RequiredTakerFetchCount(interval, refreshStartedUtc, takerTrendMinutes);
+          requestedCandleCount = Math.Max(requestedCandleCount, Math.Min(targetHistoryCandles, takerCount));
+        }
 
         if (requestedCandleCount == 0)
         {
@@ -145,8 +151,10 @@ namespace Core.MarketAnalyzer.MarketData
           if (matchingCandles.Count > 0 && _warmStartCache != null
             && !String.IsNullOrWhiteSpace(cacheExchange))
           {
+            bool repairCompleted = needsTakerRepair &&
+              !NeedsTakerRepair(symbol, interval, refreshStartedUtc, takerTrendMinutes);
             _warmStartCache.TrySave(cacheExchange, symbol, interval,
-              refreshStartedUtc, _store, log);
+              refreshStartedUtc, _store, log, forceSave: repairCompleted);
           }
 
           statuses[index] = new MarketDataRefreshStatus
@@ -182,6 +190,51 @@ namespace Core.MarketAnalyzer.MarketData
       }).ConfigureAwait(false);
 
       return Array.AsReadOnly(statuses);
+    }
+
+    // Only the most recent complete window of each explicitly enabled taker
+    // trend needs source-verified taker volume. Legacy v1 cache history remains
+    // valid for OHLCV metrics, and does not trigger a full 72h refresh.
+    private bool NeedsTakerRepair(string symbol, TimeSpan interval, DateTimeOffset asOfUtc,
+      IReadOnlyCollection<int> takerTrendMinutes)
+    {
+      if (takerTrendMinutes == null || takerTrendMinutes.Count == 0) return false;
+      MarketDataSeriesSnapshot snapshot = _store.GetSnapshot(symbol, interval, asOfUtc);
+      if (snapshot.IsStale) return true;
+      long intervalMs = checked((long)interval.TotalMilliseconds);
+      long asOfMs = asOfUtc.ToUnixTimeMilliseconds();
+      Dictionary<long, MarketCandle> closed = snapshot.ClosedCandles.ToDictionary(
+        x => x.OpenTimeUtc.ToUnixTimeMilliseconds());
+      foreach (int minutes in takerTrendMinutes)
+      {
+        if (minutes <= 0) continue;
+        long trendMs = checked((long)TimeSpan.FromMinutes(minutes).TotalMilliseconds);
+        if (trendMs % intervalMs != 0) return true;
+        long firstOpen = asOfMs / trendMs * trendMs - trendMs;
+        for (long open = firstOpen; open < firstOpen + trendMs; open += intervalMs)
+        {
+          if (!closed.TryGetValue(open, out MarketCandle candle) || !candle.TakerBuyQuoteVolume.HasValue)
+            return true;
+        }
+      }
+      return false;
+    }
+
+    private static int RequiredTakerFetchCount(TimeSpan interval, DateTimeOffset asOfUtc,
+      IReadOnlyCollection<int> takerTrendMinutes)
+    {
+      long intervalMs = checked((long)interval.TotalMilliseconds);
+      long asOfMs = asOfUtc.ToUnixTimeMilliseconds();
+      long required = 0;
+      foreach (int minutes in takerTrendMinutes ?? Array.Empty<int>())
+      {
+        if (minutes <= 0) continue;
+        long trendMs = checked((long)TimeSpan.FromMinutes(minutes).TotalMilliseconds);
+        long firstOpen = asOfMs / trendMs * trendMs - trendMs;
+        // Allow a forming candle and the existing two-candle repair overlap.
+        required = Math.Max(required, (asOfMs - firstOpen) / intervalMs + 3);
+      }
+      return required >= int.MaxValue ? int.MaxValue : (int)required;
     }
 
     private int GetRequiredCandleCount(string symbol, TimeSpan interval, int targetHistoryCandles, DateTimeOffset refreshStartedUtc, bool restoredFromDisk)
