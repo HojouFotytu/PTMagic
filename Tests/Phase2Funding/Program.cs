@@ -558,7 +558,12 @@ internal static class Program
         bulkCalls++;
         return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
           Enumerable.Range(0, 1000).Select(index =>
-            Event("OTHER" + index.ToString("D4") + "USDT", 60, 0.0001m)).ToArray());
+            new FuturesFundingObservation
+            {
+              Symbol = "OTHER" + index.ToString("D4") + "USDT",
+              FundingTimeUtc = from, NativeRate = 0.0001m,
+              RateType = "Regular", MarkPrice = 100m
+            }).ToArray());
       }, Log);
     Assert(bulkCalls == 1 && fallbackCalls == 2 && report.BulkRequests == 1 &&
       report.SymbolRequests == 2 && report.CompleteSymbols == 2,
