@@ -24,6 +24,29 @@ namespace Core.MarketAnalyzer.MarketData
   /// lastFundingRate or a forward estimate. Never assumes an 8h schedule.</summary>
   public static class FuturesFunding
   {
+    /// <summary>Validate every bulk result without collapsing duplicate provider
+    /// records, since their raw count determines pagination completeness.</summary>
+    public static IReadOnlyList<FuturesFundingObservation> MapBulkHistory(
+      JArray payload, DateTimeOffset asOfUtc)
+    {
+      if (payload == null) throw new ArgumentNullException(nameof(payload));
+      var rows = new List<FuturesFundingObservation>(payload.Count);
+      foreach (JToken token in payload)
+      {
+        if (token is not JObject item)
+          throw new InvalidDataException("Binance bulk funding history row must be an object.");
+        string symbol = item.Value<string>("symbol");
+        if (String.IsNullOrWhiteSpace(symbol))
+          throw new InvalidDataException("Bulk funding history row has no symbol.");
+        IReadOnlyList<FuturesFundingObservation> mapped =
+          MapHistory(new JArray(item), symbol, DateTimeOffset.MaxValue);
+        if (mapped.Count != 1 || mapped[0].FundingTimeUtc > asOfUtc.ToUniversalTime())
+          throw new InvalidDataException("Bulk funding row falls beyond the pinned boundary.");
+        rows.Add(mapped[0]);
+      }
+      return rows.AsReadOnly();
+    }
+
     public static IReadOnlyList<FuturesFundingObservation> MapHistory(
       JArray payload, string requestedSymbol, DateTimeOffset asOfUtc)
     {
