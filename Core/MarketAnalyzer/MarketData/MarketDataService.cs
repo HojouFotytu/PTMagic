@@ -115,7 +115,11 @@ namespace Core.MarketAnalyzer.MarketData
         if (needsTakerRepair)
         {
           int takerCount = RequiredTakerFetchCount(interval, refreshStartedUtc, takerTrendMinutes);
-          requestedCandleCount = Math.Max(requestedCandleCount, Math.Min(targetHistoryCandles, takerCount));
+          // When the configured OHLCV capacity cannot contain the required
+          // complete taker period, leave the feature UNAVAILABLE instead of
+          // repeatedly forcing a full-history reload on every raid.
+          if (takerCount <= targetHistoryCandles)
+            requestedCandleCount = Math.Max(requestedCandleCount, takerCount);
         }
 
         if (requestedCandleCount == 0)
