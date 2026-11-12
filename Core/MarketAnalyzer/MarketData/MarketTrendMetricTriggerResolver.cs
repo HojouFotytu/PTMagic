@@ -138,6 +138,7 @@ namespace Core.MarketAnalyzer.MarketData
     public static string GetUnit(string metric)
     {
       string metricName = MarketTrendMetrics.Normalize(metric);
+      if (TakerFlowFeatureEngine.IsMetric(metricName)) return "";
       if (metricName == MarketTrendMetrics.CorrelationToBTC ||
         metricName == MarketTrendMetrics.MeanCorrelationToBTC ||
         metricName == MarketTrendMetrics.MedianCorrelationToBTC)
