@@ -26,9 +26,10 @@ namespace Core.MarketAnalyzer.MarketData
       long end = endUtc.ToUniversalTime().ToUnixTimeMilliseconds();
       if (start <= 0 || end < start)
         throw new ArgumentOutOfRangeException(nameof(startUtc), "Funding query boundaries are invalid.");
-      return ApiBase + "/fapi/v1/fundingRate?symbol=" +
-        Uri.EscapeDataString(FuturesOpenInterest.NormalizeSymbol(symbol)) +
-        "&startTime=" + start.ToString(CultureInfo.InvariantCulture) +
+      string symbolParameter = String.IsNullOrWhiteSpace(symbol) ? "" :
+        "symbol=" + Uri.EscapeDataString(FuturesOpenInterest.NormalizeSymbol(symbol)) + "&";
+      return ApiBase + "/fapi/v1/fundingRate?" + symbolParameter +
+        "startTime=" + start.ToString(CultureInfo.InvariantCulture) +
         "&endTime=" + end.ToString(CultureInfo.InvariantCulture) +
         "&limit=" + limit.ToString(CultureInfo.InvariantCulture);
     }
@@ -42,6 +43,19 @@ namespace Core.MarketAnalyzer.MarketData
         HistoryUrl(symbol, startUtc, endUtc, limit), log, ct).ConfigureAwait(false);
       if (payload == null) throw new InvalidOperationException("Funding history request returned no response.");
       return FuturesFunding.MapHistory(payload, symbol, endUtc);
+    }
+
+    /// <summary>Bulk funding history has no symbol parameter. Every row
+    /// retains its own provider symbol; pagination may have shared timestamps.</summary>
+    public static async Task<IReadOnlyList<FuturesFundingObservation>> GetBulkHistoryPageAsync(
+      DateTimeOffset startUtc, DateTimeOffset endUtc, int limit,
+      LogHelper log, CancellationToken ct = default)
+    {
+      if (log == null) throw new ArgumentNullException(nameof(log));
+      JArray payload = await BaseAnalyzer.GetSimpleJsonArrayFromURLAsync(
+        HistoryUrl(null, startUtc, endUtc, limit), log, ct).ConfigureAwait(false);
+      if (payload == null) throw new InvalidOperationException("Bulk funding history request returned no response.");
+      return FuturesFunding.MapBulkHistory(payload, endUtc);
     }
   }
 }
