@@ -105,6 +105,12 @@ namespace Core.MarketAnalyzer.MarketData
           minimumSourceCount = trendSourceCount;
           basis = "One complete UTC trend period of quote volume for every selected global market.";
         }
+        else if (TakerFlowFeatureEngine.IsMetric(metric))
+        {
+          alignedTrendPeriods = true;
+          minimumSourceCount = trendSourceCount;
+          basis = "One exact complete UTC MarketTrend period of source-verified taker-buy and total quote volume, with no missing 5m candles.";
+        }
         else if (metric == MarketTrendMetrics.Concentration)
         {
           basis = "Trailing TrendMinutes quote-volume ranking plus the same-window return and reference close; complete selected population required.";
