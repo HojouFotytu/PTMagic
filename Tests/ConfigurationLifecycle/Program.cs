@@ -21,6 +21,53 @@ internal static class Program
   {
     try
     {
+      Check("Futures analyzer underlying types filter historical and SMS populations", () =>
+      {
+        using var fixture = new Fixture();
+        var universeType = typeof(Core.MarketAnalyzer.BinanceFuturesMarketUniverse);
+        var metadataField = universeType.GetField("_metadata", BindingFlags.Static | BindingFlags.NonPublic);
+        var raidUniverseField = universeType.GetField("_raidAnalyzerUniverse", BindingFlags.Static | BindingFlags.NonPublic);
+        var originalMetadata = metadataField.GetValue(null);
+        var originalRaidUniverse = raidUniverseField.GetValue(null);
+        try
+        {
+          metadataField.SetValue(null, new Dictionary<string, Core.MarketAnalyzer.BinanceFuturesMarketMetadata>(StringComparer.InvariantCultureIgnoreCase)
+          {
+            ["BTCUSDT"] = new Core.MarketAnalyzer.BinanceFuturesMarketMetadata { Symbol = "BTCUSDT", UnderlyingType = "COIN" },
+            ["ETHUSDT"] = new Core.MarketAnalyzer.BinanceFuturesMarketMetadata { Symbol = "ETHUSDT", UnderlyingType = "COIN" },
+            ["NVDAUSDT"] = new Core.MarketAnalyzer.BinanceFuturesMarketMetadata { Symbol = "NVDAUSDT", UnderlyingType = "EQUITY" },
+            ["XAUUSDT"] = new Core.MarketAnalyzer.BinanceFuturesMarketMetadata { Symbol = "XAUUSDT", UnderlyingType = "COMMODITY" }
+          });
+          fixture.Configuration.AnalyzerSettings.MarketAnalyzer.IncludedUnderlyingTypes = new List<string> { "COIN" };
+          Core.MarketAnalyzer.BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
+          string[] all = { "BTCUSDT", "ETHUSDT", "NVDAUSDT", "XAUUSDT" };
+          var eligible = Core.MarketAnalyzer.BinanceFuturesMarketUniverse.FilterMarketNames(all, fixture.Configuration);
+          Require(eligible.SequenceEqual(new[] { "BTCUSDT", "ETHUSDT" }));
+
+          // Unrestricted PT pairs and explicit PT lists both obey the filter.
+          fixture.Bot.ExchangeMarketList = all.ToList();
+          fixture.Bot.MarketList = new List<string>();
+          Call(fixture.Bot, "BuildMarketList");
+          Require(fixture.Bot.MarketList.SequenceEqual(eligible));
+          fixture.Configuration.AnalyzerSettings.MarketAnalyzer.UseProfitTrailerEnabledPairs = true;
+          fixture.Bot.PairsLines.Add("enabled_pairs = BTC,NVDA");
+          fixture.Bot.MarketList = new List<string>();
+          Call(fixture.Bot, "BuildMarketList");
+          Require(fixture.Bot.MarketList.SequenceEqual(new[] { "BTCUSDT" }));
+
+          var frozen = new AnalyzerUniverseSnapshot(DateTimeOffset.UtcNow, "USDT",
+            new[] {
+              new AnalyzerUniverseMarket { Symbol = "BTCUSDT", UnderlyingType = "COIN" },
+              new AnalyzerUniverseMarket { Symbol = "ETHUSDT", UnderlyingType = "COIN" }
+            });
+          Require(Core.MarketAnalyzer.BinanceFuturesMarketUniverse.DescribeEvaluatedUnderlyingTypes(frozen) == "COIN (2)");
+        }
+        finally
+        {
+          metadataField.SetValue(null, originalMetadata);
+          raidUniverseField.SetValue(null, originalRaidUniverse);
+        }
+      });
       Check("global setting log captures all global metrics and highlights trigger membership regardless of result", () =>
       {
         var trends = new[]
