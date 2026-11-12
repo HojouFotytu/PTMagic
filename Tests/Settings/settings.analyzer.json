@@ -1,8 +1,7 @@
-// TEST-ONLY settings for PTMagic 2.10. Source: 5a21a482711c8026b50fce10c55b3fb76f4075c3
-// SetIdentity = PTM2.10-PHASE1-BUILD-METRIC-TEST
-// SetVersion = 1.0.0
-// SetDate = 2026-11-11
-// SetTimestamp = 2026-11-11T23:52:51+09:00
+// TEST-ONLY PTMagic 2.10 metric analyzer; D-053 retained scope.
+// SetIdentity = PTM2.10-24-METRICS
+// SetVersion = 2.0.0
+// SetDate = 2026-11-12
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
@@ -41,27 +40,7 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 60,
-          "Metrics": "Concentration,MedianATRP,VolatilityBreadth,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,MeanCorrelationToBTC,MedianCorrelationToBTC,OpenInterestChange,GlobalLongShortAccountRatio",
-          "ATRPeriod": 14,
-          "VolumeExpansionLookback": 20,
-          "ATRPBreadthThreshold": 0.5,
-          "VolumeExpansionBreadthThreshold": 1,
-          "StrongVolumeExpansionThreshold": 1.5,
-          "TopNVolumeCount": 5,
-          "CorrelationLookback": 30,
-          "DisplayGraph": true,
-          "DisplayOnMarketAnalyzerList": true,
-          "IgnoredMarkets": "",
-          "TrendThreshold": 0,
-          "ExcludeMainCurrency": true
-        },
-        {
-          "Name": "H4",
-          "Platform": "Exchange",
-          "TrendCurrency": "Market",
-          "MaxMarkets": 0,
-          "TrendMinutes": 240,
-          "Metrics": "OpenInterestValueChange",
+          "Metrics": "Concentration,MedianATRP,VolatilityBreadth,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,MeanCorrelationToBTC,MedianCorrelationToBTC",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 0.5,
@@ -316,39 +295,7 @@
         "IndicatorsProperties": {}
       },
       {
-        "SettingName": "TEST_SMS_02_OPEN_INTEREST",
-        "TriggerConnection": "AND",
-        "OffTriggerConnection": "AND",
-        "RefreshOffTriggers": false,
-        "IgnoredMarkets": "",
-        "IgnoredGlobalSettings": "",
-        "AllowedGlobalSettings": "DEFAULT",
-        "StopProcessWhenTriggered": false,
-        "Triggers": [
-          {
-            "Tag": "A",
-            "MarketTrendName": "H1",
-            "Metric": "OpenInterestChange",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "B",
-            "MarketTrendName": "H4",
-            "Metric": "OpenInterestValueChange",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          }
-        ],
-        "OffTriggers": [],
-        "PairsProperties": {},
-        "DCAProperties": {},
-        "IndicatorsProperties": {}
-      },
-      {
-        "SettingName": "TEST_SMS_03_FUNDING",
+        "SettingName": "TEST_SMS_02_FUNDING",
         "TriggerConnection": "AND",
         "OffTriggerConnection": "AND",
         "RefreshOffTriggers": false,
@@ -369,30 +316,6 @@
             "Tag": "B",
             "MarketTrendName": "H24",
             "Metric": "FundingSum",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          }
-        ],
-        "OffTriggers": [],
-        "PairsProperties": {},
-        "DCAProperties": {},
-        "IndicatorsProperties": {}
-      },
-      {
-        "SettingName": "TEST_SMS_04_POSITIONING",
-        "TriggerConnection": "AND",
-        "OffTriggerConnection": "AND",
-        "RefreshOffTriggers": false,
-        "IgnoredMarkets": "",
-        "IgnoredGlobalSettings": "",
-        "AllowedGlobalSettings": "DEFAULT",
-        "StopProcessWhenTriggered": false,
-        "Triggers": [
-          {
-            "Tag": "A",
-            "MarketTrendName": "H1",
-            "Metric": "GlobalLongShortAccountRatio",
             "MarketTrendRelation": "Absolute",
             "MinChange": -1000000000000,
             "MaxChange": 1000000000000

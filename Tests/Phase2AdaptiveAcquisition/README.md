@@ -1,12 +1,5 @@
-# Phase 2 adaptive derivative acquisition — offline checks
+# Funding-only adaptive acquisition checks
 
-Focused, network-free checks cover shared Binance Futures IP weight headers, the OI/global-account historical-data rolling allowance, funding's separate five-minute allowance, 429 and 418 cooldowns, family round-robin admission, deadline-bounded asynchronous waits for temporarily blocked quotas, independent family progress, cancellation during waits, freshness deferrals, and OI/funding/ratio progress beyond sixty requests without production raid caps.
+D-053 removes the open-interest and positioning services. The existing `Phase2AdaptiveAcquisition` harness now tests the retained funding path: the 24-metric catalogue, funding quota, Binance IP-weight headers, 429/418 cooldowns, deadline-bounded admission, recoverable waits, cancellation and absence of a fixed 60-page funding ceiling.
 
-The legacy bounded service overloads remain available to existing deterministic tests. Production passes an effectively unbounded request count and supplies shared adaptive page admission. A positive Binance delay no longer vetoes the entire family's raid if the limiter predicts recovery before the existing MaxAnalysisAgeSeconds cutoff. The scheduler waits without blocking other families, rechecks capacity after each wait, and defers only if the deadline cannot be met. Exact source coverage, persistent caches and UNAVAILABLE semantics remain in effect.
-
-Run with the project-wide \`Tests/Phase2OpenInterestIncremental/Run-Phase2Validation.ps1\`, or:
-\`\`\`powershell
-dotnet run --project .\Tests\Phase2AdaptiveAcquisition\Phase2AdaptiveAcquisition.csproj
-\`\`\`
-
-These tests do not establish real Binance cooldown or configured raid acceptance.
+Run `Tests/Phase2OpenInterestIncremental/Run-Phase2Validation.ps1` or `dotnet run --project .\Tests\Phase2AdaptiveAcquisition\Phase2AdaptiveAcquisition.csproj`. Offline tests do not prove live provider/Monitor/PT behavior.

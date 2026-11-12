@@ -25,3 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
 ```
 
 The runner builds the solution and executes all 16 offline test projects, with no configured PT writes or browser actions.
+
+## D-053 — retained family
+
+The open-interest and long/short positioning source families were withdrawn. Retain native settled funding, bulk-first collection, per-symbol fallback, persistence, provider quota handling and exact metric availability. This remains an active metric family.

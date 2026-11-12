@@ -1,4 +1,5 @@
-# PTMagic 2.10: required offline Phase 2 development verification.
+# PTMagic 2.10: offline validation of retained metrics and funding (D-053).
+# Existing script path retained for compatibility with local validation commands.
 # No configured runtime, ProfitTrailer writes, or browser acceptance.
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
@@ -29,9 +30,6 @@ try {
 
     $Checks = @(
         "Phase2Funding",
-        "Phase2OpenInterest",
-        "Phase2OpenInterestIncremental",
-        "Phase2LongShortRatios",
         "Phase2AdaptiveAcquisition",
         "Phase1AReadiness",
         "Phase1AnalyticsReliability",
