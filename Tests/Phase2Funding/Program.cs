@@ -474,6 +474,170 @@ internal static class Program
     _passed++;
   }
 
+
+  private static async Task TestBulkCompleteAllSymbols()
+  {
+    var service = new FuturesFundingDataService();
+    int symbolCalls = 0, bulkCalls = 0;
+    var report = await service.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT", "SOLUSDT" },
+      60, Pin, 10,
+      (symbol, from, to, limit, ct) =>
+      {
+        symbolCalls++;
+        return Read(symbol, from, to, limit, ct);
+      },
+      (from, to, limit, ct) =>
+      {
+        bulkCalls++;
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(new[]
+        {
+          Event("BTCUSDT", 30, 0.0001m),
+          Event("ETHUSDT", 30, -0.0002m)
+        });
+      }, Log);
+    Assert(report.CompleteSymbols == 3 && report.BulkRequests == 1 &&
+      report.SymbolRequests == 0 && symbolCalls == 0 && bulkCalls == 1,
+      "One exhausted bulk page must certify every selected symbol, including empty SOL history.");
+    Assert(service.TrySnapshot("ETHUSDT", 60, Pin, out var eth) && eth.Count == 1 &&
+      eth[0].NativeRate == -0.0002m &&
+      service.TrySnapshot("SOLUSDT", 60, Pin, out var sol) && sol.Count == 0,
+      "Bulk observations retain per-symbol identities and verified empty windows.");
+    _passed++;
+  }
+
+  private static async Task TestBulkFullPageBoundary()
+  {
+    var service = new FuturesFundingDataService();
+    DateTimeOffset boundary = Pin.AddMinutes(-20);
+    int calls = 0;
+    var report = await service.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT" },
+      60, Pin, 10, Read,
+      (from, to, limit, ct) =>
+      {
+        calls++;
+        if (calls == 1)
+        {
+          var page = Enumerable.Range(0, 999).Select(index =>
+            Event("OTHER" + index.ToString("D4") + "USDT", 30, 0.0001m)).ToList();
+          page.Add(Event("BTCUSDT", 20, 0.0002m));
+          return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(page);
+        }
+        Assert(from == boundary, "Full bulk page must repeat its final timestamp inclusively.");
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(new[]
+        {
+          Event("BTCUSDT", 20, 0.0002m),
+          Event("ETHUSDT", 20, -0.0003m)
+        });
+      }, Log);
+    Assert(calls == 2 && report.BulkRequests == 2 &&
+      report.SymbolRequests == 0 && report.CompleteSymbols == 2 &&
+      service.TrySnapshot("BTCUSDT", 60, Pin, out var btc) &&
+      btc.Count == 1 && btc[0].NativeRate == 0.0002m &&
+      service.TrySnapshot("ETHUSDT", 60, Pin, out var eth) &&
+      eth.Count == 1 && eth[0].NativeRate == -0.0003m,
+      "Full-page timestamp overlap must retain all settlements without substituting missing rows.");
+    _passed++;
+  }
+
+  private static async Task TestBulkDenseTimestampFallback()
+  {
+    var service = new FuturesFundingDataService();
+    int bulkCalls = 0, fallbackCalls = 0;
+    var report = await service.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT" },
+      60, Pin, 10,
+      (symbol, from, to, limit, ct) =>
+      {
+        fallbackCalls++;
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(new[]
+        {
+          Event(symbol, 30, 0.0001m)
+        });
+      },
+      (from, to, limit, ct) =>
+      {
+        bulkCalls++;
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+          Enumerable.Range(0, 1000).Select(index =>
+            Event("OTHER" + index.ToString("D4") + "USDT", 60, 0.0001m)).ToArray());
+      }, Log);
+    Assert(bulkCalls == 1 && fallbackCalls == 2 && report.BulkRequests == 1 &&
+      report.SymbolRequests == 2 && report.CompleteSymbols == 2,
+      "A saturated shared timestamp must not certify incomplete bulk history.");
+    _passed++;
+  }
+
+  private static async Task TestBulkProviderFailureFallback()
+  {
+    var service = new FuturesFundingDataService();
+    int fallbackCalls = 0;
+    var report = await service.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT" },
+      60, Pin, 10,
+      (symbol, from, to, limit, ct) =>
+      {
+        fallbackCalls++;
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+          new[] { Event(symbol, 30, 0.0001m) });
+      },
+      (from, to, limit, ct) =>
+        throw new InvalidDataException("deterministic malformed bulk page"),
+      Log);
+    Assert(report.BulkRequests == 1 && report.Failures == 1 &&
+      fallbackCalls == 2 && report.CompleteSymbols == 2,
+      "Malformed bulk response must use existing strict per-symbol fallback.");
+    _passed++;
+  }
+
+  private static async Task TestBulkPersistence()
+  {
+    string root = Path.Combine(Path.GetTempPath(), "PTM_BulkFunding_" + Guid.NewGuid().ToString("N"));
+    try
+    {
+      var initial = new FuturesFundingDataService(root);
+      var first = await initial.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT" },
+        60, Pin, 10, Read,
+        (from, to, limit, ct) => Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+          new[] { Event("BTCUSDT", 30, 0.0001m) }), Log);
+      Assert(first.BulkRequests == 1 && first.CompleteSymbols == 2,
+        "Bulk verified histories must be persisted.");
+      var restarted = new FuturesFundingDataService(root);
+      int network = 0;
+      var second = await restarted.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT" },
+        60, Pin, 10,
+        (symbol, from, to, limit, ct) =>
+        {
+          network++;
+          return Read(symbol, from, to, limit, ct);
+        },
+        (from, to, limit, ct) =>
+        {
+          network++;
+          return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+            Array.Empty<FuturesFundingObservation>());
+        }, Log);
+      Assert(second.CompleteSymbols == 2 && second.Requests == 0 && network == 0,
+        "Restart must reuse persisted bulk funding proof without another API request.");
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    _passed++;
+  }
+
+  private static void TestBulkMappingAndUrl()
+  {
+    string url = BinanceFuturesFundingClient.HistoryUrl(null, Pin.AddHours(-1), Pin, 1000);
+    Assert(url.Contains("/fapi/v1/fundingRate?startTime=", StringComparison.Ordinal) &&
+      !url.Contains("symbol=", StringComparison.Ordinal),
+      "Bulk URL must omit symbol and preserve exact request bounds.");
+    var raw = new JArray(
+      new JObject { ["symbol"]="BTCUSDT",["fundingRate"]="0.0001",["fundingTime"]=Pin.AddMinutes(-30).ToUnixTimeMilliseconds() },
+      new JObject { ["symbol"]="ETHUSDT",["fundingRate"]="-0.0002",["fundingTime"]=Pin.AddMinutes(-20).ToUnixTimeMilliseconds() });
+    var mapped = FuturesFunding.MapBulkHistory(raw, Pin);
+    Assert(mapped.Count == 2 && mapped[0].Symbol == "BTCUSDT" &&
+      mapped[1].Symbol == "ETHUSDT" &&
+      mapped[1].NativeRate == -0.0002m,
+      "Bulk mapping must preserve each source symbol and native rates.");
+    _passed++;
+  }
+
   private static async Task<int> Main()
   {
     try
@@ -499,6 +663,12 @@ internal static class Program
       await TestPartialPageFailsClosed();
       TestSpotUnavailable();
       TestHistoryRequirements();
+      TestBulkMappingAndUrl();
+      await TestBulkCompleteAllSymbols();
+      await TestBulkFullPageBoundary();
+      await TestBulkDenseTimestampFallback();
+      await TestBulkProviderFailureFallback();
+      await TestBulkPersistence();
       Console.WriteLine("PASS: Phase 2 funding history and metrics, " + _passed + " offline case groups.");
       Console.WriteLine("LIMIT: No live Binance/provider data, configured raids or PT API actions.");
       return 0;
