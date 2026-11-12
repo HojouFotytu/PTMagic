@@ -203,8 +203,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (snapshot.IsStale) return true;
       long intervalMs = checked((long)interval.TotalMilliseconds);
       long asOfMs = asOfUtc.ToUnixTimeMilliseconds();
-      Dictionary<long, MarketCandle> closed = snapshot.ClosedCandles.ToDictionary(
-        x => x.OpenTimeUtc.ToUnixTimeMilliseconds());
+      IReadOnlyList<MarketCandle> closed = snapshot.ClosedCandles;
       foreach (int minutes in takerTrendMinutes)
       {
         if (minutes <= 0) continue;
@@ -213,10 +212,31 @@ namespace Core.MarketAnalyzer.MarketData
         long firstOpen = asOfMs / trendMs * trendMs - trendMs;
         for (long open = firstOpen; open < firstOpen + trendMs; open += intervalMs)
         {
-          if (!closed.TryGetValue(open, out MarketCandle candle) || !candle.TakerBuyQuoteVolume.HasValue)
+          if (!TryFindClosedCandle(closed, open, out MarketCandle candle) || !candle.TakerBuyQuoteVolume.HasValue)
             return true;
         }
       }
+      return false;
+    }
+
+    private static bool TryFindClosedCandle(IReadOnlyList<MarketCandle> candles,
+      long expectedOpenMilliseconds, out MarketCandle candle)
+    {
+      int left = 0, right = candles.Count - 1;
+      while (left <= right)
+      {
+        int middle = left + (right - left) / 2;
+        MarketCandle current = candles[middle];
+        long open = current.OpenTimeUtc.ToUnixTimeMilliseconds();
+        if (open == expectedOpenMilliseconds)
+        {
+          candle = current;
+          return true;
+        }
+        if (open < expectedOpenMilliseconds) left = middle + 1;
+        else right = middle - 1;
+      }
+      candle = null;
       return false;
     }
 
