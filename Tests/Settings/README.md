@@ -3,7 +3,7 @@
 **Updated:** November 12, 2026 · **Scope:** Phase 2, 26 canonical metrics.
 **Branch:** `phase1/market-data-foundation` · **Test-only**, no production strategy or PT preset changes.
 
-**Build target:** current Phase 2 taker-flow branch (source build and focused checks **pending**). **Diagnostic configuration:** `2.1.0` (updated in place). The prior `e31635a1` D-053 build and 36 focused checks passed before the taker change. All earlier 24 retained metrics and trigger thresholds remain unchanged; the two additional asset-only taker metrics are opt-in.
+**Build target:** [`f7d802facfabb4611098d695d88a269d60daa278`](https://github.com/HojouFotytu/PTMagic/commit/f7d802facfabb4611098d695d88a269d60daa278), **solution build PASS (16.1s), 33/33 focused test groups PASS** on November 13, 2026 KST. **Diagnostic configuration:** `2.1.0` (updated in place, 26 metrics). All earlier 24 metrics and trigger thresholds remain unchanged; the additional two asset-only taker metrics are opt-in. **Configured TestMode taker-source values, v1→v2 cache repair in a real installation, PT writes, and Monitor-browser acceptance are not yet verified.**
 
 ## Metric population
 
