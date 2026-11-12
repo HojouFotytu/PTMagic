@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -116,6 +117,18 @@ namespace Core.MarketAnalyzer.MarketData
         long openTimeMilliseconds = kline[0].Value<long>();
         long closeTimeMilliseconds = kline[6].Value<long>();
 
+        double quoteVolume = kline[7].Value<double>();
+        double? takerBuyQuoteVolume = null;
+        // Binance kline position 10 is taker-buy *quote* volume; position 9
+        // is base volume and must never be combined with quote volume.
+        // Preserve valid OHLCV if the optional taker field is malformed.
+        if (kline.Count > 10 && kline[10] != null &&
+          Double.TryParse(kline[10].ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedTaker) &&
+          Double.IsFinite(parsedTaker) && parsedTaker >= 0 && parsedTaker <= quoteVolume)
+        {
+          takerBuyQuoteVolume = parsedTaker;
+        }
+
         result.Add(new MarketCandle
         {
           Symbol = symbol.Trim().ToUpperInvariant(),
@@ -127,7 +140,8 @@ namespace Core.MarketAnalyzer.MarketData
           Low = kline[3].Value<double>(),
           Close = kline[4].Value<double>(),
           BaseVolume = kline[5].Value<double>(),
-          QuoteVolume = kline[7].Value<double>(),
+          QuoteVolume = quoteVolume,
+          TakerBuyQuoteVolume = takerBuyQuoteVolume,
           TradeCount = kline[8].Value<long>(),
           IsClosed = closeTimeMilliseconds <= observedAtMilliseconds
         });
