@@ -20,6 +20,9 @@ namespace Core.MarketAnalyzer.MarketData
 
     public double BaseVolume { get; init; }
     public double QuoteVolume { get; init; }
+    // Null means this kline's taker-buy quote volume was not source-verified
+    // (including candles restored from the legacy v1 OHLCV cache).
+    public double? TakerBuyQuoteVolume { get; init; }
 
     public long TradeCount { get; init; }
     public bool IsClosed { get; init; }
