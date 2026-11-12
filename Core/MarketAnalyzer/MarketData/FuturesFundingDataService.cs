@@ -12,6 +12,9 @@ namespace Core.MarketAnalyzer.MarketData
   public delegate Task<IReadOnlyList<FuturesFundingObservation>> FundingHistoryLoader(
     string symbol, DateTimeOffset startInclusive, DateTimeOffset endInclusive,
     int pageSize, CancellationToken cancellationToken);
+  public delegate Task<IReadOnlyList<FuturesFundingObservation>> FundingBulkHistoryLoader(
+    DateTimeOffset startInclusive, DateTimeOffset endInclusive,
+    int pageSize, CancellationToken cancellationToken);
 
   public sealed class FundingRefreshReport
   {
@@ -19,6 +22,8 @@ namespace Core.MarketAnalyzer.MarketData
     public int Requests { get; init; }
     public int Failures { get; init; }
     public int CompleteSymbols { get; init; }
+    public int BulkRequests { get; init; }
+    public int SymbolRequests { get; init; }
   }
 
   /// <summary>
@@ -63,6 +68,177 @@ namespace Core.MarketAnalyzer.MarketData
     {
       if (budget != int.MaxValue && (budget < 0 || budget > MaximumRequestsPerRaid))
         throw new ArgumentOutOfRangeException(nameof(budget));
+    }
+
+
+    /// <summary>
+    /// Verify shared funding-history windows with symbol-omitted pages first.
+    /// A short provider page proves the entire requested interval for every
+    /// selected symbol (including absence of settlements). A full page proves
+    /// only times strictly before its final timestamp: the boundary is fetched
+    /// again, so simultaneous symbols or Regular/Special rows cannot be lost.
+    /// If an entire page shares that timestamp, fall back to symbol queries.
+    /// Existing per-symbol histories, disk format and strict metric semantics
+    /// remain unchanged.
+    /// </summary>
+    public async Task<FundingRefreshReport> RefreshWithBulkAsync(
+      IEnumerable<string> eligible, int horizonMinutes, DateTimeOffset asOfUtc,
+      int requestBudget, FundingHistoryLoader symbolLoader,
+      FundingBulkHistoryLoader bulkLoader, LogHelper log, CancellationToken ct = default,
+      Func<CancellationToken, Task<bool>> requestPermit = null)
+    {
+      if (symbolLoader == null) throw new ArgumentNullException(nameof(symbolLoader));
+      if (bulkLoader == null) throw new ArgumentNullException(nameof(bulkLoader));
+      if (log == null) throw new ArgumentNullException(nameof(log));
+      ValidateBudget(requestBudget);
+      if (horizonMinutes < 5 || horizonMinutes % 5 != 0)
+        throw new ArgumentOutOfRangeException(nameof(horizonMinutes));
+
+      string[] symbols = (eligible ?? Array.Empty<string>())
+        .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+        .Select(FuturesOpenInterest.NormalizeSymbol)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(symbol => symbol, StringComparer.Ordinal).ToArray();
+
+      // Restore and trim existing per-symbol state without making requests.
+      FundingRefreshReport initial = await RefreshAsync(symbols, horizonMinutes, asOfUtc,
+        0, symbolLoader, log, ct).ConfigureAwait(false);
+      if (symbols.Length == 0 || requestBudget == 0) return initial;
+
+      long end = asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
+      long start = end - (long)horizonMinutes * 60000L + 1;
+      if (start <= 0) return initial;
+
+      long cursor = end + 1;
+      lock (_sync)
+      {
+        foreach (string symbol in symbols)
+          cursor = Math.Min(cursor, FirstUncovered(Ensure(symbol), start, end));
+      }
+      if (cursor > end) return initial;
+
+      int bulkRequests = 0, bulkFailures = 0;
+      bool permitDeferred = false, dirty = false;
+      var selected = new HashSet<string>(symbols, StringComparer.OrdinalIgnoreCase);
+      await _gate.WaitAsync(ct).ConfigureAwait(false);
+      try
+      {
+        while (cursor <= end && bulkRequests < requestBudget)
+        {
+          ct.ThrowIfCancellationRequested();
+          if (requestPermit != null && !await requestPermit(ct).ConfigureAwait(false))
+          {
+            permitDeferred = true;
+            break;
+          }
+
+          bulkRequests++;
+          try
+          {
+            IReadOnlyList<FuturesFundingObservation> returned = await bulkLoader(
+              DateTimeOffset.FromUnixTimeMilliseconds(cursor),
+              DateTimeOffset.FromUnixTimeMilliseconds(end), PageSize, ct).ConfigureAwait(false);
+            if (returned == null || returned.Count > PageSize)
+              throw new InvalidDataException("Invalid bulk funding history page size.");
+
+            // Validate all source rows before recording any values or coverage.
+            long previousTime = cursor - 1;
+            var unique = new Dictionary<(string Symbol, long At, string Type), FuturesFundingObservation>();
+            foreach (FuturesFundingObservation row in returned)
+            {
+              FuturesFunding.Validate(row, row?.Symbol);
+              string symbol = FuturesOpenInterest.NormalizeSymbol(row.Symbol);
+              long at = row.FundingTimeUtc.ToUnixTimeMilliseconds();
+              if (at < cursor || at > end || at < previousTime)
+                throw new InvalidDataException("Bulk funding page contains an unordered or unpinned settlement.");
+              previousTime = at;
+              var key = (symbol, at, row.RateType.ToUpperInvariant());
+              if (unique.TryGetValue(key, out var prior) &&
+                  (prior.NativeRate != row.NativeRate || prior.MarkPrice != row.MarkPrice))
+                throw new InvalidDataException("Conflicting bulk funding rows share symbol/time/type.");
+              unique[key] = row;
+            }
+
+            bool full = returned.Count == PageSize;
+            long last = returned.Count == 0 ? cursor - 1 : previousTime;
+            if (full && last <= cursor)
+            {
+              // Binance cannot page within one shared timestamp by startTime.
+              // Do not certify this timestamp or invent missing symbol rows.
+              log.DoLogWarn("Bulk funding page is saturated at one settlement timestamp; " +
+                "remaining symbols will use individually verified history.");
+              break;
+            }
+
+            long verifiedThrough = full ? last - 1 : end;
+            lock (_sync)
+            {
+              // Check conflicts across every selected series atomically.
+              foreach (var entry in unique)
+              {
+                if (entry.Key.At > verifiedThrough || !selected.Contains(entry.Key.Symbol)) continue;
+                Series state = Ensure(entry.Key.Symbol);
+                var key = (entry.Key.At, entry.Key.Type);
+                if (state.Rows.TryGetValue(key, out var prior) &&
+                    (prior.NativeRate != entry.Value.NativeRate || prior.MarkPrice != entry.Value.MarkPrice))
+                  throw new InvalidDataException("Bulk funding conflicts with previously verified history.");
+              }
+              foreach (var entry in unique)
+              {
+                if (entry.Key.At > verifiedThrough || !selected.Contains(entry.Key.Symbol)) continue;
+                Ensure(entry.Key.Symbol).Rows[(entry.Key.At, entry.Key.Type)] = entry.Value;
+              }
+              foreach (string symbol in symbols)
+                Ensure(symbol).Complete.Add((cursor, verifiedThrough));
+            }
+            dirty = true;
+
+            // A full page's final timestamp must be requested inclusively.
+            // Otherwise all selected symbols have a verified exhausted window.
+            cursor = full ? last : end + 1;
+          }
+          catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+          catch (Exception exception) when (exception is not OutOfMemoryException)
+          {
+            bulkFailures++;
+            log.DoLogWarn("Bulk funding history unavailable (" +
+              exception.GetType().Name + "); retaining safe per-symbol fallback.");
+            break;
+          }
+        }
+
+        if (dirty && _disk != null)
+        {
+          foreach (string symbol in symbols)
+          {
+            IReadOnlyList<FuturesFundingObservation> snapshot;
+            (long Start, long End)[] coverage;
+            lock (_sync)
+            {
+              Series saved = Ensure(symbol);
+              snapshot = saved.Rows.Values.ToArray();
+              coverage = saved.Complete.ToArray();
+            }
+            _disk.TrySave(symbol, snapshot, coverage, asOfUtc, log);
+          }
+        }
+      }
+      finally { _gate.Release(); }
+
+      // Only unresolved history needs symbol-specific requests. If provider
+      // capacity already deferred the bulk pass, do not seek a second permit.
+      int fallbackBudget = permitDeferred ? 0 : requestBudget - bulkRequests;
+      FundingRefreshReport fallback = await RefreshAsync(symbols, horizonMinutes,
+        asOfUtc, fallbackBudget, symbolLoader, log, ct, requestPermit).ConfigureAwait(false);
+      return new FundingRefreshReport
+      {
+        SelectedSymbols = symbols.Length,
+        Requests = bulkRequests + fallback.Requests,
+        BulkRequests = bulkRequests,
+        SymbolRequests = fallback.Requests,
+        Failures = bulkFailures + fallback.Failures,
+        CompleteSymbols = fallback.CompleteSymbols
+      };
     }
 
     public async Task<FundingRefreshReport> RefreshAsync(IEnumerable<string> eligible,
