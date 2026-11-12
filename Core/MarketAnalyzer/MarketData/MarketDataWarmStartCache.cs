@@ -17,7 +17,8 @@ namespace Core.MarketAnalyzer.MarketData
   public sealed class MarketDataWarmStartCache
   {
     private const int Magic = 0x50544D43;
-    private const int Version = 1;
+    private const int Version = 2;
+    private const int LegacyVersion = 1;
     private const int EndMarker = 0x43414348;
     private const int MaximumFileCandles = 500000;
     private const long MaximumCompressedFileBytes = 128L * 1024 * 1024;
@@ -62,7 +63,9 @@ namespace Core.MarketAnalyzer.MarketData
         using (GZipStream gzip = new GZipStream(stream, CompressionMode.Decompress))
         using (BinaryReader reader = new BinaryReader(gzip, Encoding.UTF8))
         {
-          if (reader.ReadInt32() != Magic || reader.ReadInt32() != Version)
+          int magic = reader.ReadInt32();
+          int fileVersion = reader.ReadInt32();
+          if (magic != Magic || (fileVersion != LegacyVersion && fileVersion != Version))
             throw new InvalidDataException("Unknown normalized cache schema.");
 
           string fileExchange = reader.ReadString();
@@ -98,6 +101,8 @@ namespace Core.MarketAnalyzer.MarketData
               BaseVolume = reader.ReadDouble(),
               QuoteVolume = reader.ReadDouble(),
               TradeCount = reader.ReadInt64(),
+              TakerBuyQuoteVolume = fileVersion >= Version && reader.ReadBoolean()
+                ? reader.ReadDouble() : (double?)null,
               IsClosed = true
             };
 
@@ -138,7 +143,7 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     public bool TrySave(string exchange, string symbol, TimeSpan interval,
-      DateTimeOffset asOfUtc, MarketDataStore store, LogHelper log)
+      DateTimeOffset asOfUtc, MarketDataStore store, LogHelper log, bool forceSave = false)
     {
       if (store == null) throw new ArgumentNullException(nameof(store));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -148,7 +153,9 @@ namespace Core.MarketAnalyzer.MarketData
       try
       {
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (_minimumSaveInterval > TimeSpan.Zero && File.Exists(path))
+        // A newly source-verified taker window must persist immediately, even
+        // when the existing OHLCV checkpoint is inside the save throttle.
+        if (!forceSave && _minimumSaveInterval > TimeSpan.Zero && File.Exists(path))
         {
           DateTime lastWrite = File.GetLastWriteTimeUtc(path);
           if (lastWrite <= now.UtcDateTime && now.UtcDateTime - lastWrite < _minimumSaveInterval)
@@ -190,6 +197,9 @@ namespace Core.MarketAnalyzer.MarketData
               writer.Write(candle.BaseVolume);
               writer.Write(candle.QuoteVolume);
               writer.Write(candle.TradeCount);
+              writer.Write(candle.TakerBuyQuoteVolume.HasValue);
+              if (candle.TakerBuyQuoteVolume.HasValue)
+                writer.Write(candle.TakerBuyQuoteVolume.Value);
             }
             writer.Write(EndMarker);
           }
