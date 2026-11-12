@@ -3,6 +3,8 @@
 **Updated:** November 12, 2026 · **Scope:** D-053, 24 canonical metrics.
 **Branch:** `phase1/market-data-foundation` · **Test-only**, no production strategy or PT preset changes.
 
+**Build target:** [`e31635a1e67347918ca1bbf94d0fb64809b1cea0`](https://github.com/HojouFotytu/PTMagic/commit/e31635a1e67347918ca1bbf94d0fb64809b1cea0) · **Diagnostic configuration:** `2.0.1` (updated in place). User-reported `dotnet build .\PTMagic.sln` **PASS** (12.9s); `Phase2Funding` **28/28 PASS**; `Phase2AdaptiveAcquisition` **8/8 PASS**. This verifies source compilation and focused offline checks, **not** configured PTMagic raids, live Binance/PT behavior or Monitor browser acceptance. No new metrics or test directories were added; the 24-metric, three-trend analyzer and its trigger thresholds are unchanged.
+
 ## Metric population
 
 | Trend | Minutes | Count | Metrics |
