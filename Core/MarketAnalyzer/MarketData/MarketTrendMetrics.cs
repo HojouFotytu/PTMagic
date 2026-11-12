@@ -44,6 +44,8 @@ namespace Core.MarketAnalyzer.MarketData
     // Retained Futures derivatives are settled funding rates.
     public const string FundingRate = "FundingRate";
     public const string FundingSum = "FundingSum";
+    public const string TakerBuyRatio = "TakerBuyRatio";
+    public const string TakerImbalance = "TakerImbalance";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -72,6 +74,8 @@ namespace Core.MarketAnalyzer.MarketData
         [MedianCorrelationToBTC] = MarketTrendMetricScope.Global,
         [FundingRate] = MarketTrendMetricScope.Asset,
         [FundingSum] = MarketTrendMetricScope.Asset,
+        [TakerBuyRatio] = MarketTrendMetricScope.Asset,
+        [TakerImbalance] = MarketTrendMetricScope.Asset,
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();
