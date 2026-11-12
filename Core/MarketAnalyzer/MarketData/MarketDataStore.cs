@@ -158,6 +158,12 @@ namespace Core.MarketAnalyzer.MarketData
       {
         throw new ArgumentException("Candle volumes must be finite non-negative values.", nameof(candle));
       }
+      if (candle.TakerBuyQuoteVolume.HasValue &&
+        (!double.IsFinite(candle.TakerBuyQuoteVolume.Value) || candle.TakerBuyQuoteVolume.Value < 0 ||
+          candle.TakerBuyQuoteVolume.Value > candle.QuoteVolume))
+      {
+        throw new ArgumentException("Candle taker-buy quote volume must be between zero and total quote volume.", nameof(candle));
+      }
       if (candle.TradeCount < 0)
       {
         throw new ArgumentException("Candle trade count cannot be negative.", nameof(candle));
