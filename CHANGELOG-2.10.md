@@ -10,7 +10,10 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. The current D-053 implementation and source-audit checkpoint is `892a5f1f4729a3fccd3cb477ba6ad22fbbe0918d`; older source references below are dated historical evidence. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
-## Phase 2 — Kline-derived taker flow (November 12; published, validation pending)
+## Phase 2 — Kline-derived taker flow (November 12; offline verified November 13, runtime pending)
+
+**Focused verification — November 13, 2026 (KST):** User-run at PTMagic source [`f7d802facfabb4611098d695d88a269d60daa278`](https://github.com/HojouFotytu/PTMagic/commit/f7d802facfabb4611098d695d88a269d60daa278). `dotnet build .\PTMagic.sln` **PASS in 16.1 seconds** (Core, PTMagic, Monitor net10.0). `Phase1COhlcv` **15/15**, `NormalizedWarmStartCache` **10/10**, `Phase2AdaptiveAcquisition` **8/8** — **33/33 focused test groups PASS**. This establishes source-specific compilation and offline checks, **not** configured live Binance/TestMode metric values, PT settings delivery, or Monitor browser acceptance.
+
 
 Two opt-in asset-only metrics, `TakerBuyRatio` and `TakerImbalance`, are registered alongside the 24 retained D-053 metrics: **26 canonical metrics total, 17 global-capable and nine asset-only**. They measure the ratio of summed source-verified taker-buy **quote** volume to summed total quote volume over the latest exact complete UTC-aligned `MarketTrend.TrendMinutes` period, and twice that ratio minus one. Both are **dimensionless**; a missing/invalid taker field, incomplete/stale candles or zero total volume is **UNAVAILABLE**, not zero.
 
