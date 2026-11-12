@@ -27,6 +27,7 @@ internal static class Program
       TestVolumeConcentration();
       TestIncompleteVolumePopulation();
       TestRegistryScopesAndSharedIntegration();
+      TestTakerFlowAndMissingHistory();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
       return 0;
     }
@@ -296,6 +297,76 @@ internal static class Program
     Near(analysis.MarketMetrics[MarketTrendMetrics.MedianVolumeExpansion], 1.0, "Integrated median volume expansion");
     Near(analysis.AssetMetrics["BTCUSDT"][MarketTrendMetrics.ATRP], 20.0, "Integrated asset ATRP");
     Near(analysis.AssetMetrics["BTCUSDT"][MarketTrendMetrics.VolumeExpansion], 1.0, "Integrated asset volume expansion");
+    _passed++;
+  }
+
+  private static void TestTakerFlowAndMissingHistory()
+  {
+    MarketDataStore store = NewStore();
+    // Ratio-of-sums, not a mean of per-candle ratios: (1 + 45) / (10 + 90).
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "BTCUSDT", Interval = Interval, OpenTimeUtc = Start,
+      CloseTimeUtc = Start.AddMinutes(5).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      BaseVolume = 10, QuoteVolume = 10, TakerBuyQuoteVolume = 1,
+      TradeCount = 10, IsClosed = true
+    });
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "BTCUSDT", Interval = Interval, OpenTimeUtc = Start.AddMinutes(5),
+      CloseTimeUtc = Start.AddMinutes(10).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      BaseVolume = 90, QuoteVolume = 90, TakerBuyQuoteVolume = 45,
+      TradeCount = 90, IsClosed = true
+    });
+    var enabled = new[] { MarketTrendMetrics.TakerBuyRatio, MarketTrendMetrics.TakerImbalance };
+    var now = Start.AddMinutes(10).AddSeconds(1);
+    var metrics = TakerFlowFeatureEngine.Calculate(new[] { "BTCUSDT" }, enabled,
+      store, Interval, 10, now)["BTCUSDT"];
+    Near(metrics[MarketTrendMetrics.TakerBuyRatio], 0.46, "Taker ratio uses total quote-volume weights");
+    Near(metrics[MarketTrendMetrics.TakerImbalance], -0.08, "Imbalance equals 2 * buy ratio - 1");
+
+    var trend = new MarketTrend { Name = "M10", TrendMinutes = 10,
+      Metrics = "TakerBuyRatio,TakerImbalance" };
+    var analysis = MarketTrendAnalyticsEngine.Calculate(trend, new[] { "BTCUSDT" },
+      new[] { "BTCUSDT" }, store, Interval, now);
+    Near(analysis.AssetMetrics["BTCUSDT"][MarketTrendMetrics.TakerBuyRatio], 0.46,
+      "Taker ratio integrates into asset analytics");
+    Assert(!analysis.MarketMetrics.ContainsKey(MarketTrendMetrics.TakerBuyRatio),
+      "Asset taker metrics must not appear as global metrics.");
+
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "BTCUSDT", Interval = Interval, OpenTimeUtc = Start.AddMinutes(5),
+      CloseTimeUtc = Start.AddMinutes(10).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      BaseVolume = 90, QuoteVolume = 90, TradeCount = 90, IsClosed = true
+    });
+    var legacy = TakerFlowFeatureEngine.Calculate(new[] { "BTCUSDT" }, enabled,
+      store, Interval, 10, now)["BTCUSDT"];
+    Invalid(legacy[MarketTrendMetrics.TakerBuyRatio], "Legacy OHLCV cannot imply taker volume");
+    Invalid(legacy[MarketTrendMetrics.TakerImbalance], "Legacy OHLCV cannot imply taker imbalance");
+    store.RemoveSeries("BTCUSDT", Interval);
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "BTCUSDT", Interval = Interval, OpenTimeUtc = Start,
+      CloseTimeUtc = Start.AddMinutes(5).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      BaseVolume = 0, QuoteVolume = 0, TakerBuyQuoteVolume = 0,
+      TradeCount = 0, IsClosed = true
+    });
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "BTCUSDT", Interval = Interval, OpenTimeUtc = Start.AddMinutes(5),
+      CloseTimeUtc = Start.AddMinutes(10).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      BaseVolume = 0, QuoteVolume = 0, TakerBuyQuoteVolume = 0,
+      TradeCount = 0, IsClosed = true
+    });
+    var empty = TakerFlowFeatureEngine.Calculate(new[] { "BTCUSDT" }, enabled,
+      store, Interval, 10, now)["BTCUSDT"];
+    Invalid(empty[MarketTrendMetrics.TakerBuyRatio], "Zero-volume window is unavailable");
     _passed++;
   }
 
