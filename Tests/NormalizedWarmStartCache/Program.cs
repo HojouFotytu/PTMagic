@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Text;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,6 +31,7 @@ internal static class Program
       TestCorruptionFailOpen(root);
       TestBoundedRestoration(root);
       TestFileSaveThrottle(root);
+      await TestLegacyTakerUpgrade(root);
       Console.WriteLine("Normalized warm-start cache tests passed: " + _passed + ".");
       return 0;
     }
@@ -190,6 +193,80 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestLegacyTakerUpgrade(string root)
+  {
+    string directory = Path.Combine(root, "legacy-taker");
+    MarketDataWarmStartCache cache = new MarketDataWarmStartCache(directory, TimeSpan.FromHours(1));
+    var initial = Candles("BTCUSDT", 8);
+    MarketDataStore source = new MarketDataStore(8);
+    source.UpsertCandles(initial);
+    Assert(cache.TrySave("BinanceFutures", "BTCUSDT", Interval, Boundary, source, Log),
+      "Initial file is created under the stable OHLCV cache path.");
+
+    // Reproduce exact legacy v1 content, with no per-candle taker fields.
+    string path = Directory.GetFiles(directory, "*.gz", SearchOption.AllDirectories).Single();
+    using (FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write))
+    using (GZipStream gzip = new GZipStream(fs, CompressionLevel.Fastest))
+    using (BinaryWriter writer = new BinaryWriter(gzip, Encoding.UTF8))
+    {
+      writer.Write(0x50544D43);
+      writer.Write(1);
+      writer.Write("BINANCEFUTURES");
+      writer.Write("BTCUSDT");
+      writer.Write(Interval.Ticks);
+      writer.Write(initial.Count);
+      foreach (MarketCandle candle in initial)
+      {
+        writer.Write(candle.OpenTimeUtc.ToUnixTimeMilliseconds());
+        writer.Write(candle.CloseTimeUtc.ToUnixTimeMilliseconds());
+        writer.Write(candle.Open);
+        writer.Write(candle.High);
+        writer.Write(candle.Low);
+        writer.Write(candle.Close);
+        writer.Write(candle.BaseVolume);
+        writer.Write(candle.QuoteVolume);
+        writer.Write(candle.TradeCount);
+      }
+      writer.Write(0x43414348);
+    }
+
+    MarketDataService warm = new MarketDataService(new MarketDataStore(8), cache);
+    int requested = 0;
+    await warm.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 8,
+      (symbol, count, logger, ct, asOf) =>
+      {
+        requested = count;
+        var rows = Candles(symbol, count).Select(candle =>
+          Candle(candle.Symbol, candle.OpenTimeUtc, candle.Close, takerQuote: candle.QuoteVolume / 2)).ToList();
+        return Task.FromResult(rows);
+      }, Log, maxConcurrency: 1, refreshAsOfUtc: Boundary, cacheExchange: "BinanceFutures",
+      takerTrendMinutes: new[] { 10 });
+
+    Assert(requested == 5, "Legacy cache must repair only the newest required taker window, not 8 stored bars.");
+    MarketDataSeriesSnapshot repaired = warm.Store.GetSnapshot("BTCUSDT", Interval, Boundary);
+    Assert(repaired.SampleCount == 8 && repaired.ClosedCandles.Last().TakerBuyQuoteVolume.HasValue,
+      "Historical OHLCV must survive selective taker repair.");
+
+    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read))
+    using (GZipStream gzip = new GZipStream(fs, CompressionMode.Decompress))
+    using (BinaryReader reader = new BinaryReader(gzip, Encoding.UTF8))
+      Assert(reader.ReadInt32() == 0x50544D43 && reader.ReadInt32() == 2,
+        "Verified taker repair must upgrade the old cache immediately despite save throttle.");
+
+    MarketDataService restart = new MarketDataService(new MarketDataStore(8), cache);
+    int restartRequested = 0;
+    await restart.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 8,
+      (symbol, count, logger, ct, asOf) =>
+      {
+        restartRequested = count;
+        return Task.FromResult(Candles(symbol, count));
+      }, Log, maxConcurrency: 1, refreshAsOfUtc: Boundary, cacheExchange: "BinanceFutures",
+      takerTrendMinutes: new[] { 10 });
+    Assert(restartRequested == 3,
+      "Restored v2 taker coverage must avoid repeated taker-window backfill.");
+    _passed++;
+  }
+
   private static MarketDataWarmStartCache NewCache(string directory) =>
     new MarketDataWarmStartCache(directory, TimeSpan.Zero);
 
@@ -197,7 +274,7 @@ internal static class Program
     Enumerable.Range(0, count).Select(index =>
       Candle(symbol, Boundary.AddMinutes((index - count + offset) * 5), 100 + index)).ToList();
 
-  private static MarketCandle Candle(string symbol, DateTimeOffset open, double price, bool closed = true) =>
+  private static MarketCandle Candle(string symbol, DateTimeOffset open, double price, bool closed = true, double? takerQuote = null) =>
     new MarketCandle
     {
       Symbol = symbol,
@@ -210,6 +287,7 @@ internal static class Program
       Close = price,
       BaseVolume = price - 80,
       QuoteVolume = price - 80,
+      TakerBuyQuoteVolume = takerQuote,
       TradeCount = 10,
       IsClosed = closed
     };
