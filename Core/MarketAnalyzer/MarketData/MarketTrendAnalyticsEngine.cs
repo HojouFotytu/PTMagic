@@ -294,6 +294,21 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
+      if (TakerFlowFeatureEngine.HasMetrics(enabledMetrics))
+      {
+        var taker = TakerFlowFeatureEngine.Calculate(assetUniverse, enabledMetrics,
+          store, interval, marketTrend.TrendMinutes, calculatedAtUtc);
+        foreach (var asset in taker)
+        {
+          Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
+              out IReadOnlyDictionary<string, FeatureValueSnapshot> existing)
+            ? new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
+          assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+      }
+
       Dictionary<string, int> globalIssues = needsGlobalReturns
         ? CountInvalidReturnReasons(globalUniverse, returns)
         : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
