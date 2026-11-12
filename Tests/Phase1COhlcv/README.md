@@ -13,4 +13,6 @@ actual daily trend-bar builder.
 No Binance calls are made. The tests must be run by a .NET 10 SDK
 environment, then followed by Binance Futures TestMode validation.
 
-**Phase 2 taker-flow update:** A new metric integration group has been added. New source execution is pending; the historical 13/13 success applies only to the pre-taker source.
+**Focused verification — November 13, 2026 (KST):** User-run at PTMagic source [`f7d802facfabb4611098d695d88a269d60daa278`](https://github.com/HojouFotytu/PTMagic/commit/f7d802facfabb4611098d695d88a269d60daa278). `dotnet build .\PTMagic.sln` **PASS in 16.1 seconds** (Core, PTMagic, Monitor net10.0). `Phase1COhlcv` **15/15**, `NormalizedWarmStartCache` **10/10**, `Phase2AdaptiveAcquisition` **8/8** — **33/33 focused test groups PASS**. This establishes source-specific compilation and offline checks, **not** configured live Binance/TestMode metric values, PT settings delivery, or Monitor browser acceptance.
+
+**Earlier evidence:** Historical 13/13 OHLCV success belongs to the pre-taker source.
