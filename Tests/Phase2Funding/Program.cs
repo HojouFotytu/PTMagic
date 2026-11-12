@@ -592,6 +592,31 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestBulkUnboundedFallbackBudget()
+  {
+    var service = new FuturesFundingDataService();
+    int bulkCalls = 0, fallbackCalls = 0;
+    var report = await service.RefreshWithBulkAsync(new[] { "BTCUSDT", "ETHUSDT" },
+      60, Pin, int.MaxValue,
+      (symbol, from, to, limit, ct) =>
+      {
+        fallbackCalls++;
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+          new[] { Event(symbol, 30, 0.0001m) });
+      },
+      (from, to, limit, ct) =>
+      {
+        bulkCalls++;
+        throw new InvalidDataException("deterministic bulk failure");
+      },
+      Log);
+    Assert(bulkCalls == 1 && fallbackCalls == 2 &&
+      report.BulkRequests == 1 && report.SymbolRequests == 2 &&
+      report.Failures == 1 && report.CompleteSymbols == 2,
+      "An unbounded runtime budget must remain unbounded when bulk falls back.");
+    _passed++;
+  }
+
   private static async Task TestBulkPersistence()
   {
     string root = Path.Combine(Path.GetTempPath(), "PTM_BulkFunding_" + Guid.NewGuid().ToString("N"));
@@ -673,6 +698,7 @@ internal static class Program
       await TestBulkFullPageBoundary();
       await TestBulkDenseTimestampFallback();
       await TestBulkProviderFailureFallback();
+      await TestBulkUnboundedFallbackBudget();
       await TestBulkPersistence();
       Console.WriteLine("PASS: Phase 2 funding history and metrics, " + _passed + " offline case groups.");
       Console.WriteLine("LIMIT: No live Binance/provider data, configured raids or PT API actions.");
