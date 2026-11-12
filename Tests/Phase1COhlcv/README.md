@@ -7,8 +7,10 @@ Wilder ATR(14) seed and recurrence, close-only endpoint, quote-volume
 expansion, invalid history/gaps/zero baseline/staleness/misalignment,
 90% cross-section coverage, 100% concentration completeness, median and
 breadth values, BTC/ETH shares, registry scopes and shared analytics
-snapshot integration. The 24h ATRP insufficient-72h test exercises the
+snapshot integration, plus exact complete-period taker-buy ratio/imbalance calculations, ratio-of-sums weighting, and unavailable legacy/zero-volume sources. The 24h ATRP insufficient-72h test exercises the
 actual daily trend-bar builder.
 
 No Binance calls are made. The tests must be run by a .NET 10 SDK
 environment, then followed by Binance Futures TestMode validation.
+
+**Phase 2 taker-flow update:** A new metric integration group has been added. New source execution is pending; the historical 13/13 success applies only to the pre-taker source.
