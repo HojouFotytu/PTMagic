@@ -189,7 +189,7 @@ namespace Core.MarketAnalyzer
       }
     }
 
-    public static void ConfigureProfitTrailerAllowedUnderlyingTypes(List<string> pairsLines, PTMagicConfiguration systemConfiguration, LogHelper log)
+    public static void ConfigureProfitTrailerAllowedUnderlyingTypes(List<string> pairsLines, PTMagicConfiguration systemConfiguration, LogHelper log, bool finalizeAnalyticsUniverse = true)
     {
       BeginRaidEligibilityCache();
 
@@ -203,7 +203,7 @@ namespace Core.MarketAnalyzer
         }
         ClearEffectiveUnderlyingTypesFile(log);
         BuildRaidAnalyzerUniverse(systemConfiguration);
-        FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
+        if (finalizeAnalyticsUniverse) FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
         return;
       }
 
@@ -217,7 +217,7 @@ namespace Core.MarketAnalyzer
         ClearEffectiveUnderlyingTypesFile(log);
         log.DoLogWarn("BinanceFutures - UseProfitTrailerAllowedUnderlyingTypes is enabled, but allowed_underlying_type was not found in the active PAIRS settings. Falling back to IncludedUnderlyingTypes.");
         BuildRaidAnalyzerUniverse(systemConfiguration);
-        FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
+        if (finalizeAnalyticsUniverse) FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
         return;
       }
 
@@ -246,7 +246,7 @@ namespace Core.MarketAnalyzer
       }
 
       BuildRaidAnalyzerUniverse(systemConfiguration);
-      FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
+      if (finalizeAnalyticsUniverse) FinalizeAnalyticsUniverse(pairsLines, systemConfiguration, log);
     }
 
     private static void FinalizeAnalyticsUniverse(List<string> pairsLines, PTMagicConfiguration systemConfiguration, LogHelper log)
@@ -387,6 +387,22 @@ namespace Core.MarketAnalyzer
       return markets
         .Where(market => IsMarketIncluded(market.Key, systemConfiguration))
         .ToDictionary(market => market.Key, market => market.Value, StringComparer.InvariantCultureIgnoreCase);
+    }
+
+    /// <summary>
+    /// Describe the actual types represented by the frozen analyzer universe.
+    /// The raid summary uses this same universe for MarketTrends and SMS eligibility.
+    /// </summary>
+    public static string DescribeEvaluatedUnderlyingTypes(AnalyzerUniverseSnapshot universe)
+    {
+      if (universe == null) return "unavailable";
+      string[] types = universe.Markets
+        .Where(market => market != null && !String.IsNullOrWhiteSpace(market.UnderlyingType))
+        .GroupBy(market => market.UnderlyingType, StringComparer.OrdinalIgnoreCase)
+        .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.Key + " (" + group.Count() + ")")
+        .ToArray();
+      return types.Length == 0 ? "none" : String.Join(", ", types);
     }
 
     public static BinanceFuturesMarketMetadata GetMarketMetadataSnapshot(string symbol)
