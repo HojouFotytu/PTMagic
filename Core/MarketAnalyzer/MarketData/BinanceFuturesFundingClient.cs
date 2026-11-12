@@ -27,7 +27,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (start <= 0 || end < start)
         throw new ArgumentOutOfRangeException(nameof(startUtc), "Funding query boundaries are invalid.");
       string symbolParameter = String.IsNullOrWhiteSpace(symbol) ? "" :
-        "symbol=" + Uri.EscapeDataString(FuturesOpenInterest.NormalizeSymbol(symbol)) + "&";
+        "symbol=" + Uri.EscapeDataString(FuturesFunding.NormalizeSymbol(symbol)) + "&";
       return ApiBase + "/fapi/v1/fundingRate?" + symbolParameter +
         "startTime=" + start.ToString(CultureInfo.InvariantCulture) +
         "&endTime=" + end.ToString(CultureInfo.InvariantCulture) +

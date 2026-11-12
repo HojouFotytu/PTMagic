@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Newtonsoft.Json.Linq;
 
 namespace Core.MarketAnalyzer.MarketData
@@ -24,6 +25,23 @@ namespace Core.MarketAnalyzer.MarketData
   /// lastFundingRate or a forward estimate. Never assumes an 8h schedule.</summary>
   public static class FuturesFunding
   {
+    /// <summary>Validate exchange-provided Futures symbols, including Unicode
+    /// letters and digits, without accepting URL/query separators.</summary>
+    public static string NormalizeSymbol(string symbol)
+    {
+      if (String.IsNullOrWhiteSpace(symbol))
+        throw new ArgumentException("A futures symbol is required.", nameof(symbol));
+      string value = symbol.Trim().ToUpperInvariant();
+      if (value.Length < 2 || value.Length > 40)
+        throw new ArgumentException("A futures symbol contains unsupported characters.", nameof(symbol));
+      foreach (Rune rune in value.EnumerateRunes())
+      {
+        if (!Rune.IsLetterOrDigit(rune) && rune.Value != '_')
+          throw new ArgumentException("A futures symbol contains unsupported characters.", nameof(symbol));
+      }
+      return value;
+    }
+
     /// <summary>Validate every bulk result without collapsing duplicate provider
     /// records, since their raw count determines pagination completeness.</summary>
     public static IReadOnlyList<FuturesFundingObservation> MapBulkHistory(
@@ -51,14 +69,14 @@ namespace Core.MarketAnalyzer.MarketData
       JArray payload, string requestedSymbol, DateTimeOffset asOfUtc)
     {
       if (payload == null) throw new ArgumentNullException(nameof(payload));
-      string symbol = FuturesOpenInterest.NormalizeSymbol(requestedSymbol);
+      string symbol = FuturesFunding.NormalizeSymbol(requestedSymbol);
       var rows = new SortedDictionary<(long Time, string Type), FuturesFundingObservation>();
       foreach (JToken token in payload)
       {
         if (token is not JObject item)
           throw new InvalidDataException("Binance funding history row must be a JSON object.");
         string actual = item.Value<string>("symbol") ?? "";
-        if (!String.Equals(FuturesOpenInterest.NormalizeSymbol(actual), symbol, StringComparison.Ordinal))
+        if (!String.Equals(FuturesFunding.NormalizeSymbol(actual), symbol, StringComparison.Ordinal))
           throw new InvalidDataException("Funding history symbol does not match the request.");
         DateTimeOffset when = ReadTime(item["fundingTime"]);
         if (when > asOfUtc.ToUniversalTime()) continue;
@@ -86,7 +104,7 @@ namespace Core.MarketAnalyzer.MarketData
 
     public static void Validate(FuturesFundingObservation row, string requestedSymbol)
     {
-      if (row == null || !String.Equals(row.Symbol, FuturesOpenInterest.NormalizeSymbol(requestedSymbol),
+      if (row == null || !String.Equals(row.Symbol, FuturesFunding.NormalizeSymbol(requestedSymbol),
         StringComparison.OrdinalIgnoreCase) || String.IsNullOrWhiteSpace(row.RateType) ||
         row.RateType.Length > 64 || row.RateType.Any(Char.IsControl) ||
         row.FundingTimeUtc.ToUnixTimeMilliseconds() <= 0 ||

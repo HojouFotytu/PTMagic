@@ -44,14 +44,14 @@ namespace Core.MarketAnalyzer.MarketData
 
     public string CachePath(string symbol)
     {
-      string normalized = FuturesOpenInterest.NormalizeSymbol(symbol);
+      string normalized = FuturesFunding.NormalizeSymbol(symbol);
       string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
       return Path.Combine(_directory, "BINANCEFUTURES", hash + ".gz");
     }
 
     public FuturesFundingDiskSnapshot TryRestore(string symbol, DateTimeOffset asOfUtc, LogHelper log)
     {
-      string normalized = FuturesOpenInterest.NormalizeSymbol(symbol);
+      string normalized = FuturesFunding.NormalizeSymbol(symbol);
       string path = CachePath(normalized);
       if (!File.Exists(path)) return new FuturesFundingDiskSnapshot();
 
@@ -145,7 +145,7 @@ namespace Core.MarketAnalyzer.MarketData
     public bool TrySave(string symbol, IEnumerable<FuturesFundingObservation> history,
       IEnumerable<(long Start, long End)> completeIntervals, DateTimeOffset asOfUtc, LogHelper log)
     {
-      string normalized = FuturesOpenInterest.NormalizeSymbol(symbol);
+      string normalized = FuturesFunding.NormalizeSymbol(symbol);
       string path = CachePath(normalized);
       string temporary = null;
       try

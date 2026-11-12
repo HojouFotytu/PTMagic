@@ -96,7 +96,7 @@ namespace Core.MarketAnalyzer.MarketData
 
       string[] symbols = (eligible ?? Array.Empty<string>())
         .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
-        .Select(FuturesOpenInterest.NormalizeSymbol)
+        .Select(FuturesFunding.NormalizeSymbol)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(symbol => symbol, StringComparer.Ordinal).ToArray();
 
@@ -147,7 +147,7 @@ namespace Core.MarketAnalyzer.MarketData
             foreach (FuturesFundingObservation row in returned)
             {
               FuturesFunding.Validate(row, row?.Symbol);
-              string symbol = FuturesOpenInterest.NormalizeSymbol(row.Symbol);
+              string symbol = FuturesFunding.NormalizeSymbol(row.Symbol);
               long at = row.FundingTimeUtc.ToUnixTimeMilliseconds();
               if (at < cursor || at > end || at < previousTime)
                 throw new InvalidDataException("Bulk funding page contains an unordered or unpinned settlement.");
@@ -255,7 +255,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (horizonMinutes < 5 || horizonMinutes % 5 != 0) throw new ArgumentOutOfRangeException(nameof(horizonMinutes));
       ValidateBudget(requestBudget);
       string[] symbols = (eligible ?? Array.Empty<string>()).Where(s => !String.IsNullOrWhiteSpace(s))
-        .Select(FuturesOpenInterest.NormalizeSymbol).Distinct(StringComparer.OrdinalIgnoreCase)
+        .Select(FuturesFunding.NormalizeSymbol).Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(s => s, StringComparer.Ordinal).ToArray();
       if (symbols.Length == 0)
         return new FundingRefreshReport { SelectedSymbols = 0 };
@@ -421,7 +421,7 @@ namespace Core.MarketAnalyzer.MarketData
       long start = end - (long)trendMinutes * 60000L + 1;
       lock (_sync)
       {
-        if (!_series.TryGetValue(FuturesOpenInterest.NormalizeSymbol(symbol), out var state) ||
+        if (!_series.TryGetValue(FuturesFunding.NormalizeSymbol(symbol), out var state) ||
           !Covers(state, start, end)) return false;
         history = state.Rows.Where(row => row.Key.At >= start && row.Key.At <= end)
           .Select(row => row.Value).ToArray();
