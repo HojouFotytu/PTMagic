@@ -43,14 +43,15 @@ internal static class Program
   private static void MetricRegistry()
   {
     string[] names = MarketTrendMetrics.Names.ToArray();
-    Check(names.Length == 24 && names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 24, "Registry must have 24 distinct metrics.");
+    Check(names.Length == 26 && names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 26, "Registry must have 26 distinct metrics.");
     int global = names.Count(name => MarketTrendMetrics.TryGetScope(name, out var scope) &&
       (scope == MarketTrendMetricScope.Both || scope == MarketTrendMetricScope.Global));
     int assetOnly = names.Count(name => MarketTrendMetrics.TryGetScope(name, out var scope) &&
       scope == MarketTrendMetricScope.Asset);
-    Check(global == 17 && assetOnly == 7 && names.Contains(MarketTrendMetrics.FundingRate) &&
+    Check(global == 17 && assetOnly == 9 && names.Contains(MarketTrendMetrics.TakerBuyRatio) &&
+      names.Contains(MarketTrendMetrics.TakerImbalance) && names.Contains(MarketTrendMetrics.FundingRate) &&
       names.Contains(MarketTrendMetrics.FundingSum), "Wrong retained metric scope.");
-    Passed("24-metric catalogue: 17 global-capable and 7 asset-only");
+    Passed("26-metric catalogue: 17 global-capable and 9 asset-only");
   }
 
   private static void FundingQuota()
