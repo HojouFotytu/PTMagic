@@ -227,7 +227,11 @@ namespace Core.MarketAnalyzer.MarketData
 
       // Only unresolved history needs symbol-specific requests. If provider
       // capacity already deferred the bulk pass, do not seek a second permit.
-      int fallbackBudget = permitDeferred ? 0 : requestBudget - bulkRequests;
+      // Preserve the unbounded runtime sentinel after bulk requests. Subtracting
+      // bulkRequests from int.MaxValue produces a large finite value that
+      // ValidateBudget rejects instead of allowing the per-symbol fallback.
+      int fallbackBudget = permitDeferred ? 0 :
+        requestBudget == int.MaxValue ? int.MaxValue : requestBudget - bulkRequests;
       FundingRefreshReport fallback = await RefreshAsync(symbols, horizonMinutes,
         asOfUtc, fallbackBudget, symbolLoader, log, ct, requestPermit).ConfigureAwait(false);
       return new FundingRefreshReport
