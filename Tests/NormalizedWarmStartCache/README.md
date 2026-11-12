@@ -1,6 +1,6 @@
 # Normalized OHLCV warm-start cache regression harness
 
-The nine case groups exercise the production `MarketDataWarmStartCache` and `MarketDataService` using offline synthetic five-minute candles and temporary cache directories. No Binance/ProfitTrailer requests or live setting writes occur.
+The ten case groups exercise the production `MarketDataWarmStartCache` and `MarketDataService` using offline synthetic five-minute candles and temporary cache directories. No Binance/ProfitTrailer requests or live setting writes occur.
 
 - Closed-only compressed snapshot round-trip, including exact OHLCV fields.
 - Exchange and market identity isolation.
@@ -11,6 +11,7 @@ The nine case groups exercise the production `MarketDataWarmStartCache` and `Mar
 - Restored observations obey a smaller current retention cap.
 - Frequent unchanged saves are throttled.
 - Realistic legacy v1 cache restoration, selective taker-volume repair, immediate version-2 persistence despite save throttling, and a subsequent restart without full-window backfill.
+- A taker trend exceeding OHLCV capacity remains unavailable without forcing a full-history download on each raid.
 
 Run from the PTMagic application repository root:
 
@@ -22,7 +23,7 @@ if ($LASTEXITCODE -ne 0) { throw "Normalized warm-start cache validation failed"
 Expected successful final line:
 
 ```text
-Normalized warm-start cache tests passed: 9.
+Normalized warm-start cache tests passed: 10.
 ```
 
 **Acceptance status:** Verified in user-local .NET SDK 10.0.403 at exact application source `925db7c153ee4d53cfe3b7bf736318e7a30bccf1` on November 9, 2026. `dotnet build .\PTMagic.sln` succeeded in 18.3 seconds (Core, PTMagic and Monitor). This harness passed 8/8. `Phase1AnalyticsReliability` passed 16/16 and `Phase1COhlcv` passed 13/13, totaling 37/37 focused checks. **Configured runtime acceptance still needs two startups:** cold cache creation, then a short restart with restored candle count, kline request count and unchanged analytics availability/values. The 272 previously passing regression groups were executed at earlier revisions, not as a full suite at `925db7c`.
