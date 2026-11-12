@@ -21,13 +21,18 @@ namespace Core.MarketAnalyzer
       return BinanceAnalyzerCommon.GetMainCurrencyPriceAsync(ExchangeName, ApiBase, mainMarket, log, false, cancellationToken);
     }
 
-    public static async Task<List<string>> GetMarketDataAsync(string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
+    public static async Task<List<string>> GetMarketDataAsync(string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default, List<string> compiledPairsLines = null)
     {
       mainMarket = BinanceAnalyzerCommon.NormalizeMainMarket(mainMarket);
       await BinanceFuturesMarketUniverse.RefreshAsync(ApiBase, log, cancellationToken).ConfigureAwait(false);
-      BinanceFuturesMarketUniverse.BeginRaidEligibilityCache();
+      // Resolve the same compiled-PAIRS underlying-type policy that the
+      // analyzer uses, before any per-symbol historical work is started.
+      // The final normalized universe is frozen after market collection.
+      BinanceFuturesMarketUniverse.ConfigureProfitTrailerAllowedUnderlyingTypes(
+        compiledPairsLines, systemConfiguration, log, finalizeAnalyticsUniverse: false);
 
-      List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken).ConfigureAwait(false);
+      List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken,
+        symbol => BinanceFuturesMarketUniverse.IsMarketIncluded(symbol, systemConfiguration)).ConfigureAwait(false);
 
       bool hasConfiguredAnalytics = false;
       IEnumerable<MarketTrend> configuredTrends = systemConfiguration?.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
