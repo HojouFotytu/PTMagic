@@ -24,8 +24,10 @@ if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
 & ".\Tests\Phase2OpenInterestIncremental\Run-Phase2Validation.ps1"
 ```
 
-The runner builds the solution and executes all 16 offline test projects, with no configured PT writes or browser actions.
+The retained D-053 runner builds the solution and executes **15 offline test projects**, with no configured PT writes or browser actions. The 18-project results at `d101b5a0` predate D-053 and do not validate the current source.
 
 ## D-053 — retained family
 
 The open-interest and long/short positioning source families were withdrawn. Retain native settled funding, bulk-first collection, per-symbol fallback, persistence, provider quota handling and exact metric availability. This remains an active metric family.
+
+**D-053 source audit:** The original Unicode-safe symbol validator was shared with the deleted OI class; it was moved to `FuturesFunding.NormalizeSymbol` by `02820822`, with the funding feature-engine reference repaired by `d7847c46`. The retained funding logic, bulk/fallback collection and 28 existing offline case groups were reviewed. [Complete audit](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-12-d053-removal-code-audit.md). No post-removal local build/test PASS is claimed.
