@@ -35,7 +35,7 @@ namespace Core.MarketAnalyzer.MarketData
         .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
       bool futures = String.Equals(exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase);
       foreach (string symbol in (assetSymbols ?? Array.Empty<string>()).Where(x => !String.IsNullOrWhiteSpace(x))
-        .Select(FuturesOpenInterest.NormalizeSymbol).Distinct(StringComparer.OrdinalIgnoreCase))
+        .Select(FuturesFunding.NormalizeSymbol).Distinct(StringComparer.OrdinalIgnoreCase))
       {
         var values = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
         bool valid = false;
