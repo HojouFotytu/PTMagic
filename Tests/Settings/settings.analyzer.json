@@ -1,10 +1,10 @@
-// TEST-ONLY PTMagic 2.10 metric analyzer; D-053 retained scope.
-// SetIdentity = PTM2.10-24-METRICS
-// SetVersion = 2.0.1
+// TEST-ONLY PTMagic 2.10 metric analyzer; D-053 retained and Phase 2 taker-flow scope.
+// SetIdentity = PTM2.10-26-METRICS
+// SetVersion = 2.1.0
 // SetDate = 2026-11-12
-// TargetApplicationSource = e31635a1e67347918ca1bbf94d0fb64809b1cea0
-// VerifiedBuild = PTMagic.sln PASS (12.9s, Core/PTMagic/Monitor)
-// VerifiedFocusedTests = 36/36 PASS (Phase2Funding 28; Phase2AdaptiveAcquisition 8)
+// TargetApplicationSource = PHASE2_TAKER_FLOW_CURRENT_BRANCH
+// VerifiedBuild = PENDING
+// VerifiedFocusedTests = PENDING
 // ConfiguredRuntimeAcceptance = NOT VERIFIED
 {
   "AnalyzerSettings": {
@@ -24,7 +24,7 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 30,
-          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,VolumeExpansion,CorrelationToBTC",
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,VolumeExpansion,CorrelationToBTC,TakerBuyRatio,TakerImbalance",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 0.5,
@@ -288,6 +288,22 @@
             "Tag": "F",
             "MarketTrendName": "M30",
             "Metric": "CorrelationToBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "G",
+            "MarketTrendName": "M30",
+            "Metric": "TakerBuyRatio",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "H",
+            "MarketTrendName": "M30",
+            "Metric": "TakerImbalance",
             "MarketTrendRelation": "Absolute",
             "MinChange": -1000000000000,
             "MaxChange": 1000000000000
