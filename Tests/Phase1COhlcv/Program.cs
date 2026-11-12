@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using Newtonsoft.Json.Linq;
 using Core.Main.DataObjects.PTMagicData;
 using Core.MarketAnalyzer.MarketData;
 
@@ -28,6 +30,7 @@ internal static class Program
       TestIncompleteVolumePopulation();
       TestRegistryScopesAndSharedIntegration();
       TestTakerFlowAndMissingHistory();
+      TestTakerKlineMapper();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
       return 0;
     }
@@ -367,6 +370,30 @@ internal static class Program
     var empty = TakerFlowFeatureEngine.Calculate(new[] { "BTCUSDT" }, enabled,
       store, Interval, 10, now)["BTCUSDT"];
     Invalid(empty[MarketTrendMetrics.TakerBuyRatio], "Zero-volume window is unavailable");
+    _passed++;
+  }
+
+  private static void TestTakerKlineMapper()
+  {
+    Type mapper = typeof(MarketCandle).Assembly.GetType("Core.MarketAnalyzer.MarketData.BinanceKlineClient");
+    MethodInfo map = mapper.GetMethod("MapKlines", BindingFlags.Static | BindingFlags.NonPublic);
+    Assert(map != null, "Existing kline mapper must remain available.");
+    long opened = Start.ToUnixTimeMilliseconds();
+    long closed = Start.AddMinutes(5).ToUnixTimeMilliseconds() - 1;
+    JArray raw = JArray.FromObject(new object[]
+    {
+      new object[] { opened, "100", "101", "99", "100", "10", closed, "100", 20, "4", "35", "0" },
+      new object[] { opened + 300000, "100", "101", "99", "100", "10", closed + 300000, "100", 20, "4", "invalid", "0" },
+      new object[] { opened + 600000, "100", "101", "99", "100", "10", closed + 600000, "100", 20 }
+    });
+    var candles = (List<MarketCandle>)map.Invoke(null, new object[]
+      { "BTCUSDT", Interval, raw, closed + 900000 });
+    Assert(candles.Count == 3 && candles[0].QuoteVolume == 100 &&
+      candles[0].TakerBuyQuoteVolume == 35,
+      "Binance index 10 is taker-buy quote volume; index 9 is base volume.");
+    Assert(candles[1].QuoteVolume == 100 && !candles[1].TakerBuyQuoteVolume.HasValue &&
+      candles[2].QuoteVolume == 100 && !candles[2].TakerBuyQuoteVolume.HasValue,
+      "Malformed or absent taker fields must not fabricate zero or destroy valid OHLCV.");
     _passed++;
   }
 
