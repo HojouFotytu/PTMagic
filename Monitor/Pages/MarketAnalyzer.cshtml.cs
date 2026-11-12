@@ -227,7 +227,8 @@ namespace Monitor.Pages
       }
 
       // Volume-expansion multiples are neutral at 1.0; signed metrics at zero.
-      double neutralValue = metric == MarketTrendMetrics.VolumeExpansion ? 1.0 : 0.0;
+      double neutralValue = metric == MarketTrendMetrics.VolumeExpansion ? 1.0
+        : metric == MarketTrendMetrics.TakerBuyRatio ? 0.5 : 0.0;
       return feature.Value.Value > neutralValue ? "text-success"
         : feature.Value.Value < neutralValue ? "text-danger" : "text-muted";
     }
@@ -241,7 +242,7 @@ namespace Monitor.Pages
       }
 
       double value = feature.Value.Value;
-      if (metric == MarketTrendMetrics.CorrelationToBTC)
+      if (metric == MarketTrendMetrics.CorrelationToBTC || TakerFlowFeatureEngine.IsMetric(metric))
       {
         return value.ToString("0.0000", CultureInfo.InvariantCulture);
       }
@@ -337,6 +338,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.CorrelationToBTC => "BTC Correlation",
         MarketTrendMetrics.FundingRate => "Funding Rate",
         MarketTrendMetrics.FundingSum => "Funding Sum",
+        MarketTrendMetrics.TakerBuyRatio => "Taker Buy Ratio",
+        MarketTrendMetrics.TakerImbalance => "Taker Imbalance",
         _ => metric
       };
     }
@@ -379,6 +382,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.MedianCorrelationToBTC => "Median of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         MarketTrendMetrics.FundingRate => "Latest regular funding settlement in the configured MarketTrend window, as a percentage. Missing regular settlements remain unavailable.",
         MarketTrendMetrics.FundingSum => "Sum of regular funding settlements in the configured MarketTrend window, as a percentage. Unverified history remains unavailable.",
+        MarketTrendMetrics.TakerBuyRatio => "Taker-buy quote volume divided by total quote volume summed over the latest exact complete MarketTrend-duration UTC period. Range 0–1; 0.5 is balanced. Missing or invalid history remains unavailable.",
+        MarketTrendMetrics.TakerImbalance => "Twice TakerBuyRatio minus one, using exactly the same volume-weighted closed MarketTrend period. Range -1 to +1; zero is balanced. Not an independent data source from TakerBuyRatio.",
         _ => metric
       };
     }
