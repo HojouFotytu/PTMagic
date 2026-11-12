@@ -1,6 +1,6 @@
 # PTMagic 2.10 — Cumulative release changes
 
-**Updated:** November 11, 2026
+**Updated:** November 12, 2026
 
 **Application version:** 2.10.0, in development
 
@@ -20,15 +20,13 @@ Any next refresh correction is restricted to **scheduling logic in `Monitor/Page
 
 The last confirmed local focused Monitor run reported **75/75 PASS** on a prior revision, and the last complete suite reported **337/337 PASS** at `fb94373`. Neither establishes correct refresh after the rollback. See the [November 11 investigation and current status](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-11-dashboard-refresh-history-and-current-state.md).
 
-## Phase 2 — Binance Futures long/short ratio metrics and derivative persistence (November 11)
+## Phase 2 — Retained settled funding and D-053 metric removal (November 12)
 
-One opt-in asset metric is implemented: `GlobalLongShortAccountRatio`, using Binance's public global-account endpoint. Five-minute observations are evaluated over each MarketTrend's exact `TrendMinutes` window. The window ratio averages implied long-side shares `r/(1+r)` and converts the mean back to a ratio; neutral remains 1.0. Missing observations remain unavailable. No additional Binance API key is required. No exchange-wide aggregate is added in this metric batch.
+The current effective PTMagic 2.10 application contains **24 canonical metrics**: 17 global-capable measurements and seven asset-only measurements. The three previously implemented OI/long-short positioning metrics and their source clients, history services, persistent-cache dependencies, acquisition jobs, and UI presentation paths were removed under D-053. Older feature versions and their passing tests remain in Git history and dated development records, not the active metric registry.
 
-The .NET 10.0.403 solution build and all **17/17 offline harnesses passed** at exact source `875b4feb71104fbc609bd07dc3120405218d325f` (17.4s). The ratio harness passed 29 groups; funding 18; raw OI 18; incremental OI 17. Eight nonfatal nullable warnings were reported in two existing test projects.
+**Funding is retained:** `FundingRate` and `FundingSum` are separate asset metrics calculated from verified Regular settled funding events. The application continues to persist `_data/DerivativesFundingCache`, acquire funding in bulk with conditional per-symbol fallback, respect provider quota and response-header/cooldown safeguards, and keep missing histories UNAVAILABLE.
 
-**Derivative disk persistence:** funding now uses `_data/DerivativesFundingCache`; ratios use `_data/DerivativesLongShortRatioCache`, partitioned by endpoint source and symbol. Existing OI persistence remains at `_data/DerivativesOpenInterestCache`. Funding and ratio caches store versioned compressed raw observations plus verified provider-query coverage intervals, use temporary-file/atomic replacement, validate restored content and discard corrupt files fail-open. The funding cache preserves distinct Regular/Special events at the same timestamp.
-
-**Still pending:** current tests verify direct cache save/restore, ratio source isolation and corruption recovery. End-to-end restart through newly constructed data services, configured two-startup request reduction, live Binance/API-key behavior and Monitor browser rendering remain unverified. The next task is service-level restart testing; taker-flow development follows persistence acceptance.
+**Source:** current `phase1/market-data-foundation` branch, cleanup published November 12. **Validation boundary:** last user-run .NET solution build/18-harness suite passed at pre-removal source `d101b5a0`. A user-local build and funding/live raid acceptance of the cleaned-up revision are not yet recorded. The retired OI/ratio user cache directories are not read by the active code and are not automatically deleted.
 
 ## Monitor — enforce centered market-wide headings and gray labels (November 10)
 
@@ -68,7 +66,7 @@ The Global Settings Log now uses **Market Trends** and **Market Metrics** as its
 
 **User validation at exact source `fb94373d8928b681e3ebe1f7209bd1439db42e72`:** the .NET 10.0.403 Core/PTMagic/Monitor solution built successfully twice (15.6s, then 10.3s); all **16/16 offline harnesses and 337/337 test groups PASSED twice**. New Global Settings Log metric snapshot tests, SOM enable-only API and lifecycle tests, and two-raid red ticker assertions were included. The first run reported eight nonfatal existing nullable-source warnings in test projects; the second printed none. This is deterministic development acceptance only: actual Binance/ProfitTrailer API integration, configured runtime raids, and browser-visible Monitor behavior are still independently unverified.
 
-The previous source-specific "not yet executed" statements below describe the **earlier state** when those features were published, and are **superseded for the now-verified source** by this result. Further Phase 2 work continues with configured runtime acceptance of the retained global-account ratio and derivative persistence; no re-run of the accepted suite is required before starting that work.
+The previous source-specific "not yet executed" statements below describe the **earlier state** when those features were published, and are **superseded for the now-verified source** by this result. Further Phase 2 work continues with retained funding and new taker-flow metrics, not positioning feeds. Source cleanup requires its own build evidence.
 
 **Evidence:** [November 10 SOM and Monitor offline validation](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-10-som-monitor-offline-validation.md).
 
@@ -88,11 +86,9 @@ The first two startup RAID SUMMARY reports warn about manual SOM release. A red 
 
 **Published source:** `891f709010c867259a6cde3df8e9c82781091b7f`. Updated lifecycle regression tests and a source-level Monitor ticker assertion are authored; **no .NET build or new regression execution is yet claimed**. Prior 332/332 PASS is on the earlier source `49f2aab`. This supersedes the prior automatic-release behavior documented in D-025/D-037.
 
-## Phase 2 — Funding/OI offline acceptance (November 10)
+## Phase 2 — Retained funding validation (November 10–12)
 
-**User-executed at exact application source `49f2aab66592b6e2922097ca5242b5a614090602`:** .NET 10.0.403 solution build PASS in **11.0s**; Core/PTMagic/Monitor all compiled; **16/16 offline projects and 332/332 test case groups PASS**. Funding 17/17, OI 35/35, existing regression 280/280. Eight nullable warnings in older test fixtures were nonfatal. The source includes the additional Monitor Global Settings activation-trigger capture feature, compiled successfully and covered by existing 28 Monitor roundtrip checks; its actual browser rendering remains unverified.
-
-This is **offline deterministic** acceptance only: no live Binance requests, configured PTM raids, native PT updates or Monitor browser acceptance. The original Phase 1 configured integration-test deferral remains separate from mandatory Phase 2 development tests. Detailed test evidence: [funding validation](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-10-phase2-funding-offline-validation.md).
+Funding acquisition, cache restoration, exact settlement math and bulk/fallback behavior were exercised in previous offline runs. The full 18-harness suite passed at `d101b5a0` before D-053; this is historical pre-removal evidence, not proof of the current source's compilation. Removed OI/positioning harness results are excluded from the active test inventory.
 
 ## Monitor — Global Settings activation triggers (November 10)
 
@@ -105,20 +101,6 @@ Historical settled Binance USD-M funding has been added to the optional normaliz
 Two asset-scoped metrics, `FundingRate` (latest regular settled rate in the window) and `FundingSum` (sum of regular settled rates), use percentage points without annualization. Special funding remains separate; unknown rateType does not become a fabricated regular zero. Missing/unverified data stays unavailable. Binance Spot/US never request Futures funding. Existing metric/triggers/exports/Monitor history paths are reused. Funding rate schedule adjustment metadata and Phase 2B aggregates remain future work.
 
 Seventeen funding tests were authored and subsequently **passed 17/17** in the complete 16-harness run at `49f2aab` (332/332 total), with a successful .NET solution build. Earlier OI-only 315/315 results remain correctly attributed to source `5f51faaa`; the funding implementation was originally published at `6430bab1`.
-
-## Phase 2 — Incremental open-interest collector and metric integration (November 10)
-
-Published application source `b723f76664aa0de6b76de3f5ddf281c036c32275` integrates the optional Binance USD-M historical OI source into the existing normalized analyzer. New `OpenInterestChange` and `OpenInterestValueChange` asset metrics use exact historical 5m timestamps over configured `TrendMinutes` and preserve separate native quantity and provider-reported value semantics. Missing or inconsistent source observations remain unavailable. No metric is enabled implicitly.
-
-The bounded per-symbol collection uses the existing shared Binance HTTP limiter, incremental pages, request fairness, and a versioned persistent cache. The OI data horizon is derived from the longest OI-enabled user MarketTrend's `TrendMinutes`, plus its exact reference/overlap, with no independent hours setting or 672-hour software cap. `MarketAnalyzer.OpenInterestMaxRequestsPerRaid` (default 60; allowed 0–400) remains a separate request throttle, and zero disables acquisition. The request cap is 500 source rows per page, up to two pages per selected market in one raid. No Futures OI is collected on Binance Spot or Binance US.
-
-The existing metric registry, normalized engine, trigger resolver, history requirements, runtime logs, MarketTrendAnalytics export and Monitor metric snapshot are extended through the current shared path. The Monitor History Requirements view distinguishes dynamically derived OI history from OHLCV StoreDataMaxHours. The previous default-72h OI setting was removed at `0ae76f4c7886397a06ad346b42a375f6aa06be00`; unavailable provider history is not silently truncated. Existing configurations without an explicit OI metric perform no additional OI API requests. The incremental offline suite was extended from 15 to **17 groups**; raw OI remains **18**. **Verification PASS November 10** at exact source `5f51faaa0db928cf33c52f6f93ca6f1b301735fb`: .NET 10.0.403 solution build (Core/PTMagic/Monitor) in **11.3s**, **35/35 new OI groups**, **15/15 total harnesses, 315/315 groups**. Pre-existing nullable warnings in two test projects did not fail the suite. Live Binance provider and configured PT/Monitor integration acceptance remain pending, separately from the narrow deferred Phase 1 cases.
-
-## Phase 2 — First open-interest source foundation (November 10)
-
-At application commit `314214b1a20bcddd1643b8fa8df032db5463b04d`, optional Binance USD-M futures current and historical open-interest observation models and a bounded single-page HTTP client were added. The new model preserves original native quantity and reported value separately, rejects invalid source symbols/timestamps/amounts, and calculates percentage change only from exact five-minute historical endpoints. Source can be requested explicitly by callers and uses PTMagic's established HTTP/rate-limit/retry transport.
-
-**This release increment does not register new MarketTrend metrics, start background acquisition, change existing raids, or alter PT configuration behavior.** The 18 new offline test groups are authored but **not executed**, and no .NET build was performed on the published commit in this turn. Phase 1 configured acceptance remains deferred by owner instruction and was not reclassified as passing.
 
 ## Release overview
 
@@ -167,7 +149,7 @@ The normalized store remains in memory. Persistent files described later contain
 
 ## 2. Current metric catalogue
 
-The registry exposes **29 canonical metric names** (22 original normalized metrics, 2 OI, 2 funding and 3 long/short ratio metrics). “Global” means a market-wide measurement usable by a GlobalSetting; “asset” means a market-specific measurement usable in SMS activation/off-trigger evaluation. Scope is checked when a trigger requests a metric.
+The registry exposes **24 canonical metric names** (22 normalized metrics, including three correlation metrics, and 2 settled-funding metrics). “Global” means a market-wide measurement usable by a GlobalSetting; “asset” means a market-specific measurement usable in SMS activation/off-trigger evaluation. Scope is checked when a trigger requests a metric.
 
 ### Returns and relative strength
 
@@ -208,17 +190,14 @@ The share metrics do not invent a zero for an absent required BTC/ETH population
 
 Sources: [OHLCV aggregation and formulas][period-metrics] and [global volatility/volume calculations][ohlcv-engine].
 
-### Binance USD-M Futures derivatives
+### Binance USD-M Futures settled funding
 
 | Metric | Scope | Definition and unit |
 |---|---|---|
-| `OpenInterestChange` | Asset | Change in native open-interest quantity over the configured TrendMinutes window. |
-| `OpenInterestValueChange` | Asset | Change in provider-reported open-interest value over the configured window. |
-| `FundingRate` | Asset | Latest regular settled funding rate in the window, in percentage points. |
-| `FundingSum` | Asset | Sum of regular settled funding rates in the window, in percentage points. |
-| `GlobalLongShortAccountRatio` | Asset | Binance all-trader long/short account ratio for the symbol. Neutral is 1.0. |
+| `FundingRate` | Asset | Latest Regular settled funding rate in the configured window, percentage points. |
+| `FundingSum` | Asset | Sum of Regular settled rates over the configured window, percentage points. |
 
-OI, funding and ratio metrics are opt-in, Binance USD-M Futures-only asset metrics. Funding and ratio history now use versioned disk caches as recorded above. Missing source data remains unavailable; no cache coverage record is treated as a synthetic metric value.
+Funding is opt-in and Binance USD-M Futures-only. Its native history remains independent of normalized OHLCV retention, stored in a versioned disk cache, and acquired bulk-first with safe conditional per-symbol fallback. Unavailable/unverified source observations are not interpreted as zero.
 
 ### BTC correlation
 
