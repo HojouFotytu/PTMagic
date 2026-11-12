@@ -212,6 +212,15 @@ namespace Core.MarketAnalyzer.MarketData
       // A long cold fetch may span another close; the evaluation must not
       // demand a candle unavailable to symbols fetched before that boundary.
       DateTimeOffset refreshAsOfUtc = DateTimeOffset.UtcNow;
+      // Reuse the existing anchored kline feed. Only selected asset taker
+      // metrics require repairing legacy cached windows with new source fields.
+      int[] takerTrendMinutes = (systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
+        ?? new List<MarketTrend>())
+        .Where(trend => trend != null && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
+          && TakerFlowFeatureEngine.HasMetrics(MarketTrendMetricSelection.Select(
+            trend, systemConfiguration.AnalyzerSettings)))
+        .Select(trend => trend.TrendMinutes).Where(minutes => minutes > 0)
+        .Distinct().ToArray();
       IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAtAsync(
         refreshSymbols,
         BaseInterval,
@@ -221,7 +230,8 @@ namespace Core.MarketAnalyzer.MarketData
         RefreshConcurrency,
         cancellationToken,
         refreshAsOfUtc,
-        exchangeName).ConfigureAwait(false);
+        exchangeName,
+        takerTrendMinutes).ConfigureAwait(false);
 
       MarketDataRefreshStatus[] statusSnapshot = statuses.ToArray();
       lock (SnapshotLock)
