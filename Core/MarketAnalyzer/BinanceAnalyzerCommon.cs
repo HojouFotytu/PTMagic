@@ -33,7 +33,7 @@ namespace Core.MarketAnalyzer
       return market.ToUpperInvariant();
     }
 
-    internal static async Task<List<string>> GetMarketDataAsync(string exchangeName, string apiBase, string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, bool supportsUsdMainMarket, bool logIncorrectBaseCurrency, bool caseSensitiveBaseMatch, bool parallelHistoricalBuild, CancellationToken cancellationToken = default)
+    internal static async Task<List<string>> GetMarketDataAsync(string exchangeName, string apiBase, string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, bool supportsUsdMainMarket, bool logIncorrectBaseCurrency, bool caseSensitiveBaseMatch, bool parallelHistoricalBuild, CancellationToken cancellationToken = default, Func<string, bool> marketEligible = null)
     {
       mainMarket = NormalizeMainMarket(mainMarket);
       List<string> result = new List<string>();
@@ -62,6 +62,17 @@ namespace Core.MarketAnalyzer
         }
 
         Dictionary<string, Market> markets = BuildMarkets(exchangeName, mainMarket, mainCurrencyPrice, jsonArray, result, log, logIncorrectBaseCurrency, caseSensitiveBaseMatch, ref lastMarket);
+        // Filter before first-seen queries, historical 1m backfill and normalized
+        // 5m acquisition. The Binance ticker/metadata lookup remains broad.
+        if (marketEligible != null)
+        {
+          int discovered = markets.Count;
+          foreach (string symbol in markets.Keys.Where(symbol => !marketEligible(symbol)).ToArray())
+            markets.Remove(symbol);
+          result.RemoveAll(symbol => !markets.ContainsKey(symbol));
+          log.DoLogInfo(exchangeName + " - Underlying-type eligibility selected " +
+            markets.Count + "/" + discovered + " quoted markets before historical acquisition.");
+        }
         await CheckFirstSeenDatesAsync(exchangeName, apiBase, markets, marketInfos, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
         BaseAnalyzer.SaveMarketInfosToFile(marketInfos, systemConfiguration, log);
         await CheckForMarketDataRecreationAsync(exchangeName, apiBase, mainMarket, markets, systemConfiguration, log, supportsUsdMainMarket, parallelHistoricalBuild, cancellationToken).ConfigureAwait(false);
