@@ -32,6 +32,7 @@ internal static class Program
       TestBoundedRestoration(root);
       TestFileSaveThrottle(root);
       await TestLegacyTakerUpgrade(root);
+      await TestTakerBeyondCapacityAvoidsFullReload();
       Console.WriteLine("Normalized warm-start cache tests passed: " + _passed + ".");
       return 0;
     }
@@ -264,6 +265,24 @@ internal static class Program
       takerTrendMinutes: new[] { 10 });
     Assert(restartRequested == 3,
       "Restored v2 taker coverage must avoid repeated taker-window backfill.");
+    _passed++;
+  }
+
+  private static async Task TestTakerBeyondCapacityAvoidsFullReload()
+  {
+    MarketDataStore store = new MarketDataStore(8);
+    store.UpsertCandles(Candles("BTCUSDT", 8));
+    MarketDataService service = new MarketDataService(store);
+    int requested = 0;
+    await service.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 8,
+      (symbol, count, logger, ct, asOf) =>
+      {
+        requested = count;
+        return Task.FromResult(Candles(symbol, count));
+      }, Log, maxConcurrency: 1, refreshAsOfUtc: Boundary,
+      takerTrendMinutes: new[] { 1440 });
+    Assert(requested == 3,
+      "An impossible taker horizon must stay unavailable, not repeatedly force full history requests.");
     _passed++;
   }
 
