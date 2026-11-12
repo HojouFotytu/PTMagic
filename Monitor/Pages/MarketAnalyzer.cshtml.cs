@@ -226,10 +226,8 @@ namespace Monitor.Pages
         return "text-muted";
       }
 
-      // Ratios and volume-expansion multiples are neutral at 1.0;
-      // signed change, funding and correlation metrics are neutral at zero.
-      double neutralValue = metric == MarketTrendMetrics.GlobalLongShortAccountRatio
-        || metric == MarketTrendMetrics.VolumeExpansion ? 1.0 : 0.0;
+      // Volume-expansion multiples are neutral at 1.0; signed metrics at zero.
+      double neutralValue = metric == MarketTrendMetrics.VolumeExpansion ? 1.0 : 0.0;
       return feature.Value.Value > neutralValue ? "text-success"
         : feature.Value.Value < neutralValue ? "text-danger" : "text-muted";
     }
@@ -243,8 +241,7 @@ namespace Monitor.Pages
       }
 
       double value = feature.Value.Value;
-      if (metric == MarketTrendMetrics.GlobalLongShortAccountRatio
-        || metric == MarketTrendMetrics.CorrelationToBTC)
+      if (metric == MarketTrendMetrics.CorrelationToBTC)
       {
         return value.ToString("0.0000", CultureInfo.InvariantCulture);
       }
@@ -338,11 +335,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.ATRP => "ATRP",
         MarketTrendMetrics.VolumeExpansion => "Volume Expansion",
         MarketTrendMetrics.CorrelationToBTC => "BTC Correlation",
-        MarketTrendMetrics.OpenInterestChange => "OI Quantity Change",
-        MarketTrendMetrics.OpenInterestValueChange => "OI Value Change",
         MarketTrendMetrics.FundingRate => "Funding Rate",
         MarketTrendMetrics.FundingSum => "Funding Sum",
-        MarketTrendMetrics.GlobalLongShortAccountRatio => "Global L/S Account Ratio",
         _ => metric
       };
     }
@@ -383,11 +377,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.BTCETHVolumeShare => "Combined BTC and ETH quote-volume share of complete eligible global universe in latest complete trend period, percent.",
         MarketTrendMetrics.MeanCorrelationToBTC => "Arithmetic mean of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         MarketTrendMetrics.MedianCorrelationToBTC => "Median of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
-        MarketTrendMetrics.OpenInterestChange => "Percent change in Binance Futures open-interest quantity between the exact historical endpoints for this MarketTrend timeframe.",
-        MarketTrendMetrics.OpenInterestValueChange => "Percent change in Binance Futures provider-reported open-interest value between exact historical endpoints; no proxy notional is inferred.",
         MarketTrendMetrics.FundingRate => "Latest regular funding settlement in the configured MarketTrend window, as a percentage. Missing regular settlements remain unavailable.",
         MarketTrendMetrics.FundingSum => "Sum of regular funding settlements in the configured MarketTrend window, as a percentage. Unverified history remains unavailable.",
-        MarketTrendMetrics.GlobalLongShortAccountRatio => "Binance Futures global-account long/short ratio over this MarketTrend window, averaged via the implied long-side share of each five-minute observation; neutral is 1.0.",
         _ => metric
       };
     }

@@ -12,17 +12,15 @@ namespace Core.MarketAnalyzer
 {
   /// <summary>
   /// In-process Binance IP admission state shared by every BaseAnalyzer request.
-  /// The Futures historical-data and funding request quotas are separate from
-  /// the one-minute request-weight quota. Clock injection permits offline tests.
+  /// Futures settled-funding quota is separate from the one-minute
+  /// request-weight quota. Clock injection permits offline tests.
   /// </summary>
   public sealed class BinanceRateLimitTracker
   {
     private const double SoftLimitRatio = 0.80;
     private const int FuturesWeightPerMinute = 2400;
     private const int SpotWeightPerMinute = 6000;
-    // Binance's published Futures historical-data limit is 1000/5 min/IP;
-    // fundingRate and fundingInfo share a separate 500/5 min/IP limit.
-    private const int FuturesHistoricalRequestsPerFiveMinutes = 1000;
+    // fundingRate and fundingInfo share a 500/5 min/IP limit.
     private const int FuturesFundingRequestsPerFiveMinutes = 500;
     private static readonly TimeSpan FiveMinutes = TimeSpan.FromMinutes(5);
     private readonly ConcurrentDictionary<string, HostState> _states =
@@ -34,7 +32,6 @@ namespace Core.MarketAnalyzer
       public int UsedWeight;
       public DateTimeOffset WindowResetUtc = DateTimeOffset.MinValue;
       public DateTimeOffset CooldownUntilUtc = DateTimeOffset.MinValue;
-      public readonly Queue<DateTimeOffset> HistoricalRequests = new Queue<DateTimeOffset>();
       public readonly Queue<DateTimeOffset> FundingRequests = new Queue<DateTimeOffset>();
     }
 
@@ -65,7 +62,6 @@ namespace Core.MarketAnalyzer
         if (delay > TimeSpan.Zero) return delay;
 
         state.UsedWeight += EstimatedWeight(requestUri);
-        if (IsFuturesHistorical(requestUri)) state.HistoricalRequests.Enqueue(now);
         if (IsFuturesFunding(requestUri)) state.FundingRequests.Enqueue(now);
         return TimeSpan.Zero;
       }
@@ -103,9 +99,6 @@ namespace Core.MarketAnalyzer
       if (state.CooldownUntilUtc <= now)
         state.CooldownUntilUtc = DateTimeOffset.MinValue;
 
-      while (state.HistoricalRequests.Count > 0 &&
-        state.HistoricalRequests.Peek() + FiveMinutes <= now)
-        state.HistoricalRequests.Dequeue();
       while (state.FundingRequests.Count > 0 &&
         state.FundingRequests.Peek() + FiveMinutes <= now)
         state.FundingRequests.Dequeue();
@@ -120,12 +113,6 @@ namespace Core.MarketAnalyzer
         && state.WindowResetUtc > until)
         until = state.WindowResetUtc;
 
-      if (IsFuturesHistorical(requestUri) &&
-        state.HistoricalRequests.Count >= (int)Math.Floor(FuturesHistoricalRequestsPerFiveMinutes * SoftLimitRatio))
-      {
-        DateTimeOffset opening = state.HistoricalRequests.Peek() + FiveMinutes + TimeSpan.FromMilliseconds(100);
-        if (opening > until) until = opening;
-      }
       if (IsFuturesFunding(requestUri) &&
         state.FundingRequests.Count >= (int)Math.Floor(FuturesFundingRequestsPerFiveMinutes * SoftLimitRatio))
       {
@@ -135,11 +122,6 @@ namespace Core.MarketAnalyzer
       return until > now ? until - now : TimeSpan.Zero;
     }
 
-    private static bool IsFuturesHistorical(Uri uri) =>
-      uri.Host.Equals("fapi.binance.com", StringComparison.OrdinalIgnoreCase) &&
-      (uri.AbsolutePath.Equals("/futures/data/openInterestHist", StringComparison.OrdinalIgnoreCase) ||
-       uri.AbsolutePath.Equals("/futures/data/globalLongShortAccountRatio", StringComparison.OrdinalIgnoreCase));
-
     private static bool IsFuturesFunding(Uri uri) =>
       uri.Host.Equals("fapi.binance.com", StringComparison.OrdinalIgnoreCase) &&
       (uri.AbsolutePath.Equals("/fapi/v1/fundingRate", StringComparison.OrdinalIgnoreCase) ||
@@ -147,7 +129,7 @@ namespace Core.MarketAnalyzer
 
     private static int EstimatedWeight(Uri uri)
     {
-      if (IsFuturesHistorical(uri) || IsFuturesFunding(uri)) return 0;
+      if (IsFuturesFunding(uri)) return 0;
       if (uri.Host.Equals("fapi.binance.com", StringComparison.OrdinalIgnoreCase))
       {
         if (uri.AbsolutePath.Equals("/fapi/v1/klines", StringComparison.OrdinalIgnoreCase))

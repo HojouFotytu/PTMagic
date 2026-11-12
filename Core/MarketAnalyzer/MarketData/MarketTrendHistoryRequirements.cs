@@ -12,7 +12,7 @@ namespace Core.MarketAnalyzer.MarketData
   public sealed class MarketTrendHistoryRequirement
   {
     public string Metric { get; init; } = "";
-    // Derivatives are not constrained by the separate normalized OHLCV store.
+    // Settled funding is independent of normalized OHLCV store retention.
     public string SourceDataFamily { get; init; } = "NormalizedOHLCV";
     public string Basis { get; init; } = "";
     public long CalculationWindowMinutes { get; init; }
@@ -62,38 +62,6 @@ namespace Core.MarketAnalyzer.MarketData
               "query is required; no hardcoded 8h interval or separate retention hours.",
             CalculationWindowMinutes = trend.TrendMinutes,
             MinimumClosedSourceCandles = 0, RequiredStoredSourceCandles = 0,
-            RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
-            ConfiguredStoreDataMaxHours = null, HasCurrentRaidCapacity = null,
-            HasAllAlignmentCapacity = null, Diagnostic = ""
-          });
-          continue;
-        }
-        if (FuturesLongShortRatioFeatureEngine.IsMetric(metric))
-        {
-          result.Add(new MarketTrendHistoryRequirement
-          {
-            Metric = metric, SourceDataFamily = "BinanceFuturesLongShortRatio",
-            Basis = "Exactly " + trend.TrendMinutes +
-              " minutes of completed Binance USD-M 5m long/short ratio observations. Binance exposes only the latest 30 days; every expected 5m timestamp must exist. No interpolation or nearest-time substitution.",
-            CalculationWindowMinutes = trend.TrendMinutes,
-            MinimumClosedSourceCandles = trend.TrendMinutes / 5,
-            RequiredStoredSourceCandles = 0, RequiredStoreDataMaxHours = 0,
-            RecommendedStoreDataMaxHours = 0, ConfiguredStoreDataMaxHours = null,
-            HasCurrentRaidCapacity = null, HasAllAlignmentCapacity = null, Diagnostic = ""
-          });
-          continue;
-        }
-        if (FuturesOpenInterestFeatureEngine.IsMetric(metric))
-        {
-          result.Add(new MarketTrendHistoryRequirement
-          {
-            Metric = metric, SourceDataFamily = "BinanceFuturesOpenInterest",
-            Basis = "Two exact historical OI observations " + trend.TrendMinutes +
-              " minutes apart, as specified by this MarketTrend. OI cache history is derived " +
-              "from the longest enabled OI MarketTrend, independently of StoreDataMaxHours. " +
-              "Exchange history availability is a separate source constraint.",
-            CalculationWindowMinutes = trend.TrendMinutes, MinimumClosedSourceCandles = 2,
-            RequiredStoredSourceCandles = 2,
             RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
             ConfiguredStoreDataMaxHours = null, HasCurrentRaidCapacity = null,
             HasAllAlignmentCapacity = null, Diagnostic = ""

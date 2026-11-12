@@ -41,13 +41,9 @@ namespace Core.MarketAnalyzer.MarketData
     public const string CorrelationToBTC = "CorrelationToBTC";
     public const string MeanCorrelationToBTC = "MeanCorrelationToBTC";
     public const string MedianCorrelationToBTC = "MedianCorrelationToBTC";
-    // Phase 2 per-asset derivatives: quantity and provider-reported value
-    // changes are separate percentage metrics; no arbitrary notional inference.
-    public const string OpenInterestChange = "OpenInterestChange";
-    public const string OpenInterestValueChange = "OpenInterestValueChange";
+    // Retained Futures derivatives are settled funding rates.
     public const string FundingRate = "FundingRate";
     public const string FundingSum = "FundingSum";
-    public const string GlobalLongShortAccountRatio = "GlobalLongShortAccountRatio";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -74,11 +70,8 @@ namespace Core.MarketAnalyzer.MarketData
         [CorrelationToBTC] = MarketTrendMetricScope.Asset,
         [MeanCorrelationToBTC] = MarketTrendMetricScope.Global,
         [MedianCorrelationToBTC] = MarketTrendMetricScope.Global,
-        [OpenInterestChange] = MarketTrendMetricScope.Asset,
-        [OpenInterestValueChange] = MarketTrendMetricScope.Asset,
         [FundingRate] = MarketTrendMetricScope.Asset,
         [FundingSum] = MarketTrendMetricScope.Asset,
-        [GlobalLongShortAccountRatio] = MarketTrendMetricScope.Asset,
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();

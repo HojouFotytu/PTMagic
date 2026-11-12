@@ -46,12 +46,8 @@ namespace Core.MarketAnalyzer.MarketData
     private static readonly MarketDataService DataServiceInstance = new MarketDataService(
       new MarketDataStore(2),
       new MarketDataWarmStartCache(Path.Combine(Environment.CurrentDirectory, "_data", "NormalizedOhlcvCache")));
-    private static readonly FuturesOpenInterestDataService OpenInterestDataServiceInstance =
-      new FuturesOpenInterestDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesOpenInterestCache"));
     private static readonly FuturesFundingDataService FundingDataServiceInstance =
       new FuturesFundingDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesFundingCache"));
-    private static readonly FuturesLongShortRatioDataService LongShortRatioDataServiceInstance =
-      new FuturesLongShortRatioDataService(Path.Combine(Environment.CurrentDirectory, "_data", "DerivativesLongShortRatioCache"));
     private static AnalyzerUniverseSnapshot _currentUniverse;
     private static MarketAnalysisSnapshot _currentAnalysis;
     private static IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> _currentTrendAnalyses =
@@ -62,9 +58,7 @@ namespace Core.MarketAnalyzer.MarketData
     private static DateTimeOffset? _currentRaidAsOfUtc;
 
     public static MarketDataService DataService => DataServiceInstance;
-    public static FuturesOpenInterestDataService OpenInterestDataService => OpenInterestDataServiceInstance;
     public static FuturesFundingDataService FundingDataService => FundingDataServiceInstance;
-    public static FuturesLongShortRatioDataService LongShortRatioDataService => LongShortRatioDataServiceInstance;
 
     public static DateTimeOffset? CurrentRaidAsOfUtc
     {
@@ -371,12 +365,11 @@ namespace Core.MarketAnalyzer.MarketData
 
 
     /// <summary>
-    /// Collect all explicitly enabled Futures derivative families concurrently.
-    /// Fair per-page admission is shared, while metric caches remain independent.
-    /// The existing analysis-freshness deadline ends acquisition; unfilled
-    /// history remains unavailable and is resumed from cache on later raids.
+    /// Collect explicitly enabled settled funding through the existing
+    /// freshness deadline. Incomplete history remains UNAVAILABLE and resumes
+    /// from the retained funding cache on later raids.
     /// </summary>
-    public static async Task RefreshDerivativesAsync(
+    public static async Task RefreshFundingHistoriesAsync(
       PTMagicConfiguration configuration, LogHelper log,
       IReadOnlyDictionary<string, Market> recentMarkets = null,
       CancellationToken cancellationToken = default)
@@ -389,97 +382,22 @@ namespace Core.MarketAnalyzer.MarketData
       TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
       if (remaining <= TimeSpan.Zero)
       {
-        log.DoLogWarn("Derivative acquisition deferred: pinned analysis freshness has expired.");
+        log.DoLogWarn("Funding acquisition deferred: pinned analysis freshness has expired.");
         return;
       }
-      var scheduler = new BinanceDerivativeAcquisitionScheduler(deadline);
+      var scheduler = new BinanceFundingAcquisitionScheduler(deadline);
       using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
       deadlineCts.CancelAfter(remaining);
       try
       {
-        await Task.WhenAll(
-          RefreshOpenInterestAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler),
-          RefreshFundingAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler),
-          RefreshLongShortRatiosAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler))
+        await RefreshFundingAsync(configuration, log, recentMarkets, deadlineCts.Token, scheduler)
           .ConfigureAwait(false);
       }
       catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadlineCts.IsCancellationRequested)
       {
-        log.DoLogWarn("Derivative acquisition reached the analysis freshness deadline; incomplete histories remain unavailable.");
+        log.DoLogWarn("Funding acquisition reached the analysis freshness deadline; incomplete histories remain unavailable.");
       }
     }
-
-    /// <summary>
-    /// Optional Phase 2 acquisition after the frozen universe exists and
-    /// before synchronous metric evaluation. Only explicit OI metrics cause
-    /// requests. The runtime uses temporary internal service ceilings pending
-    /// adaptive derivative acquisition.
-    /// </summary>
-    public static async Task RefreshOpenInterestAsync(
-      PTMagicConfiguration configuration, LogHelper log,
-      IReadOnlyDictionary<string, Market> recentMarkets = null,
-      CancellationToken cancellationToken = default,
-      BinanceDerivativeAcquisitionScheduler scheduler = null)
-    {
-      if (configuration == null) throw new ArgumentNullException(nameof(configuration));
-      if (log == null) throw new ArgumentNullException(nameof(log));
-      var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
-        ?? new List<MarketTrend>())
-        .Where(t => t != null &&
-          String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase) &&
-          FuturesOpenInterestFeatureEngine.HasMetrics(MarketTrendMetricSelection.Select(
-            t, configuration.AnalyzerSettings))).ToArray();
-      if (trends.Length == 0) return;
-      string exchange = configuration.GeneralSettings?.Application?.Exchange ?? "";
-      if (!exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
-      {
-        log.DoLogWarn("Phase 2 OI metrics requested on " + exchange +
-          "; these per-asset derivatives metrics are only available for Binance USD-M Futures.");
-        return;
-      }
-
-      AnalyzerUniverseSnapshot universe;
-      DateTimeOffset? pin;
-      lock (SnapshotLock) { universe = _currentUniverse; pin = _currentRaidAsOfUtc; }
-      if (universe == null || !pin.HasValue)
-      {
-        log.DoLogWarn("Phase 2 open-interest acquisition deferred: frozen universe or pinned raid time is unavailable.");
-        return;
-      }
-      // Transitional internal safeguard; D-051 adaptive acquisition will replace this ceiling.
-      int budget = int.MaxValue; // Unbounded by raid count; scheduler owns admission.
-      var acquisition = scheduler ?? new BinanceDerivativeAcquisitionScheduler(
-        pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
-
-      var usable = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
-      int maximumHorizon = FuturesOpenInterestDataService.RequiredHorizonMinutes(usable);
-      if (maximumHorizon == 0)
-      {
-        log.DoLogWarn("Phase 2 open-interest requests skipped: no valid OI-enabled MarketTrend duration.");
-        return;
-      }
-      var assets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-      foreach (var trend in usable)
-      {
-        MarketTrendSelectedPopulation selected = MarketTrendPopulationSelector.Select(
-          trend, recentMarkets ?? new Dictionary<string, Market>(),
-          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
-        assets.UnionWith(selected.AssetSymbols);
-      }
-      OpenInterestRefreshReport report = await OpenInterestDataServiceInstance.RefreshAsync(
-        assets, maximumHorizon, pin.Value, budget,
-        (symbol, end, limit, ct) => BinanceFuturesOpenInterestClient.GetHistoryPageAsync(
-          symbol, FuturesOpenInterest.SourcePeriod, end, limit, log, ct),
-        log, cancellationToken,
-        ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.OpenInterest, ct)).ConfigureAwait(false);
-      log.DoLogInfo("Phase 2 OI: " + report.Requests +
-        " page requests; " + report.SuccessfulPages + " succeeded, " + report.FailedPages +
-        " failed; " + report.AvailableSymbols + "/" + report.EligibleSymbols +
-        " selected assets have exact " + maximumHorizon +
-        "m endpoints (derived from enabled MarketTrends); " + report.RestoredSymbols + " restored from disk. " +
-        "Missing/unpolled data remain unavailable.");
-    }
-
 
     /// <summary>
     /// Opt-in and pinned Binance USD-M regular funding settlements. History
@@ -488,7 +406,7 @@ namespace Core.MarketAnalyzer.MarketData
     /// </summary>
     public static async Task RefreshFundingAsync(PTMagicConfiguration configuration, LogHelper log,
       IReadOnlyDictionary<string, Market> recentMarkets = null, CancellationToken cancellationToken = default,
-      BinanceDerivativeAcquisitionScheduler scheduler = null)
+      BinanceFundingAcquisitionScheduler scheduler = null)
     {
       if (configuration == null) throw new ArgumentNullException(nameof(configuration));
       if (log == null) throw new ArgumentNullException(nameof(log));
@@ -515,7 +433,7 @@ namespace Core.MarketAnalyzer.MarketData
       }
       // Transitional internal safeguard; no user-configured request budget.
       int budget = int.MaxValue; // Unbounded by raid count; scheduler owns admission.
-      var acquisition = scheduler ?? new BinanceDerivativeAcquisitionScheduler(
+      var acquisition = scheduler ?? new BinanceFundingAcquisitionScheduler(
         pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
       var enabled = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
       int horizon = FuturesFundingDataService.RequiredHorizonMinutes(enabled);
@@ -536,84 +454,12 @@ namespace Core.MarketAnalyzer.MarketData
         (from, until, limit, ct) => BinanceFuturesFundingClient.GetBulkHistoryPageAsync(
           from, until, limit, log, ct),
         log, cancellationToken,
-        ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.Funding, ct)).ConfigureAwait(false);
+        ct => acquisition.TryPermitAsync(ct)).ConfigureAwait(false);
       log.DoLogInfo("Phase 2 funding: " + report.Requests +
         " page requests (" + report.BulkRequests + " bulk, " +
         report.SymbolRequests + " symbol-specific); " + report.Failures + " failed; " +
         report.CompleteSymbols + "/" + report.SelectedSymbols + " selected markets have verified " +
         horizon + "m funding history. Missing/pending history is UNAVAILABLE.");
-    }
-
-    /// <summary>
-    /// Optional public USD-M global-account long/short ratio acquisition.
-    /// Uses frozen asset populations and the pinned raid boundary.
-    /// </summary>
-    public static async Task RefreshLongShortRatiosAsync(PTMagicConfiguration configuration,
-      LogHelper log, IReadOnlyDictionary<string, Market> recentMarkets = null,
-      CancellationToken cancellationToken = default,
-      BinanceDerivativeAcquisitionScheduler scheduler = null)
-    {
-      if (configuration == null) throw new ArgumentNullException(nameof(configuration));
-      if (log == null) throw new ArgumentNullException(nameof(log));
-      var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
-        ?? new List<MarketTrend>())
-        .Where(t => t != null && String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase))
-        .Select(t => new { Trend = t, Metrics = MarketTrendMetricSelection.Select(t, configuration.AnalyzerSettings)
-          .Where(FuturesLongShortRatioFeatureEngine.IsMetric).ToArray() })
-        .Where(x => x.Metrics.Length > 0).ToArray();
-      if (trends.Length == 0) return;
-      if (!String.Equals(configuration.GeneralSettings?.Application?.Exchange, "BinanceFutures",
-        StringComparison.OrdinalIgnoreCase))
-      {
-        log.DoLogWarn("Long/short ratio metrics are supported only on Binance USD-M Futures.");
-        return;
-      }
-
-      AnalyzerUniverseSnapshot universe;
-      DateTimeOffset? pin;
-      lock (SnapshotLock) { universe = _currentUniverse; pin = _currentRaidAsOfUtc; }
-      if (universe == null || !pin.HasValue)
-      {
-        log.DoLogWarn("Long/short ratio acquisition deferred: frozen universe or pinned raid time is unavailable.");
-        return;
-      }
-
-      // Transitional internal safeguard; no user-configured request budget.
-      int budget = int.MaxValue; // Unbounded by raid count; scheduler owns admission.
-      var acquisition = scheduler ?? new BinanceDerivativeAcquisitionScheduler(
-        pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
-
-      var validTrends = trends.Where(x => x.Trend.TrendMinutes >= 5 &&
-        x.Trend.TrendMinutes <= FuturesLongShortRatio.MaximumHistoryMinutes &&
-        x.Trend.TrendMinutes % 5 == 0).ToArray();
-      if (validTrends.Length == 0) return;
-      int horizon = validTrends.Max(x => x.Trend.TrendMinutes);
-      var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-      foreach (var item in validTrends)
-      {
-        MarketTrendSelectedPopulation population = MarketTrendPopulationSelector.Select(
-          item.Trend, recentMarkets ?? new Dictionary<string, Market>(),
-          universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
-        symbols.UnionWith(population.AssetSymbols);
-      }
-
-      var request = new FuturesLongShortRatioSeriesRequest
-      {
-        Source = FuturesLongShortRatioSource.GlobalAccount,
-        HorizonMinutes = horizon,
-        Symbols = symbols.ToArray()
-      };
-      FuturesLongShortRatioRefreshReport report = await LongShortRatioDataServiceInstance.RefreshAsync(
-        new[] { request }, pin.Value, budget,
-        (source, symbol, from, until, limit, ct) =>
-          BinanceFuturesLongShortRatioClient.GetHistoryPageAsync(source, symbol, from, until,
-            limit, log, ct),
-        log, cancellationToken,
-        ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.GlobalAccountRatio, ct)).ConfigureAwait(false);
-      log.DoLogInfo("Phase 2 global long/short account ratio: " + report.Requests +
-        " page requests; " + report.Failures + " failed; " +
-        report.CompleteSeries + "/" + report.SelectedSeries +
-        " symbol histories fully verified. Missing or incomplete observations remain UNAVAILABLE.");
     }
 
     /// <summary>
@@ -708,10 +554,8 @@ namespace Core.MarketAnalyzer.MarketData
           enabledMetrics,
           "BTC" + universe.MainMarket,
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
-          OpenInterestDataServiceInstance,
           systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
-          FundingDataServiceInstance,
-          LongShortRatioDataServiceInstance);
+          FundingDataServiceInstance);
         analyses[marketTrend.Name] = analysis;
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)
@@ -719,18 +563,6 @@ namespace Core.MarketAnalyzer.MarketData
           if (requirement.SourceDataFamily == "BinanceFuturesFunding")
           {
             log.DoLogDebug("Phase 2 funding history for '" + marketTrend.Name + "' / " +
-              requirement.Metric + ": " + requirement.Basis + " " + requirement.Diagnostic);
-            continue;
-          }
-          if (requirement.SourceDataFamily == "BinanceFuturesLongShortRatio")
-          {
-            log.DoLogDebug("Phase 2 long/short ratio history for '" + marketTrend.Name + "' / " +
-              requirement.Metric + ": " + requirement.Basis);
-            continue;
-          }
-          if (requirement.SourceDataFamily == "BinanceFuturesOpenInterest")
-          {
-            log.DoLogDebug("Phase 2 OI history for '" + marketTrend.Name + "' / " +
               requirement.Metric + ": " + requirement.Basis + " " + requirement.Diagnostic);
             continue;
           }

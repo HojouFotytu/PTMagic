@@ -985,7 +985,7 @@ namespace Core.Main
 
               if (normalizedExchange)
               {
-                await BinanceFuturesAnalyticsRuntime.RefreshDerivativesAsync(
+                await BinanceFuturesAnalyticsRuntime.RefreshFundingHistoriesAsync(
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots).ConfigureAwait(false);
                 BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
                   this.GlobalMarketTrendChanges, this.SingleMarketTrendChanges,
