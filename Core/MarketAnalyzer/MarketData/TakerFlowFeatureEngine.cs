@@ -71,6 +71,27 @@ namespace Core.MarketAnalyzer.MarketData
       return new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(result);
     }
 
+    private static bool TryFindClosedCandle(IReadOnlyList<MarketCandle> candles,
+      long expectedOpenMilliseconds, out MarketCandle candle)
+    {
+      int left = 0, right = candles.Count - 1;
+      while (left <= right)
+      {
+        int middle = left + (right - left) / 2;
+        MarketCandle current = candles[middle];
+        long open = current.OpenTimeUtc.ToUnixTimeMilliseconds();
+        if (open == expectedOpenMilliseconds)
+        {
+          candle = current;
+          return true;
+        }
+        if (open < expectedOpenMilliseconds) left = middle + 1;
+        else right = middle - 1;
+      }
+      candle = null;
+      return false;
+    }
+
     private static FeatureValueSnapshot CalculateRatio(
       MarketDataSeriesSnapshot snapshot, int minutes, DateTimeOffset asOfUtc)
     {
@@ -93,15 +114,14 @@ namespace Core.MarketAnalyzer.MarketData
       long asOfMs = asOfUtc.ToUniversalTime().ToUnixTimeMilliseconds();
       long firstOpen = asOfMs / trendMs * trendMs - trendMs;
       DateTimeOffset expectedCloseUtc = DateTimeOffset.FromUnixTimeMilliseconds(firstOpen + trendMs - 1);
-      var candles = snapshot.ClosedCandles.ToDictionary(
-        candle => candle.OpenTimeUtc.ToUnixTimeMilliseconds());
+      IReadOnlyList<MarketCandle> candles = snapshot.ClosedCandles;
 
       double total = 0;
       double bought = 0;
       int count = 0;
       for (long open = firstOpen; open < firstOpen + trendMs; open += intervalMs)
       {
-        if (!candles.TryGetValue(open, out MarketCandle candle) ||
+        if (!TryFindClosedCandle(candles, open, out MarketCandle candle) ||
           candle.CloseTimeUtc.ToUnixTimeMilliseconds() != open + intervalMs - 1 ||
           !candle.IsClosed || !candle.TakerBuyQuoteVolume.HasValue)
           return Invalid("Incomplete or unverified taker-buy quote-volume history for the latest complete MarketTrend period.", count);
