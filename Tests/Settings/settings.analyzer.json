@@ -1,7 +1,11 @@
 // TEST-ONLY PTMagic 2.10 metric analyzer; D-053 retained scope.
 // SetIdentity = PTM2.10-24-METRICS
-// SetVersion = 2.0.0
+// SetVersion = 2.0.1
 // SetDate = 2026-11-12
+// TargetApplicationSource = e31635a1e67347918ca1bbf94d0fb64809b1cea0
+// VerifiedBuild = PTMagic.sln PASS (12.9s, Core/PTMagic/Monitor)
+// VerifiedFocusedTests = 36/36 PASS (Phase2Funding 28; Phase2AdaptiveAcquisition 8)
+// ConfiguredRuntimeAcceptance = NOT VERIFIED
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
