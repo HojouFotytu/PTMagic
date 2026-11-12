@@ -1074,6 +1074,12 @@ namespace Core.Main
               this.Log.DoLogInfo("+ Global setting reapplied: " + ((_normalDecisionCommittedThisRaid && this.GlobalSettingWritten && !globalSettingSwitchedThisRaid) ? "Yes" : "No"));
               this.Log.DoLogInfo("+ Single Market Settings changed: " + (this.SingleMarketSettingChanged ? "Yes" : "No"));
               this.Log.DoLogInfo("+ PT Config updated: " + ((_raidDelivery.Succeeded && _raidDelivery.Attempted && !_raidDelivery.Simulated) ? "Yes" : "No") + ((this.PTMagicConfiguration.GeneralSettings.Application.TestMode) ? " - TESTMODE active" : ""));
+              if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+              {
+                this.Log.DoLogInfo("+ Underlying types evaluated (MarketTrends and SMS): " +
+                  BinanceFuturesMarketUniverse.DescribeEvaluatedUnderlyingTypes(BinanceFuturesAnalyticsRuntime.CurrentUniverse));
+                this.Log.DoLogInfo("+ SMS eligibility: all other underlying types excluded.");
+              }
               this.Log.DoLogInfo("+ Markets with active single market settings: " + this.TriggeredSingleMarketSettings.Count.ToString());
               foreach (string activeSMS in this.SingleMarketSettingsCount.Keys)
               {
@@ -1414,7 +1420,7 @@ namespace Core.Main
       else if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
       {
         // Get most recent market data from BinanceFutures
-        this.ExchangeMarketList = await BinanceFutures.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken).ConfigureAwait(false);
+        this.ExchangeMarketList = await BinanceFutures.GetMarketDataAsync(this.LastRuntimeSummary.MainMarket, this.MarketInfos, this.PTMagicConfiguration, this.Log, cancellationToken, this.PairsLines).ConfigureAwait(false);
       }
       // Check if problems occured during the Exchange contact
       if (this.ExchangeMarketList == null)
@@ -1442,6 +1448,10 @@ namespace Core.Main
           this.MarketList.Add(SystemHelper.GetFullMarketName(this.LastRuntimeSummary.MainMarket, market, this.PTMagicConfiguration.GeneralSettings.Application.Exchange));
         }
       }
+      // Explicit PT pair lists must not bypass the same Futures underlying-type
+      // policy used by MarketTrends and historical data acquisition.
+      if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.OrdinalIgnoreCase))
+        this.MarketList = BinanceFuturesMarketUniverse.FilterMarketNames(this.MarketList, this.PTMagicConfiguration);
     }
 
     private void ValidateMarketList()
