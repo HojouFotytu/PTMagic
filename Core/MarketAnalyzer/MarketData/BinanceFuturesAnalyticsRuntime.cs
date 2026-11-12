@@ -529,14 +529,17 @@ namespace Core.MarketAnalyzer.MarketData
         assets.UnionWith(population.AssetSymbols);
       }
 
-      FundingRefreshReport report = await FundingDataServiceInstance.RefreshAsync(
+      FundingRefreshReport report = await FundingDataServiceInstance.RefreshWithBulkAsync(
         assets, horizon, pin.Value, budget,
         (symbol, from, until, limit, ct) => BinanceFuturesFundingClient.GetHistoryPageAsync(
           symbol, from, until, limit, log, ct),
+        (from, until, limit, ct) => BinanceFuturesFundingClient.GetBulkHistoryPageAsync(
+          from, until, limit, log, ct),
         log, cancellationToken,
         ct => acquisition.TryPermitAsync(FuturesDerivativeFamily.Funding, ct)).ConfigureAwait(false);
       log.DoLogInfo("Phase 2 funding: " + report.Requests +
-        " page requests; " + report.Failures + " failed; " +
+        " page requests (" + report.BulkRequests + " bulk, " +
+        report.SymbolRequests + " symbol-specific); " + report.Failures + " failed; " +
         report.CompleteSymbols + "/" + report.SelectedSymbols + " selected markets have verified " +
         horizon + "m funding history. Missing/pending history is UNAVAILABLE.");
     }
