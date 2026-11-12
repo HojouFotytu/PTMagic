@@ -375,9 +375,10 @@ internal static class Program
 
   private static void TestTakerKlineMapper()
   {
-    Type mapper = typeof(MarketCandle).Assembly.GetType("Core.MarketAnalyzer.MarketData.BinanceKlineClient");
-    MethodInfo map = mapper.GetMethod("MapKlines", BindingFlags.Static | BindingFlags.NonPublic);
-    Assert(map != null, "Existing kline mapper must remain available.");
+    Type mapper = typeof(MarketCandle).Assembly.GetType("Core.MarketAnalyzer.MarketData.BinanceKlineClient")
+      ?? throw new InvalidOperationException("Existing kline mapper type is missing.");
+    MethodInfo map = mapper.GetMethod("MapKlines", BindingFlags.Static | BindingFlags.NonPublic)
+      ?? throw new InvalidOperationException("Existing kline mapper method is missing.");
     long opened = Start.ToUnixTimeMilliseconds();
     long closed = Start.AddMinutes(5).ToUnixTimeMilliseconds() - 1;
     JArray raw = JArray.FromObject(new object[]
@@ -386,8 +387,9 @@ internal static class Program
       new object[] { opened + 300000, "100", "101", "99", "100", "10", closed + 300000, "100", 20, "4", "invalid", "0" },
       new object[] { opened + 600000, "100", "101", "99", "100", "10", closed + 600000, "100", 20 }
     });
-    var candles = (List<MarketCandle>)map.Invoke(null, new object[]
-      { "BTCUSDT", Interval, raw, closed + 900000 });
+    var candles = (List<MarketCandle>)(map.Invoke(null, new object[]
+      { "BTCUSDT", Interval, raw, closed + 900000 })
+      ?? throw new InvalidOperationException("Binance kline mapper returned no candles."));
     Assert(candles.Count == 3 && candles[0].QuoteVolume == 100 &&
       candles[0].TakerBuyQuoteVolume == 35,
       "Binance index 10 is taker-buy quote volume; index 9 is base volume.");
