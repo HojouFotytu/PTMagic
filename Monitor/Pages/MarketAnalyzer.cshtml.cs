@@ -32,6 +32,7 @@ namespace Monitor.Pages
     {
       public string Value { get; set; } = "";
       public string Tooltip { get; set; } = "";
+      public string ColorClass { get; set; } = "text-muted";
     }
 
     public sealed class InlineAssetMetricRow
@@ -193,6 +194,7 @@ namespace Monitor.Pages
             row.Cells.Add(new InlineAssetMetricCell
             {
               Value = FormatInlineAssetMetric(metric, feature),
+              ColorClass = InlineAssetMetricColor(metric, feature),
               Tooltip = feature == null
                 ? "Metric was configured but no value was published for this MarketTrend."
                 : FeatureTooltip(feature)
@@ -214,6 +216,22 @@ namespace Monitor.Pages
       // Escapes HTML-sensitive characters when embedded inside the Razor script tag.
       InlineAssetMetricRowsJson = JsonConvert.SerializeObject(InlineAssetMetricRows,
         new JsonSerializerSettings { StringEscapeHandling = StringEscapeHandling.EscapeHtml });
+    }
+
+    public string InlineAssetMetricColor(string metric, FeatureValueSnapshot feature)
+    {
+      if (feature == null || !feature.IsValid || feature.IsStale || !feature.Value.HasValue
+        || !Double.IsFinite(feature.Value.Value))
+      {
+        return "text-muted";
+      }
+
+      // Ratios and volume-expansion multiples are neutral at 1.0;
+      // signed change, funding and correlation metrics are neutral at zero.
+      double neutralValue = metric == MarketTrendMetrics.GlobalLongShortAccountRatio
+        || metric == MarketTrendMetrics.VolumeExpansion ? 1.0 : 0.0;
+      return feature.Value.Value > neutralValue ? "text-success"
+        : feature.Value.Value < neutralValue ? "text-danger" : "text-muted";
     }
 
     public string FormatInlineAssetMetric(string metric, FeatureValueSnapshot feature)

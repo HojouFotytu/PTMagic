@@ -603,7 +603,7 @@ else
               } else if (column >= 7) {
                 var value = metric.Cells[column - 7];
                 if (value) {
-                  cell.className = 'text-right text-muted';
+                  cell.className = 'text-right ' + (value.ColorClass || 'text-muted');
                   cell.textContent = value.Value;
                   cell.title = value.Tooltip || '';
                 }
