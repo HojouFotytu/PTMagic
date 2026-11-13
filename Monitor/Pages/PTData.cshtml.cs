@@ -26,9 +26,10 @@ namespace Monitor.Pages
     public async Task<IActionResult> OnPostDownloadAsync(CancellationToken cancellationToken)
     {
       base.Init();
-      if (!IsLoggedIn(HttpContext)) return Forbid();
-      // A password-protected Monitor is required because ZIPs contain private account data.
-      if (!ExportEnabled) return Forbid();
+      if (!IsLoggedIn(HttpContext)) return StatusCode(403);
+      // This Monitor uses session-based authentication, not an ASP.NET authentication scheme.
+      // Return HTTP 403 directly rather than invoking an unregistered forbid handler.
+      if (!ExportEnabled) return StatusCode(403);
 
       var selection = new _Internal.PTDataExportSelection
       {
