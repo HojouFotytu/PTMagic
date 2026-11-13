@@ -1054,7 +1054,8 @@ namespace Core.Main
               // Summarise raid              
               this.Log.DoLogInfo("##########################################################");
               this.Log.DoLogInfo("#******************* RAID SUMMARY ********************#");
-              this.Log.DoLogInfo("+ PT Magic Version: " + this.LastRuntimeSummary.Version);
+              this.Log.DoLogInfo("+ PT Magic Version: " + this.LastRuntimeSummary.Version +
+                " (Build " + BuildIdentity.CommitBuildNumber + ")");
               if (!SystemHelper.IsRecentVersion(this.LastRuntimeSummary.Version, this.LatestVersion))
               {
                 this.Log.DoLogWarn("+ Your version is out of date! The most recent version is " + this.LatestVersion);
