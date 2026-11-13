@@ -19,6 +19,9 @@
   </ItemGroup>
 
   <Target Name="GeneratePTMSourceRevision" BeforeTargets="CoreCompile">
+    <Exec Command="git log -1 --format=%ct" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="Low" StandardErrorImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="PTMCommitUnixSecondsOutput" />
+    </Exec>
     <Exec Command="git rev-parse HEAD" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="Low" StandardErrorImportance="Low">
       <Output TaskParameter="ConsoleOutput" PropertyName="PTMSourceRevisionOutput" />
     </Exec>
@@ -29,6 +32,25 @@
       <PTMSourceRevision Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMSourceRevisionOutput)', '^[0-9a-fA-F]{40}$'))">$(PTMSourceRevisionOutput)</PTMSourceRevision>
       <PTMSourceRevision Condition="'$(PTMSourceRevision)' == ''">unknown</PTMSourceRevision>
       <PTMSourceRevision Condition="'$(PTMSourceRevision)' != 'unknown' and '$(PTMSourceStatusOutput)' != ''">$(PTMSourceRevision)-dirty</PTMSourceRevision>
+      <PTMCommitUnixSeconds Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMCommitUnixSecondsOutput)', '^[0-9]{9,11}
+    </PropertyGroup>
+    <ItemGroup>
+      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>PTMSourceRevision</_Parameter1>
+        <_Parameter2>$(PTMSourceRevision)</_Parameter2>
+      </PTMBuildAttribute>
+      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>PTMCommitUnixSeconds</_Parameter1>
+        <_Parameter2>$(PTMCommitUnixSeconds)</_Parameter2>
+      </PTMBuildAttribute>
+    </ItemGroup>
+    <WriteCodeFragment Language="C#" OutputFile="$(IntermediateOutputPath)PTMSourceRevision.g.cs" AssemblyAttributes="@(PTMBuildAttribute)" />
+    <ItemGroup><Compile Include="$(IntermediateOutputPath)PTMSourceRevision.g.cs" /></ItemGroup>
+  </Target>
+
+</Project>
+))">$(PTMCommitUnixSecondsOutput)</PTMCommitUnixSeconds>
+      <PTMCommitUnixSeconds Condition="'$(PTMCommitUnixSeconds)' == ''">unknown</PTMCommitUnixSeconds>
     </PropertyGroup>
     <ItemGroup>
       <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
