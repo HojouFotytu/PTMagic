@@ -22,8 +22,14 @@ internal static class Program
           .ToUnixTimeSeconds();
         Require(BuildIdentity.FormatCommitBuildNumber(commitTimeUtc) == "111320261850");
         Require(BuildIdentity.FormatCommitBuildNumber(commitTimeUtc + 60) == "111320261851");
-        Require(BuildIdentity.CommitBuildNumber == "unknown" ||
-          System.Text.RegularExpressions.Regex.IsMatch(BuildIdentity.CommitBuildNumber, @"^[0-9]{12}$"));
+        // Do not accept the "unknown" fallback: a released build must carry
+        // the current commit timestamp in Core's assembly metadata.
+        var stamp = typeof(BuildIdentity).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+          .SingleOrDefault(attribute => attribute.Key == "PTMCommitUnixSeconds")?.Value;
+        Require(long.TryParse(stamp, System.Globalization.NumberStyles.None,
+          System.Globalization.CultureInfo.InvariantCulture, out long embeddedSeconds));
+        Require(BuildIdentity.CommitBuildNumber == BuildIdentity.FormatCommitBuildNumber(embeddedSeconds));
+        Require(System.Text.RegularExpressions.Regex.IsMatch(BuildIdentity.CommitBuildNumber, @"^[0-9]{12}$"));
       });
       Run("append preserves independently parseable complete records", directory =>
       {
