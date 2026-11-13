@@ -32,7 +32,8 @@
       <PTMSourceRevision Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMSourceRevisionOutput)', '^[0-9a-fA-F]{40}$'))">$(PTMSourceRevisionOutput)</PTMSourceRevision>
       <PTMSourceRevision Condition="'$(PTMSourceRevision)' == ''">unknown</PTMSourceRevision>
       <PTMSourceRevision Condition="'$(PTMSourceRevision)' != 'unknown' and '$(PTMSourceStatusOutput)' != ''">$(PTMSourceRevision)-dirty</PTMSourceRevision>
-      <PTMCommitUnixSeconds Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMCommitUnixSecondsOutput)', '^[0-9]{9,11}
+      <PTMCommitUnixSeconds Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMCommitUnixSecondsOutput)', '^[0-9]{9,11}$'))">$(PTMCommitUnixSecondsOutput)</PTMCommitUnixSeconds>
+      <PTMCommitUnixSeconds Condition="'$(PTMCommitUnixSeconds)' == ''">unknown</PTMCommitUnixSeconds>
     </PropertyGroup>
     <ItemGroup>
       <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
@@ -42,20 +43,6 @@
       <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
         <_Parameter1>PTMCommitUnixSeconds</_Parameter1>
         <_Parameter2>$(PTMCommitUnixSeconds)</_Parameter2>
-      </PTMBuildAttribute>
-    </ItemGroup>
-    <WriteCodeFragment Language="C#" OutputFile="$(IntermediateOutputPath)PTMSourceRevision.g.cs" AssemblyAttributes="@(PTMBuildAttribute)" />
-    <ItemGroup><Compile Include="$(IntermediateOutputPath)PTMSourceRevision.g.cs" /></ItemGroup>
-  </Target>
-
-</Project>
-))">$(PTMCommitUnixSecondsOutput)</PTMCommitUnixSeconds>
-      <PTMCommitUnixSeconds Condition="'$(PTMCommitUnixSeconds)' == ''">unknown</PTMCommitUnixSeconds>
-    </PropertyGroup>
-    <ItemGroup>
-      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>PTMSourceRevision</_Parameter1>
-        <_Parameter2>$(PTMSourceRevision)</_Parameter2>
       </PTMBuildAttribute>
     </ItemGroup>
     <WriteCodeFragment Language="C#" OutputFile="$(IntermediateOutputPath)PTMSourceRevision.g.cs" AssemblyAttributes="@(PTMBuildAttribute)" />
