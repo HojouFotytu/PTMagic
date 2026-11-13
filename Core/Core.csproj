@@ -32,46 +32,11 @@
       <PTMSourceRevision Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMSourceRevisionOutput)', '^[0-9a-fA-F]{40}$'))">$(PTMSourceRevisionOutput)</PTMSourceRevision>
       <PTMSourceRevision Condition="'$(PTMSourceRevision)' == ''">unknown</PTMSourceRevision>
       <PTMSourceRevision Condition="'$(PTMSourceRevision)' != 'unknown' and '$(PTMSourceStatusOutput)' != ''">$(PTMSourceRevision)-dirty</PTMSourceRevision>
-      <!-- git rev-list emits "<epoch seconds> <full SHA>"; extract only the epoch. -->
-      <PTMCommitUnixSeconds Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(PTMCommitUnixSecondsOutput)', '^[0-9]{9,11} [0-9a-fA-F]{40,64}
-    </PropertyGroup>
-    <!-- Fail at build time rather than shipping a misleading "Build unknown" assembly. -->
-    <Error Condition="'$(PTMCommitUnixSeconds)' == 'unknown'" Text="PTMagic build identity: failed to retrieve the HEAD Git commit timestamp. Confirm Git and repository metadata are available." />
-    <ItemGroup>
-      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>PTMSourceRevision</_Parameter1>
-        <_Parameter2>$(PTMSourceRevision)</_Parameter2>
-      </PTMBuildAttribute>
-      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>PTMCommitUnixSeconds</_Parameter1>
-        <_Parameter2>$(PTMCommitUnixSeconds)</_Parameter2>
-      </PTMBuildAttribute>
-    </ItemGroup>
-    <WriteCodeFragment Language="C#" OutputFile="$(IntermediateOutputPath)PTMSourceRevision.g.cs" AssemblyAttributes="@(PTMBuildAttribute)" />
-    <ItemGroup><Compile Include="$(IntermediateOutputPath)PTMSourceRevision.g.cs" /></ItemGroup>
-  </Target>
-
-</Project>
-))">$([System.Text.RegularExpressions.Regex]::Replace('$(PTMCommitUnixSecondsOutput)', '^([0-9]{9,11}) [0-9a-fA-F]{40,64}
-    </PropertyGroup>
-    <ItemGroup>
-      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>PTMSourceRevision</_Parameter1>
-        <_Parameter2>$(PTMSourceRevision)</_Parameter2>
-      </PTMBuildAttribute>
-      <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>PTMCommitUnixSeconds</_Parameter1>
-        <_Parameter2>$(PTMCommitUnixSeconds)</_Parameter2>
-      </PTMBuildAttribute>
-    </ItemGroup>
-    <WriteCodeFragment Language="C#" OutputFile="$(IntermediateOutputPath)PTMSourceRevision.g.cs" AssemblyAttributes="@(PTMBuildAttribute)" />
-    <ItemGroup><Compile Include="$(IntermediateOutputPath)PTMSourceRevision.g.cs" /></ItemGroup>
-  </Target>
-
-</Project>
-, '$1'))</PTMCommitUnixSeconds>
+      <!-- rev-list outputs epoch followed by SHA; extract its leading digits only. -->
+      <PTMCommitUnixSeconds>$([System.Text.RegularExpressions.Regex]::Match('$(PTMCommitUnixSecondsOutput)', '^[0-9]+').Value)</PTMCommitUnixSeconds>
       <PTMCommitUnixSeconds Condition="'$(PTMCommitUnixSeconds)' == ''">unknown</PTMCommitUnixSeconds>
     </PropertyGroup>
+    <Error Condition="'$(PTMCommitUnixSeconds)' == 'unknown'" Text="PTMagic cannot stamp its Git commit timestamp; build aborted." />
     <ItemGroup>
       <PTMBuildAttribute Include="System.Reflection.AssemblyMetadataAttribute">
         <_Parameter1>PTMSourceRevision</_Parameter1>
