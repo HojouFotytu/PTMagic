@@ -21,11 +21,7 @@ namespace Monitor
       Logger.WriteLine("INFO: Starting PT Magic Monitor...");
       Logger.WriteLine("INFO: Beginning startup checks...");
 
-      string monitorBasePath = Directory.GetCurrentDirectory();
-      if (!System.IO.File.Exists(monitorBasePath + Path.DirectorySeparatorChar + "appsettings.json"))
-      {
-        monitorBasePath += Path.DirectorySeparatorChar + "Monitor";
-      }
+      string monitorBasePath = Configuration.MonitorPathResolver.FindMonitorBasePath();
 
       // Startup checks
       string appsettingsJson = monitorBasePath + Path.DirectorySeparatorChar + "appsettings.json";
@@ -43,12 +39,8 @@ namespace Monitor
                 .AddJsonFile("appsettings.json", false)
                 .Build();
 
-        string ptMagicBasePath = config.GetValue<string>("PTMagicBasePath");
-
-        if (!ptMagicBasePath.EndsWith(Path.DirectorySeparatorChar))
-        {
-          ptMagicBasePath += Path.DirectorySeparatorChar;
-        }
+        string ptMagicBasePath = Configuration.MonitorPathResolver.ResolvePTMagicBasePath(
+          config.GetValue<string>("PTMagicBasePath"), monitorBasePath);
 
         // More startup checks
         // Check if PT Magic directoy is correctly configured

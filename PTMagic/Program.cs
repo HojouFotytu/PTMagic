@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading;
 using System.Reflection;
 using Core.Helper;
@@ -13,11 +14,20 @@ namespace PTMagic
   class ProgramT
   {
     // Create a logger
-    private static LogHelper _log = ServiceHelper.BuildLoggerService().GetRequiredService<LogHelper>();
+    private static LogHelper _log;
 
     // Main class entry
     public static void Main(string[] args)
     {
+      // Keep an explicitly configured working directory (development/systemd).
+      // For a deployed executable launched elsewhere, find settings next to the binary.
+      if (!HasSettings(Directory.GetCurrentDirectory()) && HasSettings(AppContext.BaseDirectory))
+      {
+        Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+      }
+
+      _log = ServiceHelper.BuildLoggerService().GetRequiredService<LogHelper>();
+
       // Register a global exception handler
       AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(GlobalUnhandledExceptionHandler);
 
@@ -33,6 +43,12 @@ namespace PTMagic
       {
         Thread.Sleep(10000);
       }
+    }
+
+    private static bool HasSettings(string directory)
+    {
+      return File.Exists(Path.Combine(directory, "settings.general.json"))
+        && File.Exists(Path.Combine(directory, "settings.analyzer.json"));
     }
 
     // Global unhandled exception handler

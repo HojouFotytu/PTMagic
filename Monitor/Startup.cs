@@ -18,31 +18,25 @@ namespace Monitor
   public class Startup
   {
     PTMagicConfiguration systemConfiguration = null;
+    private readonly IWebHostEnvironment _hostingEnvironment;
 
-    public Startup()
+    public Startup(IWebHostEnvironment hostingEnvironment)
     {
+      _hostingEnvironment = hostingEnvironment;
     }
 
     // This method gets called by the runtime. Use this method to add services to the container.
     public void ConfigureServices(IServiceCollection services)
     {
-      string monitorBasePath = Directory.GetCurrentDirectory();
-      if (!System.IO.File.Exists(monitorBasePath + Path.DirectorySeparatorChar + "appsettings.json"))
-      {
-        monitorBasePath += Path.DirectorySeparatorChar + "Monitor";
-      }
+      string monitorBasePath = _hostingEnvironment.ContentRootPath;
 
       IConfiguration config = new ConfigurationBuilder()
                 .SetBasePath(monitorBasePath)
                 .AddJsonFile("appsettings.json", false)
                 .Build();
 
-      string ptMagicBasePath = config.GetValue<string>("PTMagicBasePath");
-
-      if (!ptMagicBasePath.EndsWith(Path.DirectorySeparatorChar))
-      {
-        ptMagicBasePath += Path.DirectorySeparatorChar;
-      }
+      string ptMagicBasePath = Configuration.MonitorPathResolver.ResolvePTMagicBasePath(
+        config.GetValue<string>("PTMagicBasePath"), monitorBasePath);
 
       systemConfiguration = new PTMagicConfiguration(ptMagicBasePath);
 

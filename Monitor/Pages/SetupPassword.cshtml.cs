@@ -22,12 +22,14 @@ namespace Monitor.Pages
       base.PreInit();
       ValidationMessage = "Test";
       string encryptedOldPassword = null;
+      bool secureSettingsExists = System.IO.File.Exists(
+        System.IO.Path.Combine(PTMagicBasePath, "settings.secure.json"));
 
       if (OldPassword != null)
       {
           encryptedOldPassword = EncryptionHelper.Encrypt(OldPassword);
 
-          if (!Password.Equals(PasswordConfirm) || !encryptedOldPassword.Equals(PTMagicConfiguration.SecureSettings.MonitorPassword) && System.IO.File.Exists(System.IO.Directory.GetCurrentDirectory().Split("Monitor")[0] + "/settings.secure.json"))
+          if (!Password.Equals(PasswordConfirm) || !encryptedOldPassword.Equals(PTMagicConfiguration.SecureSettings.MonitorPassword) && secureSettingsExists)
           {
             ValidationMessage = "Old Password wrong or new Password does not match with confirmation";
           }
@@ -40,7 +42,7 @@ namespace Monitor.Pages
       }
       else
       {
-          if (!Password.Equals(PasswordConfirm) && !System.IO.File.Exists(System.IO.Directory.GetCurrentDirectory().Split("Monitor")[0] + "/settings.secure.json"))
+          if (!Password.Equals(PasswordConfirm) && !secureSettingsExists)
           {
             ValidationMessage = "New Password does not match with confirmation";
           }

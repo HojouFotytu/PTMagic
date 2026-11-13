@@ -411,7 +411,7 @@ namespace Monitor.Pages
 
     private void LoadMarketTrendAnalytics()
     {
-      string path = Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, MarketTrendAnalyticsSnapshotFileName);
+      string path = Path.Combine(PTMagicBasePath, Constants.PTMagicPathData, MarketTrendAnalyticsSnapshotFileName);
       if (!System.IO.File.Exists(path))
       {
         AnalyticsLoadError = "No MarketTrend analytics snapshot has been written yet. Run the Analyzer with one or more MarketTrend Metrics enabled.";
@@ -476,7 +476,7 @@ namespace Monitor.Pages
 
     private void LoadMarketUnderlyingTypes()
     {
-      string metadataPath = Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, Constants.PTMagicPathExchange, "BinanceFuturesMarketMetadata.json");
+      string metadataPath = Path.Combine(PTMagicBasePath, Constants.PTMagicPathData, Constants.PTMagicPathExchange, "BinanceFuturesMarketMetadata.json");
       if (!System.IO.File.Exists(metadataPath))
       {
         return;

@@ -2,6 +2,7 @@
 using System.IO;
 using System.Threading;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,7 @@ using Core.Main.DataObjects.PTMagicData;
 using Core.MarketAnalyzer;
 using System.Diagnostics;
 using Core.Main.DataObjects;
+using Monitor.Configuration;
 
 namespace Monitor._Internal
 {
@@ -87,11 +89,8 @@ namespace Monitor._Internal
             {
                 if (String.IsNullOrEmpty(_cachedMonitorBasePath))
                 {
-                    string monitorBasePath = Directory.GetCurrentDirectory();
-                    if (!System.IO.File.Exists(monitorBasePath + Path.DirectorySeparatorChar + "appsettings.json"))
-                    {
-                        monitorBasePath += Path.DirectorySeparatorChar + "Monitor";
-                    }
+                    string monitorBasePath = HttpContext.RequestServices
+                        .GetRequiredService<IWebHostEnvironment>().ContentRootPath;
 
                     _cachedMonitorBasePath = EnsureTrailingDirectorySeparator(monitorBasePath);
                 }
@@ -107,7 +106,7 @@ namespace Monitor._Internal
                         .AddJsonFile("appsettings.json", false)
                         .Build();
 
-                    string configuredPTMagicBasePath = EnsureTrailingDirectorySeparator(config.GetValue<string>("PTMagicBasePath"));
+                    string configuredPTMagicBasePath = MonitorPathResolver.ResolvePTMagicBasePath(config.GetValue<string>("PTMagicBasePath"), _cachedMonitorBasePath);
                     basePathChanged = !String.Equals(_cachedPTMagicBasePath, configuredPTMagicBasePath, StringComparison.Ordinal);
                     _cachedPTMagicBasePath = configuredPTMagicBasePath;
                     _cachedAppSettingsLastWriteUtc = appSettingsLastWriteUtc;
