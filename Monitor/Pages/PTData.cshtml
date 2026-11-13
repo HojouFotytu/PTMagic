@@ -1,0 +1,106 @@
+@page
+@model PTDataModel
+@{
+  ViewData["Title"] = "PT Data";
+}
+
+<div class="row">
+  <div class="col-md-12">
+    <div class="card-box">
+      <h4 class="m-t-0 header-title">PT Data</h4>
+      <p>
+        Download a ZIP of your ProfitTrailer trading records for performance analysis.
+        Select which records to include and how much available history to retrieve.
+        The ZIP is generated on demand from the ProfitTrailer instance connected to this Monitor.
+        It is downloaded to your computer; PTMagic does not upload it to any AI service or change trading settings.
+      </p>
+      <p>
+        Historical records are limited to what ProfitTrailer returns and may not cover your entire trading history.
+        Current Positions is a snapshot taken when you generate the ZIP.
+        The archive includes a manifest identifying which datasets were obtained or failed.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-12">
+    <div class="card-box">
+      <h4 class="m-t-0 header-title">Create Data ZIP</h4>
+      @if (!Model.ExportEnabled)
+      {
+        <div class="alert alert-warning" role="alert">
+          PT Data export requires a password-protected Monitor. Set a Monitor password before downloading private account data.
+        </div>
+      }
+      else
+      {
+        @if (!String.IsNullOrEmpty(Model.ValidationMessage))
+        {
+          <div class="alert alert-danger" role="alert">@Model.ValidationMessage</div>
+        }
+        <form method="post" asp-page-handler="Download" id="pt-data-export-form">
+          <div class="form-group row">
+            <label class="col-md-4 col-form-label" for="MaximumHistoryRecords">Amount of history</label>
+            <div class="col-md-8">
+              <select id="MaximumHistoryRecords" name="MaximumHistoryRecords" class="form-control">
+                <option value="0" selected="@(Model.MaximumHistoryRecords == 0)">All available records</option>
+                <option value="250" selected="@(Model.MaximumHistoryRecords == 250)">Up to 250 records per history category</option>
+                <option value="1000" selected="@(Model.MaximumHistoryRecords == 1000)">Up to 1,000 records per history category</option>
+                <option value="5000" selected="@(Model.MaximumHistoryRecords == 5000)">Up to 5,000 records per history category</option>
+              </select>
+              <span class="help-block"><small>Record limits apply separately to each selected history category. Limited exports use the order supplied by ProfitTrailer; newest-first order has not been verified. Current Positions always includes the present snapshot.</small></span>
+            </div>
+          </div>
+
+          <hr />
+          <h5 class="header-title m-b-20">Include in ZIP</h5>
+
+          <div class="form-group">
+            <div class="custom-control custom-checkbox">
+              <input type="checkbox" class="custom-control-input" id="IncludeBuys" name="IncludeBuys" value="true" checked="@Model.IncludeBuys" />
+              <label class="custom-control-label" for="IncludeBuys">Buy History</label>
+              <small class="form-text text-muted">Available buy records, including their original fields and diagnostic information.</small>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="custom-control custom-checkbox">
+              <input type="checkbox" class="custom-control-input" id="IncludeSales" name="IncludeSales" value="true" checked="@Model.IncludeSales" />
+              <label class="custom-control-label" for="IncludeSales">Sell History</label>
+              <small class="form-text text-muted">Available closed-trade and sales records as provided by ProfitTrailer.</small>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="custom-control custom-checkbox">
+              <input type="checkbox" class="custom-control-input" id="IncludeCurrentPositions" name="IncludeCurrentPositions" value="true" checked="@Model.IncludeCurrentPositions" />
+              <label class="custom-control-label" for="IncludeCurrentPositions">Current Positions</label>
+              <small class="form-text text-muted">Current active, DCA, pending and watchmode position records, grouped as one option.</small>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="custom-control custom-checkbox">
+              <input type="checkbox" class="custom-control-input" id="IncludeFunding" name="IncludeFunding" value="true" checked="@Model.IncludeFunding" />
+              <label class="custom-control-label" for="IncludeFunding">Funding Updates (potentially incomplete)</label>
+              <small class="form-text text-warning">ProfitTrailer records funding updates only while PT is running. Funding charges incurred while PT is offline may be absent. Do not use this record as a complete account funding ledger.</small>
+            </div>
+          </div>
+
+          <button class="btn btn-ptmagic text-uppercase waves-effect waves-light" type="submit" id="pt-data-download">
+            <i class="fa fa-download"></i> Generate and Download ZIP
+          </button>
+          <span class="help-block"><small>Downloads may take longer for large histories. The ZIP contains private trading information; store and share it carefully.</small></span>
+        </form>
+      }
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+  <script type="text/javascript">
+    $(document).ready(function () {
+      $('#pt-data-export-form').on('submit', function () {
+        $('#pt-data-download').prop('disabled', true).text('Generating ZIP...');
+      });
+    });
+  </script>
+}
