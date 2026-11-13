@@ -179,30 +179,25 @@ function checkSMSMoveButtons() {
   checkedSMSButtons = true;
 }
 
+// Check only rows still present in the editor. A removed row must not leave a
+// stale, incomplete AJAX status that permanently prevents subsequent saves.
+function analyzerSectionsReady(selector, statuses, inputSelector) {
+  var ready = true;
+  $(selector).each(function () {
+    var section = $(this);
+    var loadKey = section.attr('data-analyzer-load-key');
+    if (!loadKey || statuses[loadKey] !== true || section.find(inputSelector).length !== 1) {
+      ready = false;
+    }
+  });
+  return ready;
+}
+
 function checkBuildStatus() {
-  var buildCompleted = true;
-
-  for (key in statusMarketTrends) {
-    if (!statusMarketTrends[key]) {
-      buildCompleted = false;
-    }
-  }
-
-  if (buildCompleted) {
-    for (key in statusGlobalSettings) {
-      if (!statusGlobalSettings[key]) {
-        buildCompleted = false;
-      }
-    }
-  }
-
-  if (buildCompleted) {
-    for (key in statusSingleMarketSettings) {
-      if (!statusSingleMarketSettings[key]) {
-        buildCompleted = false;
-      }
-    }
-  }
+  var buildCompleted =
+    analyzerSectionsReady('.settings-markettrend', statusMarketTrends, 'input[data-analyzer-trend-name]') &&
+    analyzerSectionsReady('.settings-globalsetting', statusGlobalSettings, 'input[name$="|SettingName"]') &&
+    analyzerSectionsReady('.settings-singlemarketsetting', statusSingleMarketSettings, 'input[name$="|SettingName"]');
 
   $('#AnalyzerSettingsReady').val(buildCompleted ? 'true' : 'false');
   if (buildCompleted) {
@@ -212,7 +207,11 @@ function checkBuildStatus() {
     checkMTMoveButtons();
     checkGSMoveButtons();
     checkSMSMoveButtons();
+  } else {
+    $('#div-save-settings').addClass('hidden');
+    $('#div-loading-settings').removeClass('hidden');
   }
+  return buildCompleted;
 }
 
 $.fn.buildMarketTrendSettings = function () {
@@ -222,6 +221,7 @@ $.fn.buildMarketTrendSettings = function () {
     var rootUrl = $(this).data('rooturl');
 
     var loadKey = marketTrendName || newAnalyzerRowId();
+    $(this).attr('data-analyzer-load-key', loadKey);
     statusMarketTrends[loadKey] = false;
     $('#AnalyzerSettingsReady').val('false');
     $('#div-save-settings').addClass('hidden');
@@ -253,6 +253,7 @@ $.fn.buildGlobalSettings = function () {
     var rootUrl = $(this).data('rooturl');
 
     var loadKey = settingName || newAnalyzerRowId();
+    $(this).attr('data-analyzer-load-key', loadKey);
     statusGlobalSettings[loadKey] = false;
     $('#AnalyzerSettingsReady').val('false');
     $('#div-save-settings').addClass('hidden');
@@ -283,6 +284,7 @@ $.fn.buildSingleMarketSettings = function () {
     var rootUrl = $(this).data('rooturl');
 
     var loadKey = settingName || newAnalyzerRowId();
+    $(this).attr('data-analyzer-load-key', loadKey);
     statusSingleMarketSettings[loadKey] = false;
     $('#AnalyzerSettingsReady').val('false');
     $('#div-save-settings').addClass('hidden');
