@@ -14,6 +14,27 @@ namespace Core.Helper
     public static string SourceRevision => typeof(BuildIdentity).Assembly
       .GetCustomAttributes<AssemblyMetadataAttribute>()
       .FirstOrDefault(attribute => attribute.Key == "PTMSourceRevision")?.Value ?? "unknown";
+
+    // Stable for all builds of the same Git commit, regardless of restart time.
+    // Timestamp is the HEAD committer time, rendered as Korea Standard Time.
+    public static string CommitBuildNumber
+    {
+      get
+      {
+        string seconds = typeof(BuildIdentity).Assembly
+          .GetCustomAttributes<AssemblyMetadataAttribute>()
+          .FirstOrDefault(attribute => attribute.Key == "PTMCommitUnixSeconds")?.Value;
+        if (!long.TryParse(seconds, NumberStyles.None, CultureInfo.InvariantCulture, out long unixSeconds))
+          return "unknown";
+        try { return FormatCommitBuildNumber(unixSeconds); }
+        catch (ArgumentOutOfRangeException) { return "unknown"; }
+      }
+    }
+
+    public static string FormatCommitBuildNumber(long unixSeconds) =>
+      DateTimeOffset.FromUnixTimeSeconds(unixSeconds)
+        .ToOffset(TimeSpan.FromHours(9))
+        .ToString("MMddyyyyHHmm", CultureInfo.InvariantCulture);
   }
 
   public sealed class DecisionMetricInput
