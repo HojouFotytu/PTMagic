@@ -15,7 +15,7 @@
         It is downloaded to your computer; PTMagic does not upload it to any AI service or change trading settings.
       </p>
       <p>
-        Historical records are limited to what ProfitTrailer returns and may not cover your entire trading history.
+        Trading history is retrieved across paginated ProfitTrailer responses for the selected period; records beyond PT's own retention may not be available.
         Current Positions is a snapshot taken when you generate the ZIP.
         The archive includes a manifest identifying which datasets were obtained or failed.
       </p>
@@ -41,15 +41,16 @@
         }
         <form method="post" asp-page-handler="Download" id="pt-data-export-form">
           <div class="form-group row">
-            <label class="col-md-4 col-form-label" for="MaximumHistoryRecords">Amount of history</label>
+            <label class="col-md-4 col-form-label" for="HistoryRange">Trade history period</label>
             <div class="col-md-8">
-              <select id="MaximumHistoryRecords" name="MaximumHistoryRecords" class="form-control">
-                <option value="0" selected="@(Model.MaximumHistoryRecords == 0)">All available records</option>
-                <option value="250" selected="@(Model.MaximumHistoryRecords == 250)">Up to 250 records per history category</option>
-                <option value="1000" selected="@(Model.MaximumHistoryRecords == 1000)">Up to 1,000 records per history category</option>
-                <option value="5000" selected="@(Model.MaximumHistoryRecords == 5000)">Up to 5,000 records per history category</option>
+              <select id="HistoryRange" name="HistoryRange" class="form-control">
+                <option value="7d" selected="@(Model.HistoryRange == "7d")">Past 7 days</option>
+                <option value="1m" selected="@(Model.HistoryRange == "1m")">Past 1 month</option>
+                <option value="3m" selected="@(Model.HistoryRange == "3m")">Past 3 months</option>
+                <option value="6m" selected="@(Model.HistoryRange == "6m")">Past 6 months</option>
+                <option value="all" selected="@(Model.HistoryRange == "all")">All available history</option>
               </select>
-              <span class="help-block"><small>Record limits apply separately to each selected history category. Limited exports use the order supplied by ProfitTrailer; newest-first order has not been verified. Current Positions always includes the present snapshot.</small></span>
+              <span class="help-block"><small>UTC rolling periods ending when export starts. Buys and sales are retrieved newest first across PT API pages until the cutoff or end of available history. Funding is separate; current positions are snapshots.</small></span>
             </div>
           </div>
 

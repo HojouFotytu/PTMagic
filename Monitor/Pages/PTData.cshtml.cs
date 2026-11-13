@@ -7,7 +7,7 @@ namespace Monitor.Pages
 {
   public class PTDataModel : _Internal.BasePageModelSecure
   {
-    [BindProperty] public int MaximumHistoryRecords { get; set; } = 0;
+    [BindProperty] public string HistoryRange { get; set; } = "all";
     [BindProperty] public bool IncludeBuys { get; set; } = true;
     [BindProperty] public bool IncludeSales { get; set; } = true;
     [BindProperty] public bool IncludeCurrentPositions { get; set; } = true;
@@ -33,15 +33,15 @@ namespace Monitor.Pages
 
       var selection = new _Internal.PTDataExportSelection
       {
-        MaximumHistoryRecords = MaximumHistoryRecords,
+        HistoryRange = HistoryRange,
         IncludeBuys = IncludeBuys,
         IncludeSales = IncludeSales,
         IncludeCurrentPositions = IncludeCurrentPositions,
         IncludeFunding = IncludeFunding
       };
-      if (!selection.ValidLimit || !selection.AnySelected)
+      if (!selection.ValidHistoryRange || !selection.AnySelected)
       {
-        ValidationMessage = "Choose a valid history amount and at least one dataset.";
+        ValidationMessage = "Choose a valid history range and at least one dataset.";
         return Page();
       }
 
