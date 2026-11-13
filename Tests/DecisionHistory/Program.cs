@@ -16,6 +16,15 @@ internal static class Program
   {
     try
     {
+      Run("commit build number encodes Git timestamp as Korea date and time", directory =>
+      {
+        long commitTimeUtc = new DateTimeOffset(2026, 11, 13, 9, 50, 0, TimeSpan.Zero)
+          .ToUnixTimeSeconds();
+        Require(BuildIdentity.FormatCommitBuildNumber(commitTimeUtc) == "111320261850");
+        Require(BuildIdentity.FormatCommitBuildNumber(commitTimeUtc + 60) == "111320261851");
+        Require(BuildIdentity.CommitBuildNumber == "unknown" ||
+          System.Text.RegularExpressions.Regex.IsMatch(BuildIdentity.CommitBuildNumber, @"^[0-9]{12}$"));
+      });
       Run("append preserves independently parseable complete records", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
