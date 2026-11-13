@@ -110,7 +110,7 @@
   </div>
 </div>
 
-<form class="form-horizontal" method="post">
+<form id="AnalyzerSettingsForm" class="form-horizontal" method="post">
   <input type="hidden" name="AnalyzerSettingsFormVersion" value="@Monitor.Configuration.AnalyzerSettingsForm.Version" />
   <input type="hidden" name="AnalyzerSettingsRevision" value="@Model.SettingsRevision" />
   <input type="hidden" id="AnalyzerSettingsReady" name="AnalyzerSettingsReady" value="false" />
@@ -283,7 +283,7 @@
 
 @section Scripts {
   <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/plugins/switchery/js/switchery.min.js"></script>
-  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/analyzer-settings.js?v=@Html.Raw(Model.Summary.Version)-editor@(Monitor.Configuration.AnalyzerSettingsForm.Version)"></script>
+  <script src="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)assets/js/analyzer-settings.js?v=@Html.Raw(Model.Summary.Version)-editor@(Monitor.Configuration.AnalyzerSettingsForm.Version)-readiness-20261113"></script>
 
   <script type="text/javascript">
     $(document).ready(function () {
@@ -324,8 +324,18 @@
         return false;
       });
 
-      $(document).on('click', '.btn-savesettings', function () {
-        $('form').submit();
+      $('#AnalyzerSettingsForm').on('submit', function (event) {
+        if (!checkBuildStatus()) {
+          event.preventDefault();
+          $.Notification.notify('error', 'top left', 'Settings not ready',
+            'One or more Analyzer Settings sections did not finish loading. No changes were saved.');
+          return false;
+        }
+      });
+
+      $(document).on('click', '.btn-savesettings', function (event) {
+        event.preventDefault();
+        $('#AnalyzerSettingsForm').trigger('submit');
       });
 
       $('.btn-restorebackup').click(function () {
