@@ -780,40 +780,6 @@ namespace Core.Main.DataObjects
       _dcaLog.AddRange(ParsePairsData(rawWatchModeLogData, false));
     }
 
-    // PT may report TPS and trailing-stop-loss arming independently.
-    // A generic "armed" flag is ambiguous and must not be shown as TPS.
-    private static bool ReadTPSArmedState(JToken rawPosition)
-    {
-      if (!(rawPosition is JObject position))
-      {
-        return false;
-      }
-
-      foreach (string name in new[] { "tpsArmed", "isTpsArmed", "takeProfitSafetyArmed", "isTakeProfitSafetyArmed" })
-      {
-        JToken value = position.GetValue(name, StringComparison.OrdinalIgnoreCase);
-        if (value != null && value.Type == JTokenType.Boolean)
-        {
-          return value.Value<bool>();
-        }
-      }
-
-      foreach (string name in new[] { "tps", "takeProfitSafety" })
-      {
-        if (position.GetValue(name, StringComparison.OrdinalIgnoreCase) is JObject state)
-        {
-          JToken value = state.GetValue("armed", StringComparison.OrdinalIgnoreCase)
-            ?? state.GetValue("isArmed", StringComparison.OrdinalIgnoreCase);
-          if (value != null && value.Type == JTokenType.Boolean)
-          {
-            return value.Value<bool>();
-          }
-        }
-      }
-
-      return false;
-    }
-
     private List<DCALogData> ParsePairsData(dynamic pairsData, bool processBuyStrategies)
     {
       List<DCALogData> pairs = new List<DCALogData>();
@@ -838,7 +804,6 @@ namespace Core.Main.DataObjects
         dcaLogData.BuyStrategy = pair.buyStrategy == null ? "" : pair.buyStrategy;
         dcaLogData.SellStrategy = pair.sellStrategy == null ? "" : pair.sellStrategy;
         dcaLogData.IsTrailing = false;
-        dcaLogData.IsTPSArmed = ReadTPSArmedState((JToken)pair);
         
         var buyStrats = pair.buyStrategies != null ? pair.buyStrategies : pair.buyStrategiesData.data;
         if (buyStrats != null && processBuyStrategies)

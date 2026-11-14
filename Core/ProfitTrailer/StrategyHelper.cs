@@ -26,6 +26,10 @@ namespace Core.ProfitTrailer
         {
           result = "TSL";
         }
+        else if (result.Contains("STATS-TPS"))
+        {
+          result = "TPS";
+        }
         else
         {
           result = "";
@@ -397,7 +401,7 @@ namespace Core.ProfitTrailer
       }
       return result;
     }
-    public static string GetStrategyText(Summary summary, List<Strategy> strategies, string strategyText, bool isTrue, bool isTrailingBuyActive, bool isTPSArmed = false)
+    public static string GetStrategyText(Summary summary, List<Strategy> strategies, string strategyText, bool isTrue, bool isTrailingBuyActive)
     {
       bool isValidStrategy = false;
       Regex regx = new Regex(@"[ABCDEFGHIJKLMNOPQRSTUVWXYZ]", RegexOptions.Compiled);
@@ -422,9 +426,14 @@ namespace Core.ProfitTrailer
               {
                 strategyText += "<span class=\"label label-warn\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategy.Name + "\" >" + StrategyHelper.GetStrategyShortcut(strategy.Name, false) + "<i class=\"fa fa-flag text-success\"></i></span> ";
               }
+              else if (strategy.Name.Contains("STATS-TPS"))
+              {
+                strategyText += "<span class=\"label label-warn\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategy.Name + "\" >" + StrategyHelper.GetStrategyShortcut(strategy.Name, false) + "<i class=\"fa fa-shield text-success\"></i></span> ";
+              }
               else
               {
-                strategy.Name = "";
+                // Do not modify a cached strategy when hiding its diagnostic display.
+                continue;
               }           
             }
             else if (strategy.Name.Contains("FORMULA"))
@@ -484,10 +493,6 @@ namespace Core.ProfitTrailer
             strategyText = "<span class=\"label label-warning\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategyText + "\">" + StrategyHelper.GetStrategyShortcut(strategyText, false) + "</span> ";
           }
         }
-      }
-      if (isTPSArmed)
-      {
-        strategyText += " <i class=\"fa fa-shield text-success\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"TPS Armed\"></i>";
       }
       return strategyText;
     }

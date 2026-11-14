@@ -616,7 +616,6 @@ namespace Core.Main.DataObjects.PTMagicData
     public double BuyTriggerPercent { get; set; }
     public bool IsTrailing { get; set; }
     public bool IsTrue { get; set; }
-    public bool IsTPSArmed { get; set; }
     public string Market { get; set; }
     public double ProfitPercent { get; set; }
     public double AverageBuyPrice { get; set; }
