@@ -49,7 +49,14 @@ namespace Monitor.Pages
       {
         var zip = await _Internal.PTDataExportService.GenerateAsync(PTMagicConfiguration,
           selection, cancellationToken).ConfigureAwait(false);
-        string fileName = "PT-Data-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
+        string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
+        // Keep filenames portable across Windows/Linux and avoid path/control characters.
+        string safeInstanceName = System.Text.RegularExpressions.Regex
+          .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-")
+          .Trim('-', '_');
+        if (safeInstanceName.Length > 64) safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
+        if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
+        string fileName = "PT-Data-" + safeInstanceName + "-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
         return File(zip, "application/zip", fileName);
       }
       catch (InvalidOperationException)
