@@ -302,7 +302,7 @@ namespace Core.MarketAnalyzer.MarketData
         if (FuturesFundingFeatureEngine.HasGlobalMetrics(enabledMetrics))
         {
           var aggregates = FuturesFundingFeatureEngine.CalculateGlobal(
-            globalUniverse, enabledMetrics, assetMetrics, calculatedAtUtc);
+            globalUniverse, enabledMetrics, assetMetrics, calculatedAtUtc, marketTrend);
           foreach (var aggregate in aggregates)
             marketMetrics[aggregate.Key] = aggregate.Value;
         }

@@ -165,6 +165,13 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue(10)]
     public int TopNVolumeCount { get; set; } = 10;
 
+    // Phase 2B: latest Regular funding-rate extremes, in percentage points.
+    // +0.05 = +0.05%; -0.05 = -0.05%; independent of funding cadence.
+    [DefaultValue(0.05)]
+    public double ExtremePositiveFundingThreshold { get; set; } = 0.05;
+    [DefaultValue(-0.05)]
+    public double ExtremeNegativeFundingThreshold { get; set; } = -0.05;
+
     // Phase 1D counts synchronized simple returns on complete TrendMinutes
     // periods; N returns require N+1 exact close endpoints.
     [DefaultValue(30)]

@@ -236,6 +236,14 @@ internal static class Program
       rate == MarketTrendMetricScope.Asset &&
       MarketTrendMetrics.TryGetScope(MarketTrendMetrics.FundingSum, out var sum) &&
       sum == MarketTrendMetricScope.Asset, "Funding metrics must be asset scoped.");
+    Assert(MarketTrendMetrics.TryGetScope(MarketTrendMetrics.ExtremePositiveFundingBreadth, out var extremePositive) &&
+      extremePositive == MarketTrendMetricScope.Global &&
+      MarketTrendMetrics.TryGetScope(MarketTrendMetrics.ExtremeNegativeFundingBreadth, out var extremeNegative) &&
+      extremeNegative == MarketTrendMetricScope.Global, "Extreme funding breadth requires global scope.");
+    var defaults = new MarketTrend();
+    Assert(defaults.ExtremePositiveFundingThreshold == 0.05 &&
+      defaults.ExtremeNegativeFundingThreshold == -0.05,
+      "Extreme funding defaults must match percentage-point semantics.");
     var horizons = new[] {
       new MarketTrend { Name="H1",TrendMinutes=60,Metrics="FundingRate" },
       new MarketTrend { Name="H80",TrendMinutes=4800,Metrics="FundingSum" },
@@ -246,7 +254,7 @@ internal static class Program
       "Funding retention must derive solely from selected funding MarketTrends.");
     Assert(FuturesFundingDataService.RequiredHorizonMinutes(new[] {
       new MarketTrend { Name="GlobalFundingH24", Platform="Exchange", TrendMinutes=1440,
-        Metrics="MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth" }
+        Metrics="MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth,ExtremePositiveFundingBreadth,ExtremeNegativeFundingBreadth" }
     }) == 1440, "Global funding must activate the existing funding acquisition horizon.");
     horizons[1].TrendMinutes = 60 * 24 * 40;
     Assert(FuturesFundingDataService.RequiredHorizonMinutes(horizons) == 60 * 24 * 40,
@@ -476,11 +484,11 @@ internal static class Program
       x.CalculationWindowMinutes==1440 && x.ConfiguredStoreDataMaxHours==null &&
       x.HasAllAlignmentCapacity==null),"Funding history must not inherit OHLCV StoreDataMaxHours.");
     var global = new MarketTrend { Name="GlobalFundingH24", TrendMinutes=1440,
-      Metrics="MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth" };
+      Metrics="MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth,ExtremePositiveFundingBreadth,ExtremeNegativeFundingBreadth" };
     var requirements = MarketTrendHistoryRequirements.Describe(global,
       MarketTrendMetrics.ParseEnabled(global), TimeSpan.FromMinutes(5), Pin,
       configuredStoreDataMaxHours: 1);
-    Assert(requirements.Count == 3 && requirements.All(item =>
+    Assert(requirements.Count == 5 && requirements.All(item =>
       item.SourceDataFamily == "BinanceFuturesFunding" &&
       item.CalculationWindowMinutes == 1440 && item.ConfiguredStoreDataMaxHours == null),
       "Funding aggregates must not depend on OHLCV retention.");
@@ -686,7 +694,8 @@ internal static class Program
     string[] symbols = Enumerable.Range(0, 10)
       .Select(i => "FUND" + i.ToString("D2") + "USDT").ToArray();
     string[] global = { MarketTrendMetrics.MedianFundingRate,
-      MarketTrendMetrics.PositiveFundingBreadth, MarketTrendMetrics.NegativeFundingBreadth };
+      MarketTrendMetrics.PositiveFundingBreadth, MarketTrendMetrics.NegativeFundingBreadth,
+      MarketTrendMetrics.ExtremePositiveFundingBreadth, MarketTrendMetrics.ExtremeNegativeFundingBreadth };
     var service = new FuturesFundingDataService();
     var report = await service.RefreshAsync(symbols, 1440, Pin, 10,
       (symbol, from, until, limit, ct) =>
@@ -734,6 +743,44 @@ internal static class Program
       "Positive funding: 4/10.");
     Near(result[MarketTrendMetrics.NegativeFundingBreadth].Value, 50,
       "Negative funding: 5/10; zero is neutral.");
+    Near(result[MarketTrendMetrics.ExtremePositiveFundingBreadth].Value, 0,
+      "Default +0.05% threshold: none of the latest rates reaches the extreme.");
+    Near(result[MarketTrendMetrics.ExtremeNegativeFundingBreadth].Value, 10,
+      "Default -0.05% threshold: the exact boundary qualifies (1/10).");
+    var tighter = new MarketTrend {
+      ExtremePositiveFundingThreshold = 0.02,
+      ExtremeNegativeFundingThreshold = -0.02
+    };
+    var custom = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, asset, Pin, tighter);
+    Near(custom[MarketTrendMetrics.ExtremePositiveFundingBreadth].Value, 30,
+      "Configured +0.02% threshold is inclusive: 3/10.");
+    Near(custom[MarketTrendMetrics.ExtremeNegativeFundingBreadth].Value, 40,
+      "Configured -0.02% threshold is inclusive: 4/10.");
+    Near(custom[MarketTrendMetrics.MedianFundingRate].Value, -0.005,
+      "Changing extreme thresholds does not change unrelated funding aggregates.");
+
+    var invalidThresholds = new MarketTrend {
+      ExtremePositiveFundingThreshold = 0,
+      ExtremeNegativeFundingThreshold = +0.02
+    };
+    var invalid = FuturesFundingFeatureEngine.CalculateGlobal(
+      symbols, global, asset, Pin, invalidThresholds);
+    Assert(!invalid[MarketTrendMetrics.ExtremePositiveFundingBreadth].IsValid &&
+      !invalid[MarketTrendMetrics.ExtremePositiveFundingBreadth].Value.HasValue &&
+      invalid[MarketTrendMetrics.ExtremePositiveFundingBreadth].InvalidReason.Contains("greater than zero") &&
+      !invalid[MarketTrendMetrics.ExtremeNegativeFundingBreadth].IsValid &&
+      !invalid[MarketTrendMetrics.ExtremeNegativeFundingBreadth].Value.HasValue &&
+      invalid[MarketTrendMetrics.ExtremeNegativeFundingBreadth].InvalidReason.Contains("less than zero") &&
+      invalid[MarketTrendMetrics.PositiveFundingBreadth].IsValid,
+      "Incorrect extreme threshold signs fail closed without contaminating normal breadth.");
+
+    invalidThresholds.ExtremePositiveFundingThreshold = Double.NaN;
+    invalidThresholds.ExtremeNegativeFundingThreshold = Double.NegativeInfinity;
+    var nonfinite = FuturesFundingFeatureEngine.CalculateGlobal(
+      symbols, global, asset, Pin, invalidThresholds);
+    Assert(!nonfinite[MarketTrendMetrics.ExtremePositiveFundingBreadth].IsValid &&
+      !nonfinite[MarketTrendMetrics.ExtremeNegativeFundingBreadth].IsValid,
+      "Nonfinite funding thresholds must remain unavailable.");
     Near(asset[symbols[5]][MarketTrendMetrics.FundingRate].Value, 0,
       "Exact zero funding remains valid.");
     Near(asset[symbols[5]][MarketTrendMetrics.FundingSum].Value, 0,

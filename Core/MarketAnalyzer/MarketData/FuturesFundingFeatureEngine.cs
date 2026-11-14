@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Core.Main.DataObjects.PTMagicData;
 
 namespace Core.MarketAnalyzer.MarketData
 {
@@ -28,7 +29,9 @@ namespace Core.MarketAnalyzer.MarketData
       string name = MarketTrendMetrics.Normalize(metric);
       return name == MarketTrendMetrics.MedianFundingRate ||
         name == MarketTrendMetrics.PositiveFundingBreadth ||
-        name == MarketTrendMetrics.NegativeFundingBreadth;
+        name == MarketTrendMetrics.NegativeFundingBreadth ||
+        name == MarketTrendMetrics.ExtremePositiveFundingBreadth ||
+        name == MarketTrendMetrics.ExtremeNegativeFundingBreadth;
     }
 
     public static bool HasGlobalMetrics(IReadOnlyCollection<string> metrics) =>
@@ -44,7 +47,7 @@ namespace Core.MarketAnalyzer.MarketData
     public static IReadOnlyDictionary<string, FeatureValueSnapshot> CalculateGlobal(
       IEnumerable<string> globalSymbols, IReadOnlyCollection<string> enabled,
       IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetMetrics,
-      DateTimeOffset asOfUtc)
+      DateTimeOffset asOfUtc, MarketTrend trend = null)
     {
       var results = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
       if (!HasGlobalMetrics(enabled))
@@ -65,6 +68,9 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       double[] ordered = valid.Select(rate => rate.Value.Value).OrderBy(rate => rate).ToArray();
+      // A missing config uses MarketTrend's documented defaults; values must
+      // be finite and on the correct side of zero or that metric is UNAVAILABLE.
+      MarketTrend thresholds = trend ?? new MarketTrend();
       DateTimeOffset? oldestSource = valid.Count > 0 &&
         valid.All(rate => rate.SourceDataTimestampUtc.HasValue)
         ? valid.Min(rate => rate.SourceDataTimestampUtc.Value)
@@ -74,7 +80,20 @@ namespace Core.MarketAnalyzer.MarketData
         .Distinct(StringComparer.OrdinalIgnoreCase))
       {
         double? value = null;
-        if (ordered.Length > 0)
+        string thresholdError = "";
+        if (metric == MarketTrendMetrics.ExtremePositiveFundingBreadth &&
+            (!Double.IsFinite(thresholds.ExtremePositiveFundingThreshold) ||
+             thresholds.ExtremePositiveFundingThreshold <= 0))
+        {
+          thresholdError = "ExtremePositiveFundingThreshold must be finite and greater than zero percentage points.";
+        }
+        else if (metric == MarketTrendMetrics.ExtremeNegativeFundingBreadth &&
+            (!Double.IsFinite(thresholds.ExtremeNegativeFundingThreshold) ||
+             thresholds.ExtremeNegativeFundingThreshold >= 0))
+        {
+          thresholdError = "ExtremeNegativeFundingThreshold must be finite and less than zero percentage points.";
+        }
+        if (ordered.Length > 0 && thresholdError.Length == 0)
         {
           switch (metric)
           {
@@ -89,6 +108,14 @@ namespace Core.MarketAnalyzer.MarketData
             case MarketTrendMetrics.NegativeFundingBreadth:
               value = ordered.Count(rate => rate < 0) * 100.0 / ordered.Length;
               break;
+            case MarketTrendMetrics.ExtremePositiveFundingBreadth:
+              value = ordered.Count(rate => rate >= thresholds.ExtremePositiveFundingThreshold) *
+                100.0 / ordered.Length;
+              break;
+            case MarketTrendMetrics.ExtremeNegativeFundingBreadth:
+              value = ordered.Count(rate => rate <= thresholds.ExtremeNegativeFundingThreshold) *
+                100.0 / ordered.Length;
+              break;
           }
         }
         var raw = new FeatureValueSnapshot
@@ -96,7 +123,8 @@ namespace Core.MarketAnalyzer.MarketData
           CalculatedAtUtc = asOfUtc, SourceDataTimestampUtc = oldestSource,
           Value = value, IsValid = value.HasValue && Double.IsFinite(value.Value),
           SampleCount = valid.Count,
-          InvalidReason = value.HasValue ? "" : "No valid latest Regular funding settlement rates."
+          InvalidReason = thresholdError.Length > 0 ? thresholdError
+            : value.HasValue ? "" : "No valid latest Regular funding settlement rates."
         };
         results[metric] = MarketMetricCoverage.Apply(raw, valid.Count, symbols.Length, asOfUtc);
       }

@@ -48,6 +48,8 @@ namespace Core.MarketAnalyzer.MarketData
     public const string MedianFundingRate = "MedianFundingRate";
     public const string PositiveFundingBreadth = "PositiveFundingBreadth";
     public const string NegativeFundingBreadth = "NegativeFundingBreadth";
+    public const string ExtremePositiveFundingBreadth = "ExtremePositiveFundingBreadth";
+    public const string ExtremeNegativeFundingBreadth = "ExtremeNegativeFundingBreadth";
     public const string TakerBuyRatio = "TakerBuyRatio";
     public const string TakerImbalance = "TakerImbalance";
 
@@ -81,6 +83,8 @@ namespace Core.MarketAnalyzer.MarketData
         [MedianFundingRate] = MarketTrendMetricScope.Global,
         [PositiveFundingBreadth] = MarketTrendMetricScope.Global,
         [NegativeFundingBreadth] = MarketTrendMetricScope.Global,
+        [ExtremePositiveFundingBreadth] = MarketTrendMetricScope.Global,
+        [ExtremeNegativeFundingBreadth] = MarketTrendMetricScope.Global,
         [TakerBuyRatio] = MarketTrendMetricScope.Asset,
         [TakerImbalance] = MarketTrendMetricScope.Asset,
       };

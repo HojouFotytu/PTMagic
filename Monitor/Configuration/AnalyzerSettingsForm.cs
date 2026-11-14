@@ -58,7 +58,8 @@ namespace Monitor.Configuration
           "Name", "Platform", "TrendMinutes", "MaxMarkets", "TrendCurrency", "Metrics",
           "IgnoredMarkets", "AllowedMarkets", "TrendThreshold", "DisplayGraph", "DisplayOnMarketAnalyzerList",
           "ExcludeMainCurrency", "ATRPeriod", "VolumeExpansionLookback", "ATRPBreadthThreshold",
-          "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold", "TopNVolumeCount", "CorrelationLookback"
+          "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold", "TopNVolumeCount", "CorrelationLookback",
+          "ExtremePositiveFundingThreshold", "ExtremeNegativeFundingThreshold"
         });
         trends.Add(trend);
       }

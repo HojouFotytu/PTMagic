@@ -102,7 +102,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.MeanCorrelationToBTC, MarketTrendMetrics.MedianCorrelationToBTC),
       new GlobalMetricGroup("Funding",
         MarketTrendMetrics.MedianFundingRate, MarketTrendMetrics.PositiveFundingBreadth,
-        MarketTrendMetrics.NegativeFundingBreadth)
+        MarketTrendMetrics.NegativeFundingBreadth, MarketTrendMetrics.ExtremePositiveFundingBreadth,
+        MarketTrendMetrics.ExtremeNegativeFundingBreadth)
     };
 
     // Show only metrics actually published in at least one trend. Keep known
@@ -285,13 +286,17 @@ namespace Monitor.Pages
     public string GlobalMetricColorClass(string metric, FeatureValueSnapshot feature)
     {
       if (metric == MarketTrendMetrics.PositiveFundingBreadth ||
-          metric == MarketTrendMetrics.NegativeFundingBreadth)
+          metric == MarketTrendMetrics.NegativeFundingBreadth ||
+          metric == MarketTrendMetrics.ExtremePositiveFundingBreadth ||
+          metric == MarketTrendMetrics.ExtremeNegativeFundingBreadth)
       {
         if (feature == null || !feature.IsValid || feature.IsStale ||
             !feature.Value.HasValue || !Double.IsFinite(feature.Value.Value) ||
             feature.Value.Value == 0)
           return "text-muted";
-        return metric == MarketTrendMetrics.PositiveFundingBreadth ? "text-success" : "text-danger";
+        return metric == MarketTrendMetrics.PositiveFundingBreadth ||
+          metric == MarketTrendMetrics.ExtremePositiveFundingBreadth
+          ? "text-success" : "text-danger";
       }
       return "text-autocolor";
     }
@@ -390,6 +395,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.MedianFundingRate => "Median Funding Rate",
         MarketTrendMetrics.PositiveFundingBreadth => "Positive Funding Breadth",
         MarketTrendMetrics.NegativeFundingBreadth => "Negative Funding Breadth",
+        MarketTrendMetrics.ExtremePositiveFundingBreadth => "Extreme Positive Funding Breadth",
+        MarketTrendMetrics.ExtremeNegativeFundingBreadth => "Extreme Negative Funding Breadth",
         MarketTrendMetrics.TakerBuyRatio => "Taker Buy Ratio",
         MarketTrendMetrics.TakerImbalance => "Taker Imbalance",
         _ => metric
@@ -437,6 +444,8 @@ namespace Monitor.Pages
         MarketTrendMetrics.MedianFundingRate => "Median latest source-verified Regular funding rate among the exact selected global population, in percentage points. Requires at least 90% market coverage.",
         MarketTrendMetrics.PositiveFundingBreadth => "Percent of markets with strictly positive latest valid Regular funding rates among valid global markets; zero is neutral. Requires 90% eligible-market coverage.",
         MarketTrendMetrics.NegativeFundingBreadth => "Percent of markets with strictly negative latest valid Regular funding rates among valid global markets; zero is neutral. Requires 90% eligible-market coverage.",
+        MarketTrendMetrics.ExtremePositiveFundingBreadth => "Percent of valid global markets whose latest verified Regular funding rate is at or above the configured ExtremePositiveFundingThreshold (positive percentage points; default +0.05%). Requires at least 90% coverage of the frozen global population.",
+        MarketTrendMetrics.ExtremeNegativeFundingBreadth => "Percent of valid global markets whose latest verified Regular funding rate is at or below the configured ExtremeNegativeFundingThreshold (negative percentage points; default -0.05%). Requires at least 90% coverage of the frozen global population.",
         MarketTrendMetrics.TakerBuyRatio => "Taker-buy quote volume divided by total quote volume summed over the latest exact complete MarketTrend-duration UTC period. Range 0–1; 0.5 is balanced. Missing or invalid history remains unavailable.",
         MarketTrendMetrics.TakerImbalance => "Twice TakerBuyRatio minus one, using exactly the same volume-weighted closed MarketTrend period. Range -1 to +1; zero is balanced. Not an independent data source from TakerBuyRatio.",
         _ => metric
