@@ -50,6 +50,11 @@
           </div>
           <span class="text-muted">Live streaming</span>
         </div>
+        <div id="log-previous" style="background:#18222d;color:#dde4eb;padding:10px;margin-bottom:8px;font:12px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;overflow-wrap:anywhere;" hidden>
+          <strong>Previous raid summary</strong>
+          <div id="log-previous-lines"></div>
+        </div>
+        <button id="log-older" class="btn btn-sm btn-secondary mb-2" type="button" hidden>Show earlier current-raid lines</button>
         <div id="log-output" role="log" aria-label="Application logs" aria-live="off" tabindex="0"
           style="background:#111820;color:#dde4eb;min-height:380px;max-height:68vh;overflow:auto;padding:12px;font:12px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;overflow-wrap:anywhere;"></div>
       }
@@ -67,6 +72,9 @@
   var level = document.getElementById('log-level');
   var search = document.getElementById('log-search');
   var output = document.getElementById('log-output');
+  var previousPanel = document.getElementById('log-previous');
+  var previousLines = document.getElementById('log-previous-lines');
+  var olderButton = document.getElementById('log-older');
   var status = document.getElementById('log-status');
   var toggle = document.getElementById('log-toggle');
   var clear = document.getElementById('log-clear');
@@ -111,14 +119,33 @@
       if (matches(lines[i])) frag.appendChild(createEntry(lines[i]));
     }
     output.appendChild(frag);
-    while (output.childNodes.length > maxLines) output.removeChild(output.firstChild);
+    while (output.childNodes.length > displayLimit) output.removeChild(output.firstChild);
     if (autoScroll.checked) output.scrollTop = output.scrollHeight;
   }
 
+  function renderPrevious() {
+    var visible = source.value === 'analyzer' && previousRaidSummary.length > 0;
+    previousPanel.hidden = !visible;
+    if (!visible) { previousLines.replaceChildren(); return; }
+    var fragment = document.createDocumentFragment();
+    previousRaidSummary.filter(matches).forEach(function (line) {
+      fragment.appendChild(createEntry(line));
+    });
+    previousLines.replaceChildren(fragment);
+  }
+
+  function updateOlderButton() {
+    var count = history[source.value].filter(matches).length;
+    olderButton.hidden = source.value !== 'analyzer' || count <= displayLimit;
+    if (!olderButton.hidden) olderButton.textContent = 'Show earlier current-raid lines (' + (count - displayLimit) + ' hidden)';
+  }
+
   function render() {
-    var lines = (source.value === "analyzer" ? previousRaidSummary.concat(history.analyzer) : history.monitor).filter(matches).slice(-displayLimit);
+    var lines = history[source.value].filter(matches).slice(-displayLimit);
     output.replaceChildren();
     append(lines);
+    renderPrevious();
+    updateOlderButton();
   }
 
   function flush() {
@@ -126,6 +153,7 @@
     if (!pending.length) return;
     var batch = pending.splice(0);
     append(batch);
+    updateOlderButton();
   }
 
   function scheduleRender(lines) {
@@ -145,6 +173,7 @@
         collectingSummary = false;
         analyzerRaidStarted = true;
         history.analyzer = [];
+        displayLimit = 500;
         resetView = true;
       }
       if (line.indexOf('RAID SUMMARY') !== -1) {
@@ -231,7 +260,11 @@
     };
   }
 
-  source.addEventListener('change', function () { render(); connect(); });
+  source.addEventListener('change', function () { displayLimit = 500; render(); connect(); });
+  olderButton.addEventListener('click', function () {
+    displayLimit += 500;
+    render();
+  });
   level.addEventListener('change', function () {
     pending.length = 0;
     if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
@@ -244,7 +277,9 @@
   });
   clear.addEventListener('click', function () {
     history[source.value] = [];
-    if (source.value === "analyzer") previousRaidSummary = [];
+    if (source.value === "analyzer") { previousRaidSummary = []; completedRaidSummary = []; }
+    renderPrevious();
+    updateOlderButton();
     pending.length = 0;
     if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
     output.replaceChildren();
