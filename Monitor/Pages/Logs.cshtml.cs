@@ -51,7 +51,7 @@ namespace Monitor.Pages
 
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
           FileShare.ReadWrite | FileShare.Delete);
-        string fileCursor = Path.GetFileName(path) + ":" + File.GetCreationTimeUtc(path).Ticks;
+        string fileCursor = Path.GetFileName(path) + ":" + System.IO.File.GetCreationTimeUtc(path).Ticks;
         long length = stream.Length;
         bool initial = cursor != fileCursor || offset < 0 || offset > length;
         long start = initial ? Math.Max(0, length - MaxChunkBytes) : offset;
