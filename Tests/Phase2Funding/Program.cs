@@ -244,6 +244,10 @@ internal static class Program
     Assert(FuturesFundingDataService.RequiredHorizonMinutes(horizons) == 4800 &&
       FuturesFundingDataService.RequiredHorizonMinutes(new[] { horizons[2] }) == 0,
       "Funding retention must derive solely from selected funding MarketTrends.");
+    Assert(FuturesFundingDataService.RequiredHorizonMinutes(new[] {
+      new MarketTrend { Name="GlobalFundingH24", Platform="Exchange", TrendMinutes=1440,
+        Metrics="MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth" }
+    }) == 1440, "Global funding must activate the existing funding acquisition horizon.");
     horizons[1].TrendMinutes = 60 * 24 * 40;
     Assert(FuturesFundingDataService.RequiredHorizonMinutes(horizons) == 60 * 24 * 40,
       "User TrendMinutes must not be silently capped at fixed 72h/8h/28d.");
@@ -471,6 +475,15 @@ internal static class Program
     Assert(details.Count==2 && details.All(x=>x.SourceDataFamily=="BinanceFuturesFunding" &&
       x.CalculationWindowMinutes==1440 && x.ConfiguredStoreDataMaxHours==null &&
       x.HasAllAlignmentCapacity==null),"Funding history must not inherit OHLCV StoreDataMaxHours.");
+    var global = new MarketTrend { Name="GlobalFundingH24", TrendMinutes=1440,
+      Metrics="MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth" };
+    var requirements = MarketTrendHistoryRequirements.Describe(global,
+      MarketTrendMetrics.ParseEnabled(global), TimeSpan.FromMinutes(5), Pin,
+      configuredStoreDataMaxHours: 1);
+    Assert(requirements.Count == 3 && requirements.All(item =>
+      item.SourceDataFamily == "BinanceFuturesFunding" &&
+      item.CalculationWindowMinutes == 1440 && item.ConfiguredStoreDataMaxHours == null),
+      "Funding aggregates must not depend on OHLCV retention.");
     _passed++;
   }
 
@@ -668,6 +681,75 @@ internal static class Program
     _passed++;
   }
 
+  private static async Task TestMarketWideFundingAggregates()
+  {
+    string[] symbols = Enumerable.Range(0, 10)
+      .Select(i => "FUND" + i.ToString("D2") + "USDT").ToArray();
+    string[] global = { MarketTrendMetrics.MedianFundingRate,
+      MarketTrendMetrics.PositiveFundingBreadth, MarketTrendMetrics.NegativeFundingBreadth };
+    var service = new FuturesFundingDataService();
+    var report = await service.RefreshAsync(symbols, 1440, Pin, 10,
+      (symbol, from, until, limit, ct) =>
+      {
+        int i = Array.IndexOf(symbols, symbol);
+        return Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+          new[] { Event(symbol, 30, (i - 5) * 0.0001m) });
+      }, Log);
+    Assert(report.CompleteSymbols == 10, "Regular source histories must be verified.");
+    var asset = FuturesFundingFeatureEngine.Calculate(symbols,
+      new[] { MarketTrendMetrics.FundingRate, MarketTrendMetrics.FundingSum },
+      1440, Pin, "BinanceFutures", service);
+    var result = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, asset, Pin);
+    Near(result[MarketTrendMetrics.MedianFundingRate].Value, -0.005,
+      "Funding median preserves percentage-point precision.");
+    Near(result[MarketTrendMetrics.PositiveFundingBreadth].Value, 40,
+      "Positive funding: 4/10.");
+    Near(result[MarketTrendMetrics.NegativeFundingBreadth].Value, 50,
+      "Negative funding: 5/10; zero is neutral.");
+    Near(asset[symbols[5]][MarketTrendMetrics.FundingRate].Value, 0,
+      "Exact zero funding remains valid.");
+    Near(asset[symbols[5]][MarketTrendMetrics.FundingSum].Value, 0,
+      "The same acquired source also publishes FundingSum.");
+    Assert(result.Values.All(v => v.IsValid && v.SampleCount == 10 &&
+      v.EligibleSampleCount == 10 && v.CoveragePercent == 100),
+      "Global funding preserves source metadata and the fixed denominator.");
+    var partial = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
+      asset, StringComparer.OrdinalIgnoreCase);
+    partial.Remove(symbols[9]);
+    var ninety = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, partial, Pin);
+    Assert(ninety.Values.All(v => v.IsValid && v.SampleCount == 9 &&
+      v.EligibleSampleCount == 10 && v.CoveragePercent == 90),
+      "Exactly 90% valid latest rates are enough.");
+    partial.Remove(symbols[8]);
+    var eighty = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, partial, Pin);
+    Assert(eighty.Values.All(v => !v.IsValid && !v.Value.HasValue &&
+      v.SampleCount == 8 && v.EligibleSampleCount == 10),
+      "Insufficient source coverage must not manufacture a value.");
+    var none = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global,
+      new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(), Pin);
+    Assert(none.Values.All(v => !v.IsValid && !v.Value.HasValue),
+      "Missing source must remain UNAVAILABLE.");
+    var emptyService = new FuturesFundingDataService();
+    await emptyService.RefreshAsync(new[] { "ZEROUSDT" }, 1440, Pin, 1,
+      (symbol, from, until, limit, ct) =>
+        Task.FromResult<IReadOnlyList<FuturesFundingObservation>>(
+          Array.Empty<FuturesFundingObservation>()), Log);
+    var empty = FuturesFundingFeatureEngine.Calculate(new[] { "ZEROUSDT" },
+      new[] { MarketTrendMetrics.FundingRate, MarketTrendMetrics.FundingSum },
+      1440, Pin, "BinanceFutures", emptyService);
+    Near(empty["ZEROUSDT"][MarketTrendMetrics.FundingSum].Value, 0,
+      "A verified settlement-free window has zero FundingSum.");
+    Assert(!empty["ZEROUSDT"][MarketTrendMetrics.FundingRate].IsValid,
+      "The same window has no latest Regular rate.");
+    Assert(FuturesFundingFeatureEngine.CalculateGlobal(new[] { "ZEROUSDT" }, global, empty, Pin)
+      .Values.All(v => !v.IsValid), "Absent rates cannot become a zero median.");
+    var spot = FuturesFundingFeatureEngine.Calculate(symbols,
+      new[] { MarketTrendMetrics.FundingRate }, 1440, Pin, "Binance", service);
+    Assert(FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, spot, Pin)
+      .Values.All(v => !v.IsValid), "Spot cannot expose Futures funding.");
+    _passed++;
+  }
+
   private static async Task<int> Main()
   {
     try
@@ -682,6 +764,7 @@ internal static class Program
       TestUrl();
       await TestUnicodeSymbolServiceAndCache();
       TestRegistryAndDerivedHorizon();
+      await TestMarketWideFundingAggregates();
       await TestCompleteWindowAndUnits();
       await TestSpecialExcluded();
       await TestUnknownTypeFailsClosed();

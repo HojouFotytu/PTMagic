@@ -44,6 +44,10 @@ namespace Core.MarketAnalyzer.MarketData
     // Retained Futures derivatives are settled funding rates.
     public const string FundingRate = "FundingRate";
     public const string FundingSum = "FundingSum";
+    // Market-wide derivatives metrics use the existing settled funding source.
+    public const string MedianFundingRate = "MedianFundingRate";
+    public const string PositiveFundingBreadth = "PositiveFundingBreadth";
+    public const string NegativeFundingBreadth = "NegativeFundingBreadth";
     public const string TakerBuyRatio = "TakerBuyRatio";
     public const string TakerImbalance = "TakerImbalance";
 
@@ -74,6 +78,9 @@ namespace Core.MarketAnalyzer.MarketData
         [MedianCorrelationToBTC] = MarketTrendMetricScope.Global,
         [FundingRate] = MarketTrendMetricScope.Asset,
         [FundingSum] = MarketTrendMetricScope.Asset,
+        [MedianFundingRate] = MarketTrendMetricScope.Global,
+        [PositiveFundingBreadth] = MarketTrendMetricScope.Global,
+        [NegativeFundingBreadth] = MarketTrendMetricScope.Global,
         [TakerBuyRatio] = MarketTrendMetricScope.Asset,
         [TakerImbalance] = MarketTrendMetricScope.Asset,
       };

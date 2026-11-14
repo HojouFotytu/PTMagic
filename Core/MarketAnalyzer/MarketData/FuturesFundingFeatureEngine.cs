@@ -23,6 +23,86 @@ namespace Core.MarketAnalyzer.MarketData
     public static bool HasMetrics(IReadOnlyCollection<string> metrics) =>
       metrics != null && metrics.Any(IsMetric);
 
+    public static bool IsGlobalMetric(string metric)
+    {
+      string name = MarketTrendMetrics.Normalize(metric);
+      return name == MarketTrendMetrics.MedianFundingRate ||
+        name == MarketTrendMetrics.PositiveFundingBreadth ||
+        name == MarketTrendMetrics.NegativeFundingBreadth;
+    }
+
+    public static bool HasGlobalMetrics(IReadOnlyCollection<string> metrics) =>
+      metrics != null && metrics.Any(IsGlobalMetric);
+
+    public static bool HasAnyMetrics(IReadOnlyCollection<string> metrics) =>
+      HasMetrics(metrics) || HasGlobalMetrics(metrics);
+
+    /// <summary>
+    /// Aggregate latest source-verified Regular settlement rates across exactly
+    /// the frozen global market population; unverified rates never become zero.
+    /// </summary>
+    public static IReadOnlyDictionary<string, FeatureValueSnapshot> CalculateGlobal(
+      IEnumerable<string> globalSymbols, IReadOnlyCollection<string> enabled,
+      IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetMetrics,
+      DateTimeOffset asOfUtc)
+    {
+      var results = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+      if (!HasGlobalMetrics(enabled))
+        return new ReadOnlyDictionary<string, FeatureValueSnapshot>(results);
+
+      string[] symbols = (globalSymbols ?? Array.Empty<string>())
+        .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+        .Select(FuturesFunding.NormalizeSymbol)
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      var valid = new List<FeatureValueSnapshot>();
+      foreach (string symbol in symbols)
+      {
+        if (assetMetrics != null && assetMetrics.TryGetValue(symbol, out var features) &&
+          features != null && features.TryGetValue(MarketTrendMetrics.FundingRate, out var rate) &&
+          rate != null && rate.IsValid && !rate.IsStale && rate.Value.HasValue &&
+          Double.IsFinite(rate.Value.Value))
+          valid.Add(rate);
+      }
+
+      double[] ordered = valid.Select(rate => rate.Value.Value).OrderBy(rate => rate).ToArray();
+      DateTimeOffset? oldestSource = valid.Count > 0 &&
+        valid.All(rate => rate.SourceDataTimestampUtc.HasValue)
+        ? valid.Min(rate => rate.SourceDataTimestampUtc.Value)
+        : (DateTimeOffset?)null;
+
+      foreach (string metric in enabled.Where(IsGlobalMetric).Select(MarketTrendMetrics.Normalize)
+        .Distinct(StringComparer.OrdinalIgnoreCase))
+      {
+        double? value = null;
+        if (ordered.Length > 0)
+        {
+          switch (metric)
+          {
+            case MarketTrendMetrics.MedianFundingRate:
+              int middle = ordered.Length / 2;
+              value = ordered.Length % 2 == 1 ? ordered[middle]
+                : ordered[middle - 1] + (ordered[middle] - ordered[middle - 1]) / 2.0;
+              break;
+            case MarketTrendMetrics.PositiveFundingBreadth:
+              value = ordered.Count(rate => rate > 0) * 100.0 / ordered.Length;
+              break;
+            case MarketTrendMetrics.NegativeFundingBreadth:
+              value = ordered.Count(rate => rate < 0) * 100.0 / ordered.Length;
+              break;
+          }
+        }
+        var raw = new FeatureValueSnapshot
+        {
+          CalculatedAtUtc = asOfUtc, SourceDataTimestampUtc = oldestSource,
+          Value = value, IsValid = value.HasValue && Double.IsFinite(value.Value),
+          SampleCount = valid.Count,
+          InvalidReason = value.HasValue ? "" : "No valid latest Regular funding settlement rates."
+        };
+        results[metric] = MarketMetricCoverage.Apply(raw, valid.Count, symbols.Length, asOfUtc);
+      }
+      return new ReadOnlyDictionary<string, FeatureValueSnapshot>(results);
+    }
+
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> Calculate(
       IEnumerable<string> assetSymbols, IReadOnlyCollection<string> enabled,
       int trendMinutes, DateTimeOffset asOfUtc, string exchange,

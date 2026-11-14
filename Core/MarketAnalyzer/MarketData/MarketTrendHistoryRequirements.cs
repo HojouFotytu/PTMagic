@@ -51,12 +51,15 @@ namespace Core.MarketAnalyzer.MarketData
         .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase))
       {
         if (!MarketTrendMetrics.IsKnown(metric)) continue;
-        if (FuturesFundingFeatureEngine.IsMetric(metric))
+        if (FuturesFundingFeatureEngine.IsMetric(metric) || FuturesFundingFeatureEngine.IsGlobalMetric(metric))
         {
           result.Add(new MarketTrendHistoryRequirement
           {
             Metric = metric, SourceDataFamily = "BinanceFuturesFunding",
-            Basis = "Fully paginated historical regular funding settlements from the exact " +
+            Basis = (FuturesFundingFeatureEngine.IsGlobalMetric(metric)
+              ? "Global market aggregate of each selected market's latest Regular settlement; " +
+                "at least 90% of the frozen global population requires valid latest rates. "
+              : "") + "Fully paginated historical regular funding settlements from the exact " +
               trend.TrendMinutes + " minute MarketTrend window, with the provider's own " +
               "settlement timestamps and variable funding schedule. A complete provider " +
               "query is required; no hardcoded 8h interval or separate retention hours.",

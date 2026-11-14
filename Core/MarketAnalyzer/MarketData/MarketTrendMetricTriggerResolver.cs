@@ -187,7 +187,7 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
-      if (FuturesFundingFeatureEngine.IsMetric(normalizedMetric) &&
+      if (FuturesFundingFeatureEngine.HasAnyMetrics(new[] { normalizedMetric }) &&
         !String.Equals(configuration.GeneralSettings.Application.Exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase))
       {
         error = "Metric '" + normalizedMetric + "' requires BinanceFutures; funding is unavailable on Spot/BinanceUS.";

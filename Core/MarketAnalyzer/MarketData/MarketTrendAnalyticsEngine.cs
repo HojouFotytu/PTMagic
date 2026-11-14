@@ -279,9 +279,13 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      if (FuturesFundingFeatureEngine.HasMetrics(enabledMetrics))
+      // FundingRate and FundingSum are also published for inspection whenever
+      // their underlying source is needed for any asset/global funding metric.
+      // Unselected derived values remain ineligible for configured triggers.
+      if (FuturesFundingFeatureEngine.HasAnyMetrics(enabledMetrics))
       {
-        var funding = FuturesFundingFeatureEngine.Calculate(assetUniverse, enabledMetrics,
+        var funding = FuturesFundingFeatureEngine.Calculate(assetUniverse,
+          new[] { MarketTrendMetrics.FundingRate, MarketTrendMetrics.FundingSum },
           marketTrend.TrendMinutes, calculatedAtUtc, exchangeName, fundingData);
         foreach (var asset in funding)
         {
@@ -291,6 +295,14 @@ namespace Core.MarketAnalyzer.MarketData
             : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
           foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
           assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+
+        if (FuturesFundingFeatureEngine.HasGlobalMetrics(enabledMetrics))
+        {
+          var aggregates = FuturesFundingFeatureEngine.CalculateGlobal(
+            globalUniverse, enabledMetrics, assetMetrics, calculatedAtUtc);
+          foreach (var aggregate in aggregates)
+            marketMetrics[aggregate.Key] = aggregate.Value;
         }
       }
 

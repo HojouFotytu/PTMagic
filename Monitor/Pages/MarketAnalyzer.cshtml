@@ -330,7 +330,7 @@ else
                           @foreach (string metric in group.Metrics)
                           {
                             Core.MarketAnalyzer.MarketData.FeatureValueSnapshot feature = Model.GetGlobalMetric(trend, metric);
-                            <div class="market-wide-group-line text-autocolor" data-toggle="tooltip" data-placement="top" title="@Model.FeatureTooltip(feature)">
+                            <div class="market-wide-group-line @Model.GlobalMetricColorClass(metric, feature)" data-toggle="tooltip" data-placement="top" title="@Model.FeatureTooltip(feature)">
                               @Model.FormatMetric(metric, feature)
                             </div>
                           }
@@ -433,14 +433,14 @@ else
                 <th>
                   @if (Model.HasAssetMetricsForMarket(market))
                   {
-                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show available per-asset metrics for @market" title="Show available per-asset metrics"><i class="fa fa-chevron-right"></i></button>
                   }
                   <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a></th>
               } else {
                 <th>
                   @if (Model.HasAssetMetricsForMarket(market))
                   {
-                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show available per-asset metrics for @market" title="Show available per-asset metrics"><i class="fa fa-chevron-right"></i></button>
                   }
                   <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a> <i class="fa fa-exclamation-triangle text-highlight" data-toggle="tooltip" data-placement="top" data-html="true" title="@await Component.InvokeAsync("PairIcon", mps)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner pair-tooltip'></div></div>"></i></th>
               }
@@ -510,14 +510,14 @@ else
                 <th>
                   @if (Model.HasAssetMetricsForMarket(market))
                   {
-                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show available per-asset metrics for @market" title="Show available per-asset metrics"><i class="fa fa-chevron-right"></i></button>
                   }
                   <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a></th>
               } else {
                 <th>
                   @if (Model.HasAssetMetricsForMarket(market))
                   {
-                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show configured per-asset metrics for @market" title="Show configured per-asset metrics"><i class="fa fa-chevron-right"></i></button>
+                    <button type="button" class="asset-metric-toggle" data-market="@market" aria-expanded="false" aria-label="Show available per-asset metrics for @market" title="Show available per-asset metrics"><i class="fa fa-chevron-right"></i></button>
                   }
                   <a href="@Core.Helper.SystemHelper.GetMarketLink(Model.PTMagicConfiguration.GeneralSettings.Monitor.LinkPlatform,Model.PTMagicConfiguration.GeneralSettings.Application.Exchange, market, Model.Summary.MainMarket, Model.PTMagicConfiguration.GeneralSettings.Monitor.TVCustomLayout)" target="_blank">@market</a> <i class="fa fa-exclamation-triangle text-highlight" data-toggle="tooltip" data-placement="top" data-html="true" title="@await Component.InvokeAsync("PairIcon", mps)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner pair-tooltip'></div></div>"></i></th>
               }
@@ -561,7 +561,7 @@ else
           $(table).find('tr.asset-metric-detail-row').remove();
           $(table).find('.asset-metric-toggle[aria-expanded="true"]').each(function () {
             $(this).attr('aria-expanded', 'false')
-              .attr('title', 'Show configured per-asset metrics')
+              .attr('title', 'Show available per-asset metrics')
               .find('i').removeClass('fa-chevron-down').addClass('fa-chevron-right');
           });
         }
@@ -584,7 +584,7 @@ else
               removeRow.parentNode.removeChild(removeRow);
             }
             $(button).attr('aria-expanded', 'false')
-              .attr('title', 'Show configured per-asset metrics')
+              .attr('title', 'Show available per-asset metrics')
               .find('i').removeClass('fa-chevron-down').addClass('fa-chevron-right');
             return;
           }
@@ -614,7 +614,7 @@ else
           });
           mainRow.parentNode.insertBefore(fragment, mainRow.nextSibling);
           $(button).attr('aria-expanded', 'true')
-            .attr('title', 'Hide configured per-asset metrics')
+            .attr('title', 'Hide available per-asset metrics')
             .find('i').removeClass('fa-chevron-right').addClass('fa-chevron-down');
         });
 

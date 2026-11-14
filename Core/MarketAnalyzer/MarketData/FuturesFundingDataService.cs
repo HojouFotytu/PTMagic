@@ -58,7 +58,7 @@ namespace Core.MarketAnalyzer.MarketData
     {
       int[] values = (trends ?? Enumerable.Empty<MarketTrend>())
         .Where(trend => trend != null && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
-          && FuturesFundingFeatureEngine.HasMetrics(MarketTrendMetrics.ParseEnabled(trend))
+          && FuturesFundingFeatureEngine.HasAnyMetrics(MarketTrendMetrics.ParseEnabled(trend))
           && trend.TrendMinutes >= 5 && trend.TrendMinutes % 5 == 0)
         .Select(trend => trend.TrendMinutes).ToArray();
       return values.Length == 0 ? 0 : values.Max();

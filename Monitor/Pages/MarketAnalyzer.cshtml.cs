@@ -105,7 +105,10 @@ namespace Monitor.Pages
       new GlobalMetricGroup("BTC / ETH Volume Share",
         MarketTrendMetrics.BTCVolumeShare, MarketTrendMetrics.BTCETHVolumeShare),
       new GlobalMetricGroup("BTC Correlation",
-        MarketTrendMetrics.MeanCorrelationToBTC, MarketTrendMetrics.MedianCorrelationToBTC)
+        MarketTrendMetrics.MeanCorrelationToBTC, MarketTrendMetrics.MedianCorrelationToBTC),
+      new GlobalMetricGroup("Funding",
+        MarketTrendMetrics.MedianFundingRate, MarketTrendMetrics.PositiveFundingBreadth,
+        MarketTrendMetrics.NegativeFundingBreadth)
     };
 
     public IEnumerable<MarketTrendAnalyticsMonitorTrend> OrderedAnalyticsTrends()
@@ -136,26 +139,30 @@ namespace Monitor.Pages
         return;
       }
 
-      string[][] configuredAssetMetrics = displayedTrends
-        .Select(trend => MarketTrendMetrics.ParseEnabled(trend)
-          .Where(metric =>
-            !String.Equals(metric, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
-            && MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
-            && (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both))
-          .ToArray())
-        .ToArray();
-      string[] metrics = configuredAssetMetrics.SelectMany(items => items)
-        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-      if (metrics.Length == 0)
-      {
-        return;
-      }
-
       MarketTrendAnalyticsMonitorTrend[] snapshots = displayedTrends.Select(trend =>
       {
         Analytics.Trends.TryGetValue(trend.Name, out MarketTrendAnalyticsMonitorTrend snapshot);
         return snapshot;
       }).ToArray();
+
+      // Display available per-asset calculations whether or not selected for
+      // triggers; this does not calculate unrelated or unrequested data families.
+      string[][] availableAssetMetrics = snapshots.Select(snapshot =>
+        snapshot?.AssetMetrics == null ? Array.Empty<string>() :
+          snapshot.AssetMetrics.Values
+            .Where(features => features != null)
+            .SelectMany(features => features.Keys)
+            .Where(metric =>
+              !String.Equals(metric, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
+              && MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
+              && (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(metric => metric, StringComparer.OrdinalIgnoreCase)
+            .ToArray()).ToArray();
+      string[] metrics = availableAssetMetrics.SelectMany(items => items)
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      if (metrics.Length == 0)
+        return;
       HashSet<string>[] eligibleSymbols = snapshots.Select(snapshot =>
         new HashSet<string>(snapshot?.AssetSymbols ?? new List<string>(), StringComparer.OrdinalIgnoreCase))
         .ToArray();
@@ -175,28 +182,24 @@ namespace Monitor.Pages
           for (int index = 0; index < displayedTrends.Length; index++)
           {
             MarketTrendAnalyticsMonitorTrend snapshot = snapshots[index];
-            if (!configuredAssetMetrics[index].Contains(metric, StringComparer.OrdinalIgnoreCase)
-              || snapshot == null || !eligibleSymbols[index].Contains(market))
+            if (!availableAssetMetrics[index].Contains(metric, StringComparer.OrdinalIgnoreCase)
+              || snapshot == null || !eligibleSymbols[index].Contains(market)
+              || snapshot.AssetMetrics == null
+              || !snapshot.AssetMetrics.TryGetValue(market, out Dictionary<string, FeatureValueSnapshot> marketMetrics)
+              || marketMetrics == null || !marketMetrics.TryGetValue(metric, out FeatureValueSnapshot feature))
             {
               row.Cells.Add(null);
               continue;
             }
 
             hasApplicableTrend = true;
-            FeatureValueSnapshot feature = null;
-            if (snapshot.AssetMetrics != null
-              && snapshot.AssetMetrics.TryGetValue(market, out Dictionary<string, FeatureValueSnapshot> marketMetrics)
-              && marketMetrics != null)
-            {
-              marketMetrics.TryGetValue(metric, out feature);
-            }
 
             row.Cells.Add(new InlineAssetMetricCell
             {
               Value = FormatInlineAssetMetric(metric, feature),
               ColorClass = InlineAssetMetricColor(metric, feature),
               Tooltip = feature == null
-                ? "Metric was configured but no value was published for this MarketTrend."
+                ? "Metric was calculated but no value was published for this MarketTrend."
                 : FeatureTooltip(feature)
             });
           }
@@ -253,6 +256,20 @@ namespace Monitor.Pages
       return FormatMetric(metric, feature);
     }
 
+    public string GlobalMetricColorClass(string metric, FeatureValueSnapshot feature)
+    {
+      if (metric == MarketTrendMetrics.PositiveFundingBreadth ||
+          metric == MarketTrendMetrics.NegativeFundingBreadth)
+      {
+        if (feature == null || !feature.IsValid || feature.IsStale ||
+            !feature.Value.HasValue || !Double.IsFinite(feature.Value.Value) ||
+            feature.Value.Value == 0)
+          return "text-muted";
+        return metric == MarketTrendMetrics.PositiveFundingBreadth ? "text-success" : "text-danger";
+      }
+      return "text-autocolor";
+    }
+
     public FeatureValueSnapshot GetGlobalMetric(MarketTrendAnalyticsMonitorTrend trend, string metric)
     {
       if (trend?.MarketMetrics == null)
@@ -269,6 +286,12 @@ namespace Monitor.Pages
       if (feature == null || !feature.IsValid || feature.IsStale || !feature.Value.HasValue)
       {
         return "--";
+      }
+
+      if (metric == MarketTrendMetrics.MedianFundingRate)
+      {
+        return feature.Value.Value.ToString("+0.000000;-0.000000;0.000000",
+          CultureInfo.InvariantCulture) + "%";
       }
 
       bool isReturnDifference = metric.Equals(MarketTrendMetrics.MeanMedianSpread, StringComparison.OrdinalIgnoreCase)
@@ -338,6 +361,9 @@ namespace Monitor.Pages
         MarketTrendMetrics.CorrelationToBTC => "BTC Correlation",
         MarketTrendMetrics.FundingRate => "Funding Rate",
         MarketTrendMetrics.FundingSum => "Funding Sum",
+        MarketTrendMetrics.MedianFundingRate => "Median Funding Rate",
+        MarketTrendMetrics.PositiveFundingBreadth => "Positive Funding Breadth",
+        MarketTrendMetrics.NegativeFundingBreadth => "Negative Funding Breadth",
         MarketTrendMetrics.TakerBuyRatio => "Taker Buy Ratio",
         MarketTrendMetrics.TakerImbalance => "Taker Imbalance",
         _ => metric
@@ -382,6 +408,9 @@ namespace Monitor.Pages
         MarketTrendMetrics.MedianCorrelationToBTC => "Median of valid BTC correlation coefficients across the selected global population; at least 90% coverage. BTC is included only when it belongs to that population. Unitless coefficient.",
         MarketTrendMetrics.FundingRate => "Latest regular funding settlement in the configured MarketTrend window, as a percentage. Missing regular settlements remain unavailable.",
         MarketTrendMetrics.FundingSum => "Sum of regular funding settlements in the configured MarketTrend window, as a percentage. Unverified history remains unavailable.",
+        MarketTrendMetrics.MedianFundingRate => "Median latest source-verified Regular funding rate among the exact selected global population, in percentage points. Requires at least 90% market coverage.",
+        MarketTrendMetrics.PositiveFundingBreadth => "Percent of markets with strictly positive latest valid Regular funding rates among valid global markets; zero is neutral. Requires 90% eligible-market coverage.",
+        MarketTrendMetrics.NegativeFundingBreadth => "Percent of markets with strictly negative latest valid Regular funding rates among valid global markets; zero is neutral. Requires 90% eligible-market coverage.",
         MarketTrendMetrics.TakerBuyRatio => "Taker-buy quote volume divided by total quote volume summed over the latest exact complete MarketTrend-duration UTC period. Range 0–1; 0.5 is balanced. Missing or invalid history remains unavailable.",
         MarketTrendMetrics.TakerImbalance => "Twice TakerBuyRatio minus one, using exactly the same volume-weighted closed MarketTrend period. Range -1 to +1; zero is balanced. Not an independent data source from TakerBuyRatio.",
         _ => metric

@@ -423,7 +423,7 @@ namespace Core.MarketAnalyzer.MarketData
       var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
         ?? new List<MarketTrend>()).Where(t => t != null &&
           String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase) &&
-          FuturesFundingFeatureEngine.HasMetrics(MarketTrendMetricSelection.Select(
+          FuturesFundingFeatureEngine.HasAnyMetrics(MarketTrendMetricSelection.Select(
             t, configuration.AnalyzerSettings))).ToArray();
       if (trends.Length == 0) return;
       if (!String.Equals(configuration.GeneralSettings?.Application?.Exchange, "BinanceFutures",
