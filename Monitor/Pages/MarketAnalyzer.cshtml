@@ -259,7 +259,7 @@ else
 </div>
 
 
-@if (Model.HasConfiguredMarketWideMetrics)
+@if (Model.HasPublishedMarketWideMetrics || Model.HasConfiguredMarketWideMetrics)
 {
   @if (!String.IsNullOrWhiteSpace(Model.AnalyticsLoadError))
   {
@@ -275,6 +275,7 @@ else
   else
   {
     List<Core.MarketAnalyzer.MarketData.MarketTrendAnalyticsMonitorTrend> analyticsTrends = Model.OrderedAnalyticsTrends().ToList();
+    IReadOnlyList<MarketAnalyzerModel.GlobalMetricGroup> availableGroups = Model.DisplayedGlobalMetricGroups;
     <div class="row">
       <div class="col-sm-12">
         <div class="card-box">
@@ -296,7 +297,7 @@ else
                     <th rowspan="2" scope="col">Trend</th>
                     <th rowspan="2" scope="col">Timeframe</th>
                     <th rowspan="2" scope="col">Markets</th>
-                    @foreach (MarketAnalyzerModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                    @foreach (MarketAnalyzerModel.GlobalMetricGroup group in availableGroups)
                     {
                       <th scope="col" class="market-wide-group">
                         <div class="market-wide-group-heading">@group.Heading.ToUpperInvariant()</div>
@@ -304,7 +305,7 @@ else
                     }
                   </tr>
                   <tr class="market-wide-subheadings">
-                    @foreach (MarketAnalyzerModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                    @foreach (MarketAnalyzerModel.GlobalMetricGroup group in availableGroups)
                     {
                       <th scope="col" class="market-wide-group">
                         @foreach (string metric in group.Metrics)
@@ -324,7 +325,7 @@ else
                       <td>@Core.Helper.SystemHelper.SplitCamelCase(trend.Name)</td>
                       <td>@Model.FormatTimeframe(trend.TrendMinutes)</td>
                       <td>@(trend.GlobalSymbols?.Count ?? 0)</td>
-                      @foreach (MarketAnalyzerModel.GlobalMetricGroup group in Model.GlobalMetricGroups)
+                      @foreach (MarketAnalyzerModel.GlobalMetricGroup group in availableGroups)
                       {
                         <td class="market-wide-group">
                           @foreach (string metric in group.Metrics)

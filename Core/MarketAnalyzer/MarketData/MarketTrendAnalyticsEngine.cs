@@ -119,11 +119,13 @@ namespace Core.MarketAnalyzer.MarketData
         : null;
 
       Dictionary<string, FeatureValueSnapshot> marketMetrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-      if (enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase))
+      // Publishing an already evaluated value for inspection does not enable
+      // that metric for any global/SMS trigger.
+      if (needsMeanPriceTrend)
       {
         marketMetrics[MarketTrendMetrics.PriceTrend] = meanPriceTrend;
       }
-      if (enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase))
+      if (needsMedianPriceTrend)
       {
         marketMetrics[MarketTrendMetrics.MedianPriceTrend] = medianPriceTrend;
       }
@@ -175,19 +177,17 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      if (needsAssetReturns)
+      if (needsAssetReturns || needsGlobalReturns)
       {
         foreach (string symbol in assetUniverse)
         {
+          // Global-only trends have evaluated returns for the frozen global
+          // subset, not the entire uncapped asset population. Publish those
+          // observations only; do not calculate missing asset returns.
+          if (!returns.TryGetValue(symbol, out FeatureValueSnapshot assetReturn))
+            continue;
           Dictionary<string, FeatureValueSnapshot> metrics = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-          FeatureValueSnapshot assetReturn = returns.TryGetValue(symbol, out FeatureValueSnapshot value)
-            ? value
-            : InvalidFeature(calculatedAtUtc, 0, "No normalized return data is available for '" + symbol + "'.");
-
-          if (enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase))
-          {
-            metrics[MarketTrendMetrics.PriceTrend] = assetReturn;
-          }
+          metrics[MarketTrendMetrics.PriceTrend] = assetReturn;
 
           if (needsRelativeStrengthMarket)
           {
@@ -279,14 +279,16 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      // FundingRate and FundingSum are also published for inspection whenever
-      // their underlying source is needed for any asset/global funding metric.
-      // Unselected derived values remain ineligible for configured triggers.
+      // Funding aggregate prerequisites are already calculated per asset. Only
+      // publish required values on this trend: FundingRate for selected asset
+      // use or global aggregate input, FundingSum only for selected asset use.
       if (FuturesFundingFeatureEngine.HasAnyMetrics(enabledMetrics))
       {
+        string[] globalRateSymbols = FuturesFundingFeatureEngine.HasGlobalMetrics(enabledMetrics)
+          ? globalUniverse : Array.Empty<string>();
         var funding = FuturesFundingFeatureEngine.Calculate(assetUniverse,
-          new[] { MarketTrendMetrics.FundingRate, MarketTrendMetrics.FundingSum },
-          marketTrend.TrendMinutes, calculatedAtUtc, exchangeName, fundingData);
+          enabledMetrics, marketTrend.TrendMinutes, calculatedAtUtc, exchangeName,
+          fundingData, globalRateSymbols);
         foreach (var asset in funding)
         {
           Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,

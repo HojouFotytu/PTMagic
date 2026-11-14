@@ -206,16 +206,21 @@ namespace Core.MarketAnalyzer.MarketData
 
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetResults =
         new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(StringComparer.OrdinalIgnoreCase);
-      if (assetATR || assetExpansion)
+      // Reuse feature snapshots already computed as global aggregate inputs,
+      // as well as explicitly requested asset features. Other assets are not
+      // calculated merely to populate the Monitor.
+      foreach (string symbol in asset)
       {
-        foreach (string symbol in asset)
-        {
-          Dictionary<string, FeatureValueSnapshot> symbolResults =
-            new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-          if (assetATR) symbolResults[MarketTrendMetrics.ATRP] = features[symbol].ATRP;
-          if (assetExpansion) symbolResults[MarketTrendMetrics.VolumeExpansion] = features[symbol].VolumeExpansion;
-          assetResults[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(symbolResults);
-        }
+        bool publishATR = assetATR || (globalATR && globalSet.Contains(symbol));
+        bool publishExpansion = assetExpansion || (globalExpansion && globalSet.Contains(symbol));
+        if ((!publishATR && !publishExpansion) ||
+            !features.TryGetValue(symbol, out TrendPeriodFeatures calculated))
+          continue;
+        Dictionary<string, FeatureValueSnapshot> symbolResults =
+          new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+        if (publishATR) symbolResults[MarketTrendMetrics.ATRP] = calculated.ATRP;
+        if (publishExpansion) symbolResults[MarketTrendMetrics.VolumeExpansion] = calculated.VolumeExpansion;
+        assetResults[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(symbolResults);
       }
 
       return new Phase1CFeatureResult

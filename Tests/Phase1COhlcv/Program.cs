@@ -182,6 +182,14 @@ internal static class Program
     Near(result.GlobalMetrics[MarketTrendMetrics.MedianATRP], 18.0, "Median from 9 available ATRP values");
     Near(result.GlobalMetrics[MarketTrendMetrics.VolatilityBreadth], 4.0 / 9.0 * 100.0,
       "Volatility breadth greater than threshold excludes exact equality");
+    Phase1CFeatureResult published = MarketTrendPhase1CEngine.Calculate(
+      trend, MarketTrendMetrics.ParseEnabled(trend), symbols, symbols, store, Interval, asOf);
+    Assert(published.AssetMetrics.Count == 10 &&
+      published.AssetMetrics.Values.All(item => item.Count == 1 &&
+        item.ContainsKey(MarketTrendMetrics.ATRP)),
+      "Global ATRP metrics publish the already-calculated per-asset input even when asset ATRP is not selected.");
+    Assert(published.AssetMetrics[symbols[0]][MarketTrendMetrics.ATRP].IsValid,
+      "Previously evaluated individual ATRP remains available under this trend.");
 
     // 8/10 usable is below the 90% cross-sectional requirement.
     store = NewStore();

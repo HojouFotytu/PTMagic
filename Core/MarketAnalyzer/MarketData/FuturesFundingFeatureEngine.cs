@@ -106,17 +106,34 @@ namespace Core.MarketAnalyzer.MarketData
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> Calculate(
       IEnumerable<string> assetSymbols, IReadOnlyCollection<string> enabled,
       int trendMinutes, DateTimeOffset asOfUtc, string exchange,
-      FuturesFundingDataService data)
+      FuturesFundingDataService data,
+      IReadOnlyCollection<string> aggregateRateSymbols = null)
     {
       var result = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(StringComparer.OrdinalIgnoreCase);
-      if (!HasMetrics(enabled))
+      // Only calculate the per-asset values required by explicit asset metrics
+      // or by selected global aggregates; never calculate FundingSum as a
+      // display side effect of a global FundingRate dependency.
+      string[] metrics = (enabled ?? Array.Empty<string>()).Where(IsMetric)
+        .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      bool assetRate = metrics.Contains(MarketTrendMetrics.FundingRate, StringComparer.OrdinalIgnoreCase);
+      bool assetSum = metrics.Contains(MarketTrendMetrics.FundingSum, StringComparer.OrdinalIgnoreCase);
+      HashSet<string> assets = new HashSet<string>(
+        (assetSymbols ?? Array.Empty<string>()).Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+          .Select(FuturesFunding.NormalizeSymbol), StringComparer.OrdinalIgnoreCase);
+      HashSet<string> globalRateMarkets = new HashSet<string>(
+        (aggregateRateSymbols ?? Array.Empty<string>()).Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+          .Select(FuturesFunding.NormalizeSymbol), StringComparer.OrdinalIgnoreCase);
+      if (!assetRate && !assetSum && globalRateMarkets.Count == 0)
         return new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(result);
-      string[] metrics = enabled.Where(IsMetric).Select(MarketTrendMetrics.Normalize)
-        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      HashSet<string> requiredMarkets = new HashSet<string>(globalRateMarkets, StringComparer.OrdinalIgnoreCase);
+      if (assetRate || assetSum)
+        requiredMarkets.UnionWith(assets);
+
       bool futures = String.Equals(exchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase);
-      foreach (string symbol in (assetSymbols ?? Array.Empty<string>()).Where(x => !String.IsNullOrWhiteSpace(x))
-        .Select(FuturesFunding.NormalizeSymbol).Distinct(StringComparer.OrdinalIgnoreCase))
+      foreach (string symbol in requiredMarkets)
       {
+        bool needRate = globalRateMarkets.Contains(symbol) || (assetRate && assets.Contains(symbol));
+        bool needSum = assetSum && assets.Contains(symbol);
         var values = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
         bool valid = false;
         IReadOnlyList<FuturesFundingObservation> history = Array.Empty<FuturesFundingObservation>();
@@ -128,8 +145,10 @@ namespace Core.MarketAnalyzer.MarketData
         bool unclassified = history.Any(row =>
           !row.IsRegular && !String.Equals(row.RateType, "Special", StringComparison.OrdinalIgnoreCase));
 
-        foreach (string metric in metrics)
+        foreach (string metric in new[] { MarketTrendMetrics.FundingRate, MarketTrendMetrics.FundingSum })
         {
+          if (metric == MarketTrendMetrics.FundingRate ? !needRate : !needSum)
+            continue;
           string error = !futures ? "Funding metrics require BinanceFutures, not Spot/BinanceUS."
             : !valid ? "Funding history is not completely verified over this MarketTrend window."
             : unclassified ? "Funding history includes an unclassified rateType; cannot infer Regular or Special."

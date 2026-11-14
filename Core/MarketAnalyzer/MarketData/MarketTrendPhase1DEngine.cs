@@ -94,13 +94,12 @@ namespace Core.MarketAnalyzer.MarketData
 
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetResults =
         new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(StringComparer.OrdinalIgnoreCase);
-      if (needAsset)
+      foreach (string symbol in assets)
       {
-        foreach (string symbol in assets)
-        {
-          assetResults[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(
-            new Dictionary<string, FeatureValueSnapshot> { [MarketTrendMetrics.CorrelationToBTC] = coefficients[symbol] });
-        }
+        if (!coefficients.TryGetValue(symbol, out FeatureValueSnapshot calculated))
+          continue; // No calculation outside the selected asset/global population.
+        assetResults[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(
+          new Dictionary<string, FeatureValueSnapshot> { [MarketTrendMetrics.CorrelationToBTC] = calculated });
       }
       return new Phase1DFeatureResult
       {

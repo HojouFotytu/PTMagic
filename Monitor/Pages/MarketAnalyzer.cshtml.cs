@@ -49,18 +49,12 @@ namespace Monitor.Pages
     public bool HasAssetMetricsForMarket(string market) =>
       !String.IsNullOrWhiteSpace(market) && InlineAssetMetricRows.ContainsKey(market);
 
-    public bool HasConfiguredDisplayAssetMetrics =>
-      MarketTrends != null && MarketTrends.Any(trend =>
-        trend != null
-        && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
-        && trend.DisplayOnMarketAnalyzerList
-        && MarketTrendMetrics.ParseEnabled(trend).Any(metric =>
-          !String.Equals(metric, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
-          && MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
-          && (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both)));
+    public bool HasPublishedMarketWideMetrics =>
+      Analytics?.Trends != null && Analytics.Trends.Values.Any(trend =>
+        trend?.MarketMetrics != null && trend.MarketMetrics.Count > 0);
 
-    // Only explicit global/both-scope Metrics entries create this panel. A blank Metrics
-    // field retains legacy PriceTrend behavior but does not count as a configured metrics view.
+    // Keep configuration-based diagnostics if a selected global metric has
+    // not yet produced a snapshot; actual display is driven by calculated data.
     public bool HasConfiguredMarketWideMetrics
     {
       get
@@ -111,9 +105,41 @@ namespace Monitor.Pages
         MarketTrendMetrics.NegativeFundingBreadth)
     };
 
+    // Show only metrics actually published in at least one trend. Keep known
+    // semantic group headings and include future/unknown published metric names
+    // without needing a separate Monitor registry change.
+    public IReadOnlyList<GlobalMetricGroup> DisplayedGlobalMetricGroups
+    {
+      get
+      {
+        HashSet<string> published = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Analytics?.Trends != null)
+        {
+          foreach (var trend in Analytics.Trends.Values)
+          {
+            if (trend?.MarketMetrics != null)
+              published.UnionWith(trend.MarketMetrics.Keys);
+          }
+        }
+        List<GlobalMetricGroup> groups = GlobalMetricGroups
+          .Select(group => new GlobalMetricGroup(group.Heading,
+            group.Metrics.Where(published.Contains).ToArray()))
+          .Where(group => group.Metrics.Count > 0).ToList();
+        HashSet<string> categorized = new HashSet<string>(
+          GlobalMetricGroups.SelectMany(group => group.Metrics),
+          StringComparer.OrdinalIgnoreCase);
+        string[] other = published.Where(metric => !categorized.Contains(metric))
+          .OrderBy(metric => metric, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (other.Length > 0)
+          groups.Add(new GlobalMetricGroup("Other", other));
+        return groups;
+      }
+    }
+
     public IEnumerable<MarketTrendAnalyticsMonitorTrend> OrderedAnalyticsTrends()
     {
       return Analytics?.Trends?.Values
+        .Where(trend => trend?.MarketMetrics != null && trend.MarketMetrics.Count > 0)
         .OrderBy(trend => trend.TrendMinutes)
         .ThenBy(trend => trend.Name, StringComparer.OrdinalIgnoreCase)
         ?? Enumerable.Empty<MarketTrendAnalyticsMonitorTrend>();
@@ -484,7 +510,10 @@ namespace Monitor.Pages
         LoadMarketUnderlyingTypes();
       }
 
-      if (HasConfiguredMarketWideMetrics || HasConfiguredDisplayAssetMetrics)
+      // Load available analytics for any Exchange MarketTrend. Monitoring
+      // must not be gated on which metrics were selected for trading triggers.
+      if (MarketTrends.Any(trend => trend != null &&
+          String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)))
       {
         LoadMarketTrendAnalytics();
       }

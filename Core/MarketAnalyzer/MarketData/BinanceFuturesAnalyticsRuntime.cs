@@ -454,7 +454,12 @@ namespace Core.MarketAnalyzer.MarketData
         var population = MarketTrendPopulationSelector.Select(trend,
           recentMarkets ?? new Dictionary<string, Market>(),
           universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
-        assets.UnionWith(population.AssetSymbols);
+        IReadOnlyCollection<string> selected = MarketTrendMetricSelection.Select(
+          trend, configuration.AnalyzerSettings);
+        if (FuturesFundingFeatureEngine.HasMetrics(selected))
+          assets.UnionWith(population.AssetSymbols);
+        if (FuturesFundingFeatureEngine.HasGlobalMetrics(selected))
+          assets.UnionWith(population.GlobalSymbols);
       }
 
       FundingRefreshReport report = await FundingDataServiceInstance.RefreshWithBulkAsync(

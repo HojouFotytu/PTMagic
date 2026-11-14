@@ -700,6 +700,34 @@ internal static class Program
       new[] { MarketTrendMetrics.FundingRate, MarketTrendMetrics.FundingSum },
       1440, Pin, "BinanceFutures", service);
     var result = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, asset, Pin);
+    // Global funding calculations already require an individual rate for
+    // selected global symbols. The Monitor must not cause unrelated work.
+    var aggregateOnly = FuturesFundingFeatureEngine.Calculate(symbols, global,
+      1440, Pin, "BinanceFutures", service, symbols);
+    Assert(aggregateOnly.Count == symbols.Length && aggregateOnly.Values.All(values =>
+      values.Count == 1 && values.ContainsKey(MarketTrendMetrics.FundingRate) &&
+      !values.ContainsKey(MarketTrendMetrics.FundingSum)),
+      "Global aggregates calculate only needed individual FundingRate values.");
+    Near(FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, aggregateOnly, Pin)
+      [MarketTrendMetrics.MedianFundingRate].Value, -0.005,
+      "Aggregates use their published individual rates without recomputation.");
+    var limited = FuturesFundingFeatureEngine.Calculate(symbols, global,
+      1440, Pin, "BinanceFutures", service, symbols.Take(3).ToArray());
+    Assert(limited.Count == 3 && limited.Values.All(values =>
+      values.Count == 1 && values.ContainsKey(MarketTrendMetrics.FundingRate)),
+      "Global-only funding calculates just the MaxMarkets-selected subset.");
+    var sumOnly = FuturesFundingFeatureEngine.Calculate(symbols,
+      new[] { MarketTrendMetrics.FundingSum }, 1440, Pin, "BinanceFutures", service);
+    Assert(sumOnly.Count == 10 && sumOnly.Values.All(values =>
+      values.Count == 1 && values.ContainsKey(MarketTrendMetrics.FundingSum)),
+      "SMS FundingSum use must not implicitly calculate FundingRate.");
+    var mixed = FuturesFundingFeatureEngine.Calculate(symbols,
+      global.Concat(new[] { MarketTrendMetrics.FundingSum }).ToArray(),
+      1440, Pin, "BinanceFutures", service, symbols.Take(3).ToArray());
+    Assert(symbols.Take(3).All(symbol => mixed[symbol].Count == 2) &&
+      symbols.Skip(3).All(symbol => mixed[symbol].Count == 1 &&
+        mixed[symbol].ContainsKey(MarketTrendMetrics.FundingSum)),
+      "Mixed global and SMS selections calculate only actually required values.");
     Near(result[MarketTrendMetrics.MedianFundingRate].Value, -0.005,
       "Funding median preserves percentage-point precision.");
     Near(result[MarketTrendMetrics.PositiveFundingBreadth].Value, 40,
