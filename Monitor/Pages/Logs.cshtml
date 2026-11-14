@@ -48,7 +48,7 @@
             <label class="mb-0"><input type="checkbox" id="log-autoscroll" checked /> Auto-scroll</label>
             <span id="log-status" class="ml-3 text-muted" role="status" aria-live="polite">Connecting...</span>
           </div>
-          <span class="text-muted">Updates every second</span>
+          <span class="text-muted">Live streaming</span>
         </div>
         <div id="log-output" role="log" aria-label="Application logs" aria-live="off" tabindex="0"
           style="background:#111820;color:#dde4eb;min-height:380px;max-height:68vh;overflow:auto;padding:12px;font:12px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;overflow-wrap:anywhere;"></div>
@@ -62,7 +62,7 @@
 <script type="text/javascript">
 (function () {
   'use strict';
-  var endpoint = '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=Tail';
+  var root = '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)';
   var source = document.getElementById('log-source');
   var level = document.getElementById('log-level');
   var search = document.getElementById('log-search');
@@ -71,10 +71,18 @@
   var toggle = document.getElementById('log-toggle');
   var clear = document.getElementById('log-clear');
   var autoScroll = document.getElementById('log-autoscroll');
-  var records = { analyzer: [], monitor: [] };
-  var cursors = { analyzer: { cursor: '', offset: -1 }, monitor: { cursor: '', offset: -1 } };
-  var active = true, busy = false, timer = null;
-  var maxLines = 3000;
+  var maxLines = 500;
+  var history = { analyzer: [], monitor: [] };
+  var cursors = {
+    analyzer: { cursor: '', offset: -1 },
+    monitor: { cursor: '', offset: -1 }
+  };
+  var stream = null;
+  var paused = false;
+  var pending = [];
+  var frame = null;
+  var reconnectTimer = null;
+  var generation = 0;
 
   function matches(line) {
     var selected = level.value;
@@ -83,67 +91,126 @@
     return line.toLowerCase().indexOf(search.value.toLowerCase()) !== -1;
   }
 
-  function render() {
+  function createEntry(line) {
+    var item = document.createElement('div');
+    item.textContent = line;
+    if (/\b(ERROR|FATAL)\s*-/.test(line)) item.style.color = '#ff8080';
+    else if (/\bWARN\s*-/.test(line)) item.style.color = '#ffcc70';
+    else if (/\bDEBUG\s*-/.test(line)) item.style.color = '#a8b8c7';
+    return item;
+  }
+
+  function append(lines) {
     var frag = document.createDocumentFragment();
-    records[source.value].filter(matches).forEach(function (line) {
-      var item = document.createElement('div');
-      item.textContent = line;
-      if (/\b(ERROR|FATAL)\s*-/.test(line)) item.style.color = '#ff8080';
-      else if (/\bWARN\s*-/.test(line)) item.style.color = '#ffcc70';
-      else if (/\bDEBUG\s*-/.test(line)) item.style.color = '#a8b8c7';
-      frag.appendChild(item);
-    });
-    output.replaceChildren(frag);
+    for (var i = 0; i < lines.length; i++) {
+      if (matches(lines[i])) frag.appendChild(createEntry(lines[i]));
+    }
+    output.appendChild(frag);
+    while (output.childNodes.length > maxLines) output.removeChild(output.firstChild);
     if (autoScroll.checked) output.scrollTop = output.scrollHeight;
   }
 
-  function schedule() {
-    clearTimeout(timer);
-    if (active && !document.hidden) timer = setTimeout(poll, 1000);
+  function render() {
+    var lines = history[source.value].filter(matches).slice(-maxLines);
+    output.replaceChildren();
+    append(lines);
   }
 
-  function poll() {
-    if (!active || document.hidden || busy) return;
-    busy = true;
+  function flush() {
+    frame = null;
+    if (!pending.length) return;
+    var batch = pending.splice(0);
+    append(batch);
+  }
+
+  function scheduleRender(lines) {
+    Array.prototype.push.apply(pending, lines);
+    if (pending.length > maxLines) pending.splice(0, pending.length - maxLines);
+    if (frame === null) frame = requestAnimationFrame(flush);
+  }
+
+  function closeStream() {
+    generation++;
+    clearTimeout(reconnectTimer);
+    if (stream) { stream.close(); stream = null; }
+    pending.length = 0;
+    if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+  }
+
+  function connect() {
+    closeStream();
+    if (paused || document.hidden) return;
     var key = source.value;
+    var current = generation;
     var state = cursors[key];
-    $.ajax({
-      url: endpoint,
-      type: 'GET',
-      dataType: 'json',
-      cache: false,
-      data: { source: key, cursor: state.cursor, offset: state.offset }
-    }).done(function (data) {
-      if (data.cursor !== state.cursor && state.cursor) records[key] = [];
-      state.cursor = data.cursor;
-      state.offset = data.offset;
-      if (data.lines && data.lines.length) {
-        Array.prototype.push.apply(records[key], data.lines);
-        if (records[key].length > maxLines) records[key].splice(0, records[key].length - maxLines);
+    var url = root + 'Logs?handler=Stream&source=' + encodeURIComponent(key)
+      + '&cursor=' + encodeURIComponent(state.cursor)
+      + '&offset=' + encodeURIComponent(state.offset);
+    status.textContent = 'Connecting...';
+    stream = new EventSource(url);
+    stream.onopen = function () {
+      if (generation === current) status.textContent = 'Live';
+    };
+    stream.onmessage = function (event) {
+      if (generation !== current) return;
+      var data;
+      try { data = JSON.parse(event.data); } catch (error) { return; }
+      if (data.reset) {
+        history[key] = [];
+        pending.length = 0;
+        if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+        output.replaceChildren();
       }
-      status.textContent = data.status || 'Live';
-      if (key === source.value) render();
-    }).fail(function (xhr) {
-      status.textContent = xhr.status === 403 ? 'Access denied: sign in to a password-protected Monitor.' : 'Log unavailable; retrying...';
-      if (xhr.status === 403) active = false;
-    }).always(function () {
-      busy = false;
-      schedule();
-    });
+      state.cursor = data.cursor || '';
+      state.offset = typeof data.offset === 'number' ? data.offset : -1;
+      var lines = Array.isArray(data.lines) ? data.lines : [];
+      if (!lines.length) return;
+      Array.prototype.push.apply(history[key], lines);
+      if (history[key].length > maxLines)
+        history[key].splice(0, history[key].length - maxLines);
+      scheduleRender(lines);
+    };
+    stream.onerror = function () {
+      if (generation !== current) return;
+      status.textContent = 'Disconnected; reconnecting...';
+      // EventSource reconnects automatically, resuming from the last cursor.
+      // Resume is idempotent only for a fresh connection with current offset.
+      closeStream();
+      if (!paused && !document.hidden) reconnectTimer = setTimeout(connect, 1000);
+    };
   }
 
-  source.addEventListener('change', function () { render(); if (!busy) { clearTimeout(timer); poll(); } });
-  level.addEventListener('change', render);
-  search.addEventListener('input', render);
-  clear.addEventListener('click', function () { records[source.value] = []; render(); });
-  toggle.addEventListener('click', function () {
-    active = !active;
-    toggle.innerHTML = active ? '<i class="fa fa-pause"></i> Pause' : '<i class="fa fa-play"></i> Resume';
-    status.textContent = active ? 'Connecting...' : 'Paused';
-    if (active) poll(); else clearTimeout(timer);
+  source.addEventListener('change', function () { render(); connect(); });
+  level.addEventListener('change', function () {
+    pending.length = 0;
+    if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+    render();
   });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && active) poll(); else clearTimeout(timer); });
-  poll();
+  search.addEventListener('input', function () {
+    pending.length = 0;
+    if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+    render();
+  });
+  clear.addEventListener('click', function () {
+    history[source.value] = [];
+    pending.length = 0;
+    if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+    output.replaceChildren();
+  });
+  toggle.addEventListener('click', function () {
+    paused = !paused;
+    toggle.innerHTML = paused ? '<i class="fa fa-play"></i> Resume' : '<i class="fa fa-pause"></i> Pause';
+    if (paused) {
+      closeStream();
+      status.textContent = 'Paused';
+    } else connect();
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) closeStream();
+    else if (!paused) connect();
+  });
+  window.addEventListener('pagehide', closeStream);
+  connect();
 })();
 </script>
 }
