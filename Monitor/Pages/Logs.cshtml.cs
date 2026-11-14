@@ -2,13 +2,18 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Monitor.Pages
 {
   public class LogsModel : _Internal.BasePageModelSecure
   {
-    private const int MaxChunkBytes = 65536;
+    private const int MaxChunkBytes = 32768;
+    private const int InitialTailBytes = 32768;
     public bool LogsEnabled => PTMagicConfiguration?.GeneralSettings?.Monitor?.IsPasswordProtected == true;
 
     public IActionResult OnGet()
@@ -18,85 +23,171 @@ namespace Monitor.Pages
       return Page();
     }
 
-    // Incremental, bounded reads: no client-supplied paths, no entire-file loading.
-    public IActionResult OnGetTail(string source, string cursor, long offset = -1)
+    // A single authenticated SSE connection follows one log file. The filesystem watcher
+    // signals changes, while the occasional timeout recovers missed notifications.
+    public async Task OnGetStreamAsync(string source, string cursor = "", long offset = -1)
     {
       base.Init();
-      if (!IsLoggedIn(HttpContext) || !LogsEnabled) return StatusCode(403);
-      if (source != "analyzer" && source != "monitor") return BadRequest();
+      if (!IsLoggedIn(HttpContext) || !LogsEnabled)
+      {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+      }
+      if (source != "analyzer" && source != "monitor")
+      {
+        Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+      }
 
-      Response.Headers["Cache-Control"] = "no-store";
+      Response.ContentType = "text/event-stream";
+      Response.Headers["Cache-Control"] = "no-cache, no-transform";
+      Response.Headers["X-Accel-Buffering"] = "no";
+      Response.Headers["Content-Encoding"] = "identity";
+
       string basePath = source == "analyzer" ? PTMagicBasePath : PTMagicMonitorBasePath;
       string folder = Path.Combine(basePath, "_logs");
-
-      // NLog's ${basedir} can point to the executable folder when it differs
-      // from the content root, particularly in a development build.
       if (source == "monitor" && !Directory.Exists(folder))
         folder = Path.Combine(AppContext.BaseDirectory, "_logs");
 
-      if (!Directory.Exists(folder))
-        return new JsonResult(new { cursor = "", offset = 0, lines = Array.Empty<string>(), status = "Log directory not found." });
+      using var signal = new SemaphoreSlim(0, 1);
+      FileSystemWatcher watcher = null;
+      string activeCursor = cursor ?? "";
+      long nextOffset = offset;
+      var cancellation = HttpContext.RequestAborted;
+
+      void Wake()
+      {
+        try { if (signal.CurrentCount == 0) signal.Release(); }
+        catch (ObjectDisposedException) { }
+        catch (SemaphoreFullException) { }
+      }
 
       try
       {
-        string path = Directory.EnumerateFiles(folder, "????-??-??.txt", SearchOption.TopDirectoryOnly)
-          .Where(p => DateTime.TryParseExact(Path.GetFileNameWithoutExtension(p), "yyyy-MM-dd",
-            System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.None, out _))
-          .OrderByDescending(p => Path.GetFileName(p), StringComparer.Ordinal)
-          .FirstOrDefault();
-
-        if (path == null)
-          return new JsonResult(new { cursor = "", offset = 0, lines = Array.Empty<string>(), status = "No log file found." });
-
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
-          FileShare.ReadWrite | FileShare.Delete);
-        string fileCursor = Path.GetFileName(path) + ":" + System.IO.File.GetCreationTimeUtc(path).Ticks;
-        long length = stream.Length;
-        bool initial = cursor != fileCursor || offset < 0 || offset > length;
-        long start = initial ? Math.Max(0, length - MaxChunkBytes) : offset;
-        stream.Seek(start, SeekOrigin.Begin);
-        int count = (int)Math.Min(MaxChunkBytes, length - start);
-        byte[] buffer = new byte[count];
-        int read = 0;
-        while (read < count)
+        while (!cancellation.IsCancellationRequested)
         {
-          int n = stream.Read(buffer, read, count - read);
-          if (n == 0) break;
-          read += n;
+          if (watcher == null && Directory.Exists(folder))
+          {
+            watcher = new FileSystemWatcher(folder, "*.txt")
+            {
+              NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+              IncludeSubdirectories = false
+            };
+            watcher.Changed += (_, _) => Wake();
+            watcher.Created += (_, _) => Wake();
+            watcher.Renamed += (_, _) => Wake();
+            watcher.Deleted += (_, _) => Wake();
+            watcher.Error += (_, _) => Wake();
+            watcher.EnableRaisingEvents = true;
+          }
+
+          try
+          {
+            string path = Directory.Exists(folder)
+              ? Directory.EnumerateFiles(folder, "????-??-??.txt", SearchOption.TopDirectoryOnly)
+                  .Where(p => DateTime.TryParseExact(Path.GetFileNameWithoutExtension(p), "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out _))
+                  .OrderByDescending(p => Path.GetFileName(p), StringComparer.Ordinal)
+                  .FirstOrDefault()
+              : null;
+
+            if (path != null)
+            {
+              using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+              string fileCursor = Path.GetFileName(path) + ":" + System.IO.File.GetCreationTimeUtc(path).Ticks;
+              bool reset = !String.Equals(activeCursor, fileCursor, StringComparison.Ordinal)
+                || nextOffset < 0 || nextOffset > stream.Length;
+              if (reset)
+              {
+                activeCursor = fileCursor;
+                nextOffset = Math.Max(0, stream.Length - InitialTailBytes);
+              }
+
+              // Drain bounded chunks; do not read or serialize the entire log file.
+              int batches = 0;
+              do
+              {
+                long start = nextOffset;
+                stream.Seek(start, SeekOrigin.Begin);
+                int count = (int)Math.Min(MaxChunkBytes, stream.Length - start);
+                if (count <= 0)
+                {
+                  if (reset)
+                    await SendAsync(Array.Empty<string>(), true, activeCursor, nextOffset, cancellation);
+                  break;
+                }
+
+                byte[] buffer = new byte[count];
+                int read = 0;
+                while (read < count)
+                {
+                  int n = await stream.ReadAsync(buffer.AsMemory(read, count - read), cancellation);
+                  if (n == 0) break;
+                  read += n;
+                }
+                int lastNewline = read == 0 ? -1 : Array.LastIndexOf(buffer, (byte)'\n', read - 1, read);
+                if (lastNewline < 0)
+                {
+                  // Extremely long/incomplete lines must not hold the stream at one offset.
+                  if (read == MaxChunkBytes) nextOffset = start + read;
+                  if (reset) await SendAsync(Array.Empty<string>(), true, activeCursor, nextOffset, cancellation);
+                  break;
+                }
+
+                int first = 0;
+                if (reset && start > 0)
+                {
+                  int firstNewline = Array.IndexOf(buffer, (byte)'\n', 0, lastNewline + 1);
+                  first = firstNewline + 1;
+                }
+                string[] lines = Encoding.UTF8.GetString(buffer, first, lastNewline + 1 - first)
+                  .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                  .Select(line => line.TrimEnd('\r')).ToArray();
+                nextOffset = start + lastNewline + 1;
+                await SendAsync(lines, reset, activeCursor, nextOffset, cancellation);
+                reset = false;
+                batches++;
+              } while (batches < 8 && nextOffset < stream.Length && !cancellation.IsCancellationRequested);
+
+              // If the file is growing faster than eight chunks, continue immediately.
+              if (nextOffset < stream.Length && batches >= 8) Wake();
+            }
+            else if (!String.IsNullOrEmpty(activeCursor))
+            {
+              activeCursor = "";
+              nextOffset = -1;
+              await SendAsync(Array.Empty<string>(), true, "", -1, cancellation);
+            }
+          }
+          catch (IOException) { /* Writer/rotation race: retry on next notification. */ }
+          catch (UnauthorizedAccessException) { /* Retry on next recovery check. */ }
+
+          // Watcher-first delivery. Five seconds is only a missed-event recovery check,
+          // not the live refresh rate.
+          bool notified = await signal.WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+          if (!notified)
+          {
+            await Response.WriteAsync(": keepalive\n\n", cancellation);
+            await Response.Body.FlushAsync(cancellation);
+          }
         }
-
-        int lastNewline = read == 0 ? -1 : Array.LastIndexOf(buffer, (byte)'\n', read - 1, read);
-        if (read == 0 || lastNewline < 0)
-          return new JsonResult(new { cursor = fileCursor, offset = start, lines = Array.Empty<string>(), status = "" });
-
-        int firstByte = 0;
-        // A tail starting mid-file may begin inside a line. Discard that fragment.
-        if (initial && start > 0)
-        {
-          int firstNewline = Array.IndexOf(buffer, (byte)'\n', 0, lastNewline + 1);
-          firstByte = firstNewline + 1;
-        }
-        string decoded = Encoding.UTF8.GetString(buffer, firstByte, lastNewline + 1 - firstByte);
-        string[] lines = decoded.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-          .Select(line => line.TrimEnd('\r')).ToArray();
-
-        return new JsonResult(new
-        {
-          cursor = fileCursor,
-          offset = start + lastNewline + 1,
-          lines,
-          status = ""
-        });
       }
-      catch (IOException)
+      catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+      catch (IOException) when (cancellation.IsCancellationRequested) { }
+      finally
       {
-        return StatusCode(503);
+        if (watcher != null) watcher.Dispose();
       }
-      catch (UnauthorizedAccessException)
-      {
-        return StatusCode(503);
-      }
+    }
+
+    private async Task SendAsync(string[] lines, bool reset, string cursor, long offset,
+      CancellationToken cancellation)
+    {
+      string data = JsonSerializer.Serialize(new { lines, reset, cursor, offset });
+      await Response.WriteAsync("data: " + data + "\n\n", cancellation);
+      await Response.Body.FlushAsync(cancellation);
     }
   }
 }
