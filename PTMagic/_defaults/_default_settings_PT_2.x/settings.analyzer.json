@@ -1,17 +1,21 @@
-// PTMagic 2.9 example settings | Updated: 2026-11-14
-// Backward compatible with the 2.9 configuration model (not 2.10 metric triggers).
-// Example adjustments in GlobalSettings and SingleMarketSettings are COMMENTS ONLY.
-// These are demonstrations, not recommended live-trading thresholds or a strategy.
-// Test with Application.TestMode=true before enabling live changes.
+// PTMagic example analyzer settings | Updated: 2026-11-14
+// These examples show how to define market trends and apply market-based settings.
+// All trading-property adjustments in the examples are commented out and inactive.
+// Review the sample triggers and thresholds before using them in a live strategy.
+// Keep TestMode enabled in settings.general.json while checking your configuration.
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
-      "StoreDataMaxHours": 96, // Longest example trend is 72h; retain some history beyond it.
-      "IntervalMinutes": 5,
-      "ExcludeMainCurrency": true,
+      "StoreDataMaxHours": 96, // Retain historical market observations for up to 96 hours.
+      "IntervalMinutes": 5, // Run market analysis every five minutes.
+      "ExcludeMainCurrency": true, // Exclude the main trading currency from market averages.
       "UseProfitTrailerEnabledPairs": false, // true: restrict analysis to PT-enabled pairs
       "UseProfitTrailerAllowedUnderlyingTypes": false, // true: read PT allowed_underlying_type
-      "IncludedUnderlyingTypes": ["COIN"], // Used when the preceding property is false
+      "IncludedUnderlyingTypes": ["COIN"], // Asset categories included when PT's allowed types are not used.
+      // Each named trend measures market price change over TrendMinutes.
+      // MaxMarkets limits the calculation to the highest-volume markets.
+      // TrendThreshold excludes extreme price changes from the average.
+      // DisplayGraph and DisplayOnMarketAnalyzerList control Monitor visibility.
       "MarketTrends": [
         {
           "Name": "1h", "Platform": "Exchange", "MaxMarkets": 50,
@@ -39,15 +43,16 @@
     },
 
     // Global settings are evaluated in order; the first matching setting wins.
-    // Triggers demonstrate the supported legacy PriceTrend / volume model.
+    // Triggers compare market-trend changes; MinChange and MaxChange are percentages.
     // PairsProperties, DCAProperties and IndicatorsProperties adjustments below
     // are deliberately commented out. Activate only after reviewing PT properties.
-    // _OFFSET adds/subtracts an absolute amount; _OFFSETPERCENT changes a base value
-    // by a relative percentage. A base property must exist in PT's defaults.
+    // _OFFSET adjusts a numeric property by a fixed amount: 2 plus OFFSET -1 becomes 1.
+    // _OFFSETPERCENT adjusts it by a percentage: 2 plus OFFSETPERCENT 25 becomes 2.5.
+    // The corresponding property must be defined in the active ProfitTrailer settings.
     "GlobalSettings": [
       {
         "SettingName": "RapidMarketDecline",
-        "TriggerConnection": "A && (B || C)",
+        "TriggerConnection": "A && (B || C)", // A must match together with either B or C.
         "Triggers": [
           {"Tag": "A", "MarketTrendName": "1h", "MaxChange": -2},
           {"Tag": "B", "MarketTrendName": "6h", "MaxChange": -4},
@@ -67,7 +72,7 @@
           // "DEFAULT_DCA_rebuy_timeout_OFFSET": 5
         },
         "IndicatorsProperties": {
-          // "BB_period_OFFSET": 2, // Only if the corresponding indicator property exists
+          // "BB_period_OFFSET": 2, // Adjust a supported indicator period if it exists in the base settings
           // "RSI_period_OFFSETPERCENT": 10
         }
       },
@@ -133,22 +138,22 @@
         "IndicatorsProperties": {}
       },
       {
-        "SettingName": "Default",
+        "SettingName": "Default", // Fallback files used when no earlier global setting matches.
         "PairsProperties": {"File": "PAIRS.properties"},
         "DCAProperties": {"File": "DCA.properties"},
         "IndicatorsProperties": {"File": "INDICATORS.properties"}
       }
     ],
 
-    // SMS means Single Market Settings (per-asset filters).
+    // Single Market Settings (SMS) apply to individual trading pairs rather than the overall market.
     // StopProcessWhenTriggered=false allows subsequent matching SMS rules.
     // Later matching entries can replace earlier values for the same property.
-    // All example trading adjustments below are comments only.
+    // Every sample property adjustment below is a comment; no trading setting is changed.
     "SingleMarketSettings": [
       {
         "SettingName": "YoungOrIlliquidMarketExample",
         "TriggerConnection": "OR",
-        "StopProcessWhenTriggered": true,
+        "StopProcessWhenTriggered": true, // Stop evaluating later SMS rules after this one matches.
         "Triggers": [
           {"AgeDaysLowerThan": 14},
           {"Max24hVolume": 1000000}
@@ -176,7 +181,7 @@
         ],
         "OffTriggerConnection": "AND",
         "RefreshOffTriggers": true,
-        "OffTriggers": [{"HoursSinceTriggered": 2}],
+        "OffTriggers": [{"HoursSinceTriggered": 2}], // Keep the setting active until the time-based release condition is met.
         "PairsProperties": {
           // "DEFAULT_trailing_buy_OFFSETPERCENT": 30,
           // "DEFAULT_A_sell_value_OFFSETPERCENT": 15,
