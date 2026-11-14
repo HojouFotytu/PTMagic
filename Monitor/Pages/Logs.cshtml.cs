@@ -62,13 +62,19 @@ namespace Monitor.Pages
         catch (SemaphoreFullException) { }
       }
 
-      bool initialAnalyzerSnapshot = source == "analyzer" && String.IsNullOrEmpty(activeCursor) && nextOffset < 0;
+      bool freshConnection = String.IsNullOrEmpty(activeCursor) && nextOffset < 0;
+      bool initialAnalyzerSnapshot = source == "analyzer" && freshConnection;
+      bool initialMonitorSnapshot = source == "monitor" && freshConnection;
       try
       {
         if (initialAnalyzerSnapshot)
         {
           string[] previousSummary = ReadPreviousRaidSummary(folder);
           await SendSnapshotAsync(previousSummary, cancellation);
+        }
+        if (initialMonitorSnapshot)
+        {
+          await SendMonitorSnapshotAsync(ReadMonitorHistory(folder), cancellation);
         }
         while (!cancellation.IsCancellationRequested)
         {
@@ -110,8 +116,9 @@ namespace Monitor.Pages
                 activeCursor = fileCursor;
                 // A fresh Analyzer viewer starts at EOF. Only the previous completed
                 // raid summary is loaded; never replay an in-progress raid.
-                nextOffset = initialAnalyzerSnapshot ? stream.Length : Math.Max(0, stream.Length - InitialTailBytes);
+                nextOffset = (initialAnalyzerSnapshot || initialMonitorSnapshot) ? stream.Length : Math.Max(0, stream.Length - InitialTailBytes);
                 initialAnalyzerSnapshot = false;
+                initialMonitorSnapshot = false;
               }
 
               // Drain bounded chunks; do not read or serialize the entire log file.
@@ -195,6 +202,78 @@ namespace Monitor.Pages
     {
       string data = JsonSerializer.Serialize(new { lines });
       await Response.WriteAsync("event: snapshot\ndata: " + data + "\n\n", cancellation);
+      await Response.Body.FlushAsync(cancellation);
+    }
+
+    private sealed class MonitorHistory
+    {
+      public string[] recent { get; set; } = Array.Empty<string>();
+      public string[] issues { get; set; } = Array.Empty<string>();
+    }
+
+    private static bool IsIssue(string line)
+    {
+      return line.Contains(" WARN - ", StringComparison.OrdinalIgnoreCase)
+        || line.Contains(" ERROR - ", StringComparison.OrdinalIgnoreCase)
+        || line.Contains(" FATAL - ", StringComparison.OrdinalIgnoreCase)
+        || line.Contains(" CRITICAL - ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Pull a bounded lookback of recent Monitor output and diagnostics; never
+    // retain whole files or generate a large DOM from a quiet, long-running Monitor.
+    private static MonitorHistory ReadMonitorHistory(string folder)
+    {
+      var recent = new System.Collections.Generic.Queue<string>();
+      var issues = new System.Collections.Generic.Queue<string>();
+      if (!Directory.Exists(folder)) return new MonitorHistory();
+      string[] files = Directory.EnumerateFiles(folder, "????-??-??.txt", SearchOption.TopDirectoryOnly)
+        .OrderBy(p => Path.GetFileName(p), StringComparer.Ordinal).TakeLast(7).ToArray();
+      foreach (string path in files)
+      {
+        try
+        {
+          using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+          const int maxBytesPerFile = 2 * 1024 * 1024;
+          int count = (int)Math.Min(stream.Length, maxBytesPerFile);
+          long start = stream.Length - count;
+          stream.Seek(start, SeekOrigin.Begin);
+          byte[] data = new byte[count];
+          int read = 0;
+          while (read < count)
+          {
+            int n = stream.Read(data, read, count - read);
+            if (n == 0) break;
+            read += n;
+          }
+          string text = Encoding.UTF8.GetString(data, 0, read);
+          if (start > 0)
+          {
+            int firstNewline = text.IndexOf('\n');
+            text = firstNewline >= 0 ? text.Substring(firstNewline + 1) : "";
+          }
+          foreach (string raw in text.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+          {
+            string line = raw.TrimEnd('\r');
+            recent.Enqueue(line);
+            if (recent.Count > 500) recent.Dequeue();
+            if (IsIssue(line))
+            {
+              issues.Enqueue(line);
+              if (issues.Count > 200) issues.Dequeue();
+            }
+          }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+      }
+      return new MonitorHistory { recent = recent.ToArray(), issues = issues.ToArray() };
+    }
+
+    private async Task SendMonitorSnapshotAsync(MonitorHistory history, CancellationToken cancellation)
+    {
+      string data = JsonSerializer.Serialize(history);
+      await Response.WriteAsync("event: monitor-snapshot\ndata: " + data + "\n\n", cancellation);
       await Response.Body.FlushAsync(cancellation);
     }
 
