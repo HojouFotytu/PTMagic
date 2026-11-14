@@ -713,8 +713,8 @@ internal static class Program
     Assert(result.Values.All(v => v.IsValid && v.SampleCount == 10 &&
       v.EligibleSampleCount == 10 && v.CoveragePercent == 100),
       "Global funding preserves source metadata and the fixed denominator.");
-    var partial = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
-      asset, StringComparer.OrdinalIgnoreCase);
+    var partial = asset.ToDictionary(item => item.Key, item => item.Value,
+      StringComparer.OrdinalIgnoreCase);
     partial.Remove(symbols[9]);
     var ninety = FuturesFundingFeatureEngine.CalculateGlobal(symbols, global, partial, Pin);
     Assert(ninety.Values.All(v => v.IsValid && v.SampleCount == 9 &&
