@@ -428,7 +428,7 @@ namespace Core.ProfitTrailer
               }
               else if (strategy.Name.Contains("STATS-TPS"))
               {
-                strategyText += "<span class=\"label label-warn\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategy.Name + "\" >" + StrategyHelper.GetStrategyShortcut(strategy.Name, false) + "<i class=\"fa fa-shield text-success\"></i></span> ";
+                strategyText += " <i class=\"fa fa-shield text-success\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"TPS Armed\"></i> ";
               }
               else
               {
