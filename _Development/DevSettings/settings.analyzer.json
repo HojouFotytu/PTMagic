@@ -6,7 +6,7 @@
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
-      "StoreDataMaxHours": 96, // Retain historical market observations for up to 96 hours.
+      "StoreDataMaxHours": 72, // Retain historical market observations for up to 96 hours.
       "IntervalMinutes": 5, // Run market analysis every five minutes.
       "ExcludeMainCurrency": true, // Exclude the main trading currency from market averages.
       "UseProfitTrailerEnabledPairs": false, // true: restrict analysis to PT-enabled pairs
@@ -59,7 +59,7 @@
           {"Tag": "C", "MarketTrendName": "24h", "MaxChange": -7}
         ],
         "PairsProperties": {
-          // "DEFAULT_sell_only_mode_enabled": true,
+          "DEFAULT_sell_only_mode_enabled": true,
           // "max_trading_pairs_OFFSET": -2,
           // "DEFAULT_min_buy_volume_OFFSETPERCENT": 50,
           // "DEFAULT_trailing_buy_OFFSETPERCENT": 25,
@@ -84,7 +84,7 @@
           {"MarketTrendName": "24h", "MinChange": -2, "MaxChange": 2}
         ],
         "PairsProperties": {
-          // "max_trading_pairs_OFFSET": -1,
+          "max_trading_pairs_OFFSET": -1,
           // "DEFAULT_trailing_buy_OFFSET": 0.1,
           // "DEFAULT_trailing_profit_OFFSETPERCENT": -10,
           // "DEFAULT_A_sell_value_OFFSET": -0.25
@@ -106,7 +106,7 @@
           {"MarketTrendName": "24h", "MinChange": 2}
         ],
         "PairsProperties": {
-          // "max_trading_pairs_OFFSET": 2,
+          "max_trading_pairs_OFFSET": 2,
           // "DEFAULT_initial_cost_percentage_OFFSETPERCENT": 15,
           // "DEFAULT_trailing_buy_OFFSETPERCENT": -10,
           // "DEFAULT_A_sell_value_OFFSETPERCENT": 10,
@@ -128,7 +128,7 @@
           {"MarketTrendName": "72h", "MinChange": 6}
         ],
         "PairsProperties": {
-          // "max_trading_pairs_OFFSETPERCENT": 20,
+          "max_trading_pairs_OFFSETPERCENT": 20,
           // "DEFAULT_A_sell_value_OFFSETPERCENT": 15,
           // "DEFAULT_trailing_buy_OFFSET": -0.05
         },
@@ -159,7 +159,7 @@
           {"Max24hVolume": 1000000}
         ],
         "PairsProperties": {
-          // "DEFAULT_trading_enabled": false,
+          "DEFAULT_trading_enabled": false,
           // "DEFAULT_sell_only_mode_enabled": true,
           // "DEFAULT_DCA_enabled": false,
           // "DEFAULT_initial_cost_percentage_OFFSETPERCENT": -50
@@ -183,7 +183,7 @@
         "RefreshOffTriggers": true,
         "OffTriggers": [{"HoursSinceTriggered": 2}], // Keep the setting active until the time-based release condition is met.
         "PairsProperties": {
-          // "DEFAULT_trailing_buy_OFFSETPERCENT": 30,
+          //"DEFAULT_trailing_buy_OFFSETPERCENT": 30,
           // "DEFAULT_A_sell_value_OFFSETPERCENT": 15,
           // "DEFAULT_trailing_profit_OFFSET": 0.1,
           // "DEFAULT_min_buy_volume_OFFSETPERCENT": 50
