@@ -62,8 +62,14 @@ namespace Monitor.Pages
         catch (SemaphoreFullException) { }
       }
 
+      bool initialAnalyzerSnapshot = source == "analyzer" && String.IsNullOrEmpty(activeCursor) && nextOffset < 0;
       try
       {
+        if (initialAnalyzerSnapshot)
+        {
+          string[] previousSummary = ReadPreviousRaidSummary(folder);
+          await SendSnapshotAsync(previousSummary, cancellation);
+        }
         while (!cancellation.IsCancellationRequested)
         {
           if (watcher == null && Directory.Exists(folder))
@@ -102,7 +108,10 @@ namespace Monitor.Pages
               if (reset)
               {
                 activeCursor = fileCursor;
-                nextOffset = Math.Max(0, stream.Length - InitialTailBytes);
+                // A fresh Analyzer viewer starts at EOF. Only the previous completed
+                // raid summary is loaded; never replay an in-progress raid.
+                nextOffset = initialAnalyzerSnapshot ? stream.Length : Math.Max(0, stream.Length - InitialTailBytes);
+                initialAnalyzerSnapshot = false;
               }
 
               // Drain bounded chunks; do not read or serialize the entire log file.
@@ -180,6 +189,57 @@ namespace Monitor.Pages
       {
         if (watcher != null) watcher.Dispose();
       }
+    }
+
+    private async Task SendSnapshotAsync(string[] lines, CancellationToken cancellation)
+    {
+      string data = JsonSerializer.Serialize(new { lines });
+      await Response.WriteAsync("event: snapshot\ndata: " + data + "\n\n", cancellation);
+      await Response.Body.FlushAsync(cancellation);
+    }
+
+    // Only read a bounded portion of recent logs, and return solely a completed
+    // RAID SUMMARY block, never historical raid details.
+    private static string[] ReadPreviousRaidSummary(string folder)
+    {
+      if (!Directory.Exists(folder)) return Array.Empty<string>();
+      string[] files = Directory.EnumerateFiles(folder, "????-??-??.txt", SearchOption.TopDirectoryOnly)
+        .OrderByDescending(p => Path.GetFileName(p), StringComparer.Ordinal)
+        .Take(3).ToArray();
+      foreach (string path in files)
+      {
+        try
+        {
+          using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+          const int maxBytes = 4 * 1024 * 1024;
+          int count = (int)Math.Min(stream.Length, maxBytes);
+          stream.Seek(-count, SeekOrigin.End);
+          byte[] data = new byte[count];
+          int read = 0;
+          while (read < count)
+          {
+            int n = stream.Read(data, read, count - read);
+            if (n == 0) break;
+            read += n;
+          }
+          string text = Encoding.UTF8.GetString(data, 0, read);
+          int end = text.LastIndexOf("DO NOT CLOSE THIS WINDOW! THIS IS THE BOT THAT ANALYZES TRENDS AND CHANGES SETTINGS!", StringComparison.Ordinal);
+          if (end < 0) continue;
+          int start = text.LastIndexOf("RAID SUMMARY", end, StringComparison.Ordinal);
+          if (start < 0) continue;
+          int lineStart = text.LastIndexOf('\n', start);
+          lineStart = lineStart < 0 ? 0 : lineStart + 1;
+          int lineEnd = text.IndexOf('\n', end);
+          if (lineEnd < 0) lineEnd = text.Length;
+          return text.Substring(lineStart, lineEnd - lineStart)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.TrimEnd('\r')).ToArray();
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+      }
+      return Array.Empty<string>();
     }
 
     private async Task SendAsync(string[] lines, bool reset, string cursor, long offset,
