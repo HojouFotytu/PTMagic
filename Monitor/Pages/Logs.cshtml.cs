@@ -66,7 +66,7 @@ namespace Monitor.Pages
           read += n;
         }
 
-        int lastNewline = Array.LastIndexOf(buffer, (byte)'\n', Math.Max(0, read - 1), read);
+        int lastNewline = read == 0 ? -1 : Array.LastIndexOf(buffer, (byte)'\n', read - 1, read);
         if (read == 0 || lastNewline < 0)
           return new JsonResult(new { cursor = fileCursor, offset = start, lines = Array.Empty<string>(), status = "" });
 
