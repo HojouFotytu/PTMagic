@@ -50,6 +50,10 @@
           </div>
           <span class="text-muted">Live streaming</span>
         </div>
+        <div id="log-monitor-issues" style="background:#231d1e;color:#f1d4d4;padding:10px;margin-bottom:8px;font:12px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;overflow-wrap:anywhere;" hidden>
+          <strong>Recent Monitor warnings and errors</strong>
+          <div id="log-monitor-issue-lines" style="max-height:220px;overflow:auto;margin-top:5px;"></div>
+        </div>
         <div id="log-previous" style="background:#18222d;color:#dde4eb;padding:10px;margin-bottom:8px;font:12px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;overflow-wrap:anywhere;" hidden>
           <strong>Previous raid summary</strong>
           <div id="log-previous-lines"></div>
@@ -72,6 +76,10 @@
   var level = document.getElementById('log-level');
   var search = document.getElementById('log-search');
   var output = document.getElementById('log-output');
+  var monitorIssuesPanel = document.getElementById('log-monitor-issues');
+  var monitorIssueLines = document.getElementById('log-monitor-issue-lines');
+  var monitorIssues = [];
+  var maxMonitorIssues = 200;
   var previousPanel = document.getElementById('log-previous');
   var previousLines = document.getElementById('log-previous-lines');
   var olderButton = document.getElementById('log-older');
@@ -123,6 +131,30 @@
     if (autoScroll.checked) output.scrollTop = output.scrollHeight;
   }
 
+  function isMonitorIssue(line) {
+    return /\b(WARN|ERROR|FATAL|CRITICAL)\s*-/.test(line);
+  }
+
+  function renderMonitorIssues() {
+    var visible = source.value === 'monitor' && monitorIssues.length > 0;
+    monitorIssuesPanel.hidden = !visible;
+    if (!visible) { monitorIssueLines.replaceChildren(); return; }
+    var fragment = document.createDocumentFragment();
+    monitorIssues.filter(matches).forEach(function (line) {
+      fragment.appendChild(createEntry(line));
+    });
+    monitorIssueLines.replaceChildren(fragment);
+  }
+
+  function acceptMonitorLines(lines) {
+    for (var i = 0; i < lines.length; i++) {
+      if (isMonitorIssue(lines[i])) monitorIssues.push(lines[i]);
+    }
+    if (monitorIssues.length > maxMonitorIssues)
+      monitorIssues.splice(0, monitorIssues.length - maxMonitorIssues);
+    if (lines.some(isMonitorIssue)) renderMonitorIssues();
+  }
+
   function renderPrevious() {
     var visible = source.value === 'analyzer' && previousRaidSummary.length > 0;
     previousPanel.hidden = !visible;
@@ -145,6 +177,7 @@
     output.replaceChildren();
     append(lines);
     renderPrevious();
+    renderMonitorIssues();
     updateOlderButton();
   }
 
@@ -228,12 +261,21 @@
         render();
       } catch (error) { status.textContent = "Summary unavailable"; }
     });
+    stream.addEventListener('monitor-snapshot', function (event) {
+      if (generation !== current || key !== 'monitor') return;
+      try {
+        var data = JSON.parse(event.data);
+        history.monitor = Array.isArray(data.recent) ? data.recent.slice(-maxLines) : [];
+        monitorIssues = Array.isArray(data.issues) ? data.issues.slice(-maxMonitorIssues) : [];
+        render();
+      } catch (error) { status.textContent = 'Monitor history unavailable'; }
+    });
     stream.onmessage = function (event) {
       if (generation !== current) return;
       var data;
       try { data = JSON.parse(event.data); } catch (error) { return; }
       if (data.reset) {
-        if (key === "monitor") history[key] = [];
+        // Preserve prior Monitor diagnostics across daily log rotation.
         pending.length = 0;
         if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
         if (key === "monitor") output.replaceChildren();
@@ -244,6 +286,7 @@
       if (!lines.length) return;
       if (key === "analyzer") handleAnalyzerLines(lines);
       else {
+        acceptMonitorLines(lines);
         Array.prototype.push.apply(history[key], lines);
         if (history[key].length > maxLines)
           history[key].splice(0, history[key].length - maxLines);
@@ -278,7 +321,9 @@
   clear.addEventListener('click', function () {
     history[source.value] = [];
     if (source.value === "analyzer") { previousRaidSummary = []; completedRaidSummary = []; }
+    else monitorIssues = [];
     renderPrevious();
+    renderMonitorIssues();
     updateOlderButton();
     pending.length = 0;
     if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
