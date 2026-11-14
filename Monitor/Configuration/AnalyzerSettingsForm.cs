@@ -59,7 +59,8 @@ namespace Monitor.Configuration
           "IgnoredMarkets", "AllowedMarkets", "TrendThreshold", "DisplayGraph", "DisplayOnMarketAnalyzerList",
           "ExcludeMainCurrency", "ATRPeriod", "VolumeExpansionLookback", "ATRPBreadthThreshold",
           "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold", "TopNVolumeCount", "CorrelationLookback",
-          "ExtremePositiveFundingThreshold", "ExtremeNegativeFundingThreshold"
+          "ExtremePositiveFundingThreshold", "ExtremeNegativeFundingThreshold",
+          "StrongBuyerDominanceThreshold"
         });
         trends.Add(trend);
       }

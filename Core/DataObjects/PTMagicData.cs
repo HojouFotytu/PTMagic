@@ -172,6 +172,10 @@ namespace Core.Main.DataObjects.PTMagicData
     [DefaultValue(-0.05)]
     public double ExtremeNegativeFundingThreshold { get; set; } = -0.05;
 
+    // Strong buyer dominance uses a dimensionless taker-buy ratio, not percent.
+    [DefaultValue(0.60)]
+    public double StrongBuyerDominanceThreshold { get; set; } = 0.60;
+
     // Phase 1D counts synchronized simple returns on complete TrendMinutes
     // periods; N returns require N+1 exact close endpoints.
     [DefaultValue(30)]

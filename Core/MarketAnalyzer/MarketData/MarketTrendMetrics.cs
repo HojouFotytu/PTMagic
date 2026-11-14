@@ -52,6 +52,10 @@ namespace Core.MarketAnalyzer.MarketData
     public const string ExtremeNegativeFundingBreadth = "ExtremeNegativeFundingBreadth";
     public const string TakerBuyRatio = "TakerBuyRatio";
     public const string TakerImbalance = "TakerImbalance";
+    public const string MedianTakerBuyRatio = "MedianTakerBuyRatio";
+    public const string BuyerDominanceBreadth = "BuyerDominanceBreadth";
+    public const string StrongBuyerDominanceBreadth = "StrongBuyerDominanceBreadth";
+    public const string TakerImbalanceDispersion = "TakerImbalanceDispersion";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -87,6 +91,10 @@ namespace Core.MarketAnalyzer.MarketData
         [ExtremeNegativeFundingBreadth] = MarketTrendMetricScope.Global,
         [TakerBuyRatio] = MarketTrendMetricScope.Asset,
         [TakerImbalance] = MarketTrendMetricScope.Asset,
+        [MedianTakerBuyRatio] = MarketTrendMetricScope.Global,
+        [BuyerDominanceBreadth] = MarketTrendMetricScope.Global,
+        [StrongBuyerDominanceBreadth] = MarketTrendMetricScope.Global,
+        [TakerImbalanceDispersion] = MarketTrendMetricScope.Global,
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();

@@ -108,11 +108,14 @@ namespace Core.MarketAnalyzer.MarketData
           minimumSourceCount = trendSourceCount;
           basis = "One complete UTC trend period of quote volume for every selected global market.";
         }
-        else if (TakerFlowFeatureEngine.IsMetric(metric))
+        else if (TakerFlowFeatureEngine.IsMetric(metric) ||
+          TakerFlowFeatureEngine.IsGlobalMetric(metric))
         {
           alignedTrendPeriods = true;
           minimumSourceCount = trendSourceCount;
-          basis = "One exact complete UTC MarketTrend period of source-verified taker-buy and total quote volume, with no missing 5m candles.";
+          basis = (TakerFlowFeatureEngine.IsGlobalMetric(metric)
+            ? "Global metric across the frozen MaxMarkets cohort, requiring 90% verified per-asset taker coverage. "
+            : "") + "One exact complete UTC MarketTrend period of source-verified taker-buy and total quote volume, with no missing 5m candles.";
         }
         else if (metric == MarketTrendMetrics.Concentration)
         {

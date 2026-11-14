@@ -1,6 +1,6 @@
 # PTMagic 2.10 — Cumulative release changes
 
-**Updated:** November 14, 2026
+**Updated:** November 15, 2026
 
 **Application version:** 2.10.0, in development
 
@@ -18,6 +18,10 @@ This is the cumulative record of **2.10 changes that remain in effect**. It cove
 The same document is maintained in the [application repository][app-copy] for code merges and pull requests, and in the [2.10 roadmap/handoff repository][docs-copy] for project continuity. The [current roadmap][roadmap] tracks future work; [status and evidence][status] track acceptance. D-053 source/audit references are dated historical evidence; its subsequent configured TestMode acceptance is recorded separately. Taker Flow is the active 26-metric scope, with configured runtime acceptance pending. See the current consolidated November 14 handoff in the roadmap repository. The accompanying template and Monitor help updates make the existing startup SOM default explicit in both supplied general-settings files and explain its TestMode behavior beside the toggle.
 
 **Follow-up correction (November 13):** A configured raid displayed `Build unknown`, revealing that the initial metadata-stamping test incorrectly accepted missing metadata. The source now obtains the commit Unix timestamp through `git rev-list -1 --timestamp HEAD`, avoiding the percent-based format token in the Windows build shell. It extracts the timestamp, **fails compilation when unavailable**, and the existing decision-history test requires a valid 12-digit KST identifier derived from embedded metadata. The user built the corrected source at `146f57336eee28fa5bc5f30116420e323413bf89`: Core, PTMagic and Monitor **PASS (13.1s)**; `Tests/DecisionHistory` **14/14 PASS**; the user subsequently **confirmed the deployed raid display**. Preserve matched `Core.dll` and PTMagic executable deployment.
+
+## November 15 — Phase 2B global taker-flow aggregates (implementation; acceptance pending)
+
+Added `MedianTakerBuyRatio` (equal-market median of source-verified per-asset ratios), `BuyerDominanceBreadth` (valid-market percentage with ratio >0.5), `StrongBuyerDominanceBreadth` (valid-market percentage with ratio >= configurable `StrongBuyerDominanceThreshold`, default 0.60, valid >0.5..1) and `TakerImbalanceDispersion` (population standard deviation of already calculated TakerImbalance per-asset observations; a distribution/spread measurement, **not directional confirmation**). Market-wide aggregates weight assets equally; per-asset taker ratios remain quote-volume weighted over the exact latest closed UTC MarketTrend duration. At least 90% of the selected global population must have valid source. New metrics reuse existing normalized kline taker-buy/total quote-volume source, cache-v2 repair, the existing global population/MaxMarkets rules and the Monitor's dynamically published values. Global-only selection calculates only required per-asset ratio/imbalance on the selected global cohort; no extra work is done for display, no new exchange endpoints or new persistent caches. Asset-only TakerImbalance reuses/displays the ratio it already computes. The existing Monitor adds a Taker Flow group with neutral dispersion formatting and four-decimal dimensionless values. Strong threshold is configurable per MarketTrend. Trading trigger selection remains explicit, not inferred from display. The catalogue now has **35 metrics: 26 global-capable and nine asset-only**. Focused tests for formulas, >=90% coverage, missing and invalid source, default/custom thresholds, source reuse and scope are present. Build and configured runtime/browser acceptance remain pending.
 
 ## November 15 — Phase 2B extreme funding breadth (implementation; acceptance pending)
 

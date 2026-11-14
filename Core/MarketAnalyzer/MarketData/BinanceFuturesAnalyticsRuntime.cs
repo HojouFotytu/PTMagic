@@ -217,7 +217,7 @@ namespace Core.MarketAnalyzer.MarketData
       int[] takerTrendMinutes = (systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
         ?? new List<MarketTrend>())
         .Where(trend => trend != null && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
-          && TakerFlowFeatureEngine.HasMetrics(MarketTrendMetricSelection.Select(
+          && TakerFlowFeatureEngine.HasAnyMetrics(MarketTrendMetricSelection.Select(
             trend, systemConfiguration.AnalyzerSettings)))
         .Select(trend => trend.TrendMinutes).Where(minutes => minutes > 0)
         .Distinct().ToArray();

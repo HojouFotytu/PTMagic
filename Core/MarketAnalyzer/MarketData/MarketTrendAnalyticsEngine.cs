@@ -308,10 +308,12 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      if (TakerFlowFeatureEngine.HasMetrics(enabledMetrics))
+      if (TakerFlowFeatureEngine.HasAnyMetrics(enabledMetrics))
       {
+        string[] globalTakerSymbols = TakerFlowFeatureEngine.HasGlobalMetrics(enabledMetrics)
+          ? globalUniverse : Array.Empty<string>();
         var taker = TakerFlowFeatureEngine.Calculate(assetUniverse, enabledMetrics,
-          store, interval, marketTrend.TrendMinutes, calculatedAtUtc);
+          store, interval, marketTrend.TrendMinutes, calculatedAtUtc, globalTakerSymbols);
         foreach (var asset in taker)
         {
           Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
@@ -320,6 +322,13 @@ namespace Core.MarketAnalyzer.MarketData
             : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
           foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
           assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+        if (TakerFlowFeatureEngine.HasGlobalMetrics(enabledMetrics))
+        {
+          var aggregates = TakerFlowFeatureEngine.CalculateGlobal(
+            globalUniverse, enabledMetrics, assetMetrics, calculatedAtUtc, marketTrend);
+          foreach (var aggregate in aggregates)
+            marketMetrics[aggregate.Key] = aggregate.Value;
         }
       }
 

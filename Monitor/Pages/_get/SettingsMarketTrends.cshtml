@@ -69,7 +69,7 @@
           </div>
         </div>
 
-        @foreach (string field in new[] { "ATRPeriod", "VolumeExpansionLookback", "CorrelationLookback", "TopNVolumeCount", "ATRPBreadthThreshold", "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold", "ExtremePositiveFundingThreshold", "ExtremeNegativeFundingThreshold" }) {
+        @foreach (string field in new[] { "ATRPeriod", "VolumeExpansionLookback", "CorrelationLookback", "TopNVolumeCount", "ATRPBreadthThreshold", "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold", "ExtremePositiveFundingThreshold", "ExtremeNegativeFundingThreshold", "StrongBuyerDominanceThreshold" }) {
           <div class="form-group row">
             <label class="col-md-4 col-form-label">@Core.Helper.SystemHelper.SplitCamelCase(field)</label>
             <div class="col-md-8">
@@ -77,7 +77,7 @@
             </div>
           </div>
         }
-        <p class="text-muted">Lookbacks count complete MarketTrend-duration periods. Correlation uses 3–1000 synchronized returns (default 30). Breadth thresholds use percent for ATRP and ratios for volume expansion. Extreme funding thresholds are signed percentage points (defaults +0.05% and −0.05%); rates equal to either threshold count as extreme.</p>
+        <p class="text-muted">Lookbacks count complete MarketTrend-duration periods. Correlation uses 3–1000 synchronized returns (default 30). Breadth thresholds use percent for ATRP and ratios for volume expansion. Extreme funding thresholds are signed percentage points (defaults +0.05% and −0.05%); rates equal to either threshold count as extreme. StrongBuyerDominanceThreshold is an inclusive taker-buy ratio (default 0.60; must be greater than 0.5 and at most 1).</p>
 
         <div class="form-group row">
           <label class="col-md-4 col-form-label">Ignored Markets <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Comma separated list of markets you want to be ignored in this market trend."></i></label>

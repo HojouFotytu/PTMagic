@@ -103,7 +103,10 @@ namespace Monitor.Pages
       new GlobalMetricGroup("Funding",
         MarketTrendMetrics.MedianFundingRate, MarketTrendMetrics.PositiveFundingBreadth,
         MarketTrendMetrics.NegativeFundingBreadth, MarketTrendMetrics.ExtremePositiveFundingBreadth,
-        MarketTrendMetrics.ExtremeNegativeFundingBreadth)
+        MarketTrendMetrics.ExtremeNegativeFundingBreadth),
+      new GlobalMetricGroup("Taker Flow",
+        MarketTrendMetrics.MedianTakerBuyRatio, MarketTrendMetrics.BuyerDominanceBreadth,
+        MarketTrendMetrics.StrongBuyerDominanceBreadth, MarketTrendMetrics.TakerImbalanceDispersion)
     };
 
     // Show only metrics actually published in at least one trend. Keep known
@@ -285,6 +288,19 @@ namespace Monitor.Pages
 
     public string GlobalMetricColorClass(string metric, FeatureValueSnapshot feature)
     {
+      if (metric == MarketTrendMetrics.MedianTakerBuyRatio)
+      {
+        if (feature == null || !feature.IsValid || feature.IsStale ||
+            !feature.Value.HasValue || !Double.IsFinite(feature.Value.Value) ||
+            feature.Value.Value == 0.5)
+          return "text-muted";
+        return feature.Value.Value > 0.5 ? "text-success" : "text-danger";
+      }
+      // Breadth and dispersion alone are not directional confirmation.
+      if (metric == MarketTrendMetrics.BuyerDominanceBreadth ||
+          metric == MarketTrendMetrics.StrongBuyerDominanceBreadth ||
+          metric == MarketTrendMetrics.TakerImbalanceDispersion)
+        return "";
       if (metric == MarketTrendMetrics.PositiveFundingBreadth ||
           metric == MarketTrendMetrics.NegativeFundingBreadth ||
           metric == MarketTrendMetrics.ExtremePositiveFundingBreadth ||
@@ -323,6 +339,11 @@ namespace Monitor.Pages
       {
         return feature.Value.Value.ToString("+0.000000;-0.000000;0.000000",
           CultureInfo.InvariantCulture) + "%";
+      }
+      if (metric == MarketTrendMetrics.MedianTakerBuyRatio ||
+          metric == MarketTrendMetrics.TakerImbalanceDispersion)
+      {
+        return feature.Value.Value.ToString("0.0000", CultureInfo.InvariantCulture);
       }
 
       bool isReturnDifference = metric.Equals(MarketTrendMetrics.MeanMedianSpread, StringComparison.OrdinalIgnoreCase)
@@ -399,6 +420,10 @@ namespace Monitor.Pages
         MarketTrendMetrics.ExtremeNegativeFundingBreadth => "Extreme Negative Funding Breadth",
         MarketTrendMetrics.TakerBuyRatio => "Taker Buy Ratio",
         MarketTrendMetrics.TakerImbalance => "Taker Imbalance",
+        MarketTrendMetrics.MedianTakerBuyRatio => "Median Taker Buy Ratio",
+        MarketTrendMetrics.BuyerDominanceBreadth => "Buyer Dominance Breadth",
+        MarketTrendMetrics.StrongBuyerDominanceBreadth => "Strong Buyer Dominance Breadth",
+        MarketTrendMetrics.TakerImbalanceDispersion => "Taker Imbalance Dispersion",
         _ => metric
       };
     }
@@ -448,6 +473,10 @@ namespace Monitor.Pages
         MarketTrendMetrics.ExtremeNegativeFundingBreadth => "Percent of valid global markets whose latest verified Regular funding rate is at or below the configured ExtremeNegativeFundingThreshold (negative percentage points; default -0.05%). Requires at least 90% coverage of the frozen global population.",
         MarketTrendMetrics.TakerBuyRatio => "Taker-buy quote volume divided by total quote volume summed over the latest exact complete MarketTrend-duration UTC period. Range 0–1; 0.5 is balanced. Missing or invalid history remains unavailable.",
         MarketTrendMetrics.TakerImbalance => "Twice TakerBuyRatio minus one, using exactly the same volume-weighted closed MarketTrend period. Range -1 to +1; zero is balanced. Not an independent data source from TakerBuyRatio.",
+        MarketTrendMetrics.MedianTakerBuyRatio => "Equal-market median of each valid asset's quote-volume-weighted TakerBuyRatio (0–1). Balanced is 0.5. Requires 90% source-verified global coverage.",
+        MarketTrendMetrics.BuyerDominanceBreadth => "Percent of valid global markets with TakerBuyRatio strictly above 0.5. Exact balance is neutral. Requires 90% source-verified coverage.",
+        MarketTrendMetrics.StrongBuyerDominanceBreadth => "Percent of valid global markets with TakerBuyRatio at or above StrongBuyerDominanceThreshold (default 0.60). Requires 90% source-verified coverage.",
+        MarketTrendMetrics.TakerImbalanceDispersion => "Cross-sectional population standard deviation of already-calculated per-asset TakerImbalance values (0–1). Measures polarization, not direction; every valid market has equal weight. Requires 90% source-verified coverage.",
         _ => metric
       };
     }

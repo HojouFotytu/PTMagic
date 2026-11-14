@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Core.Main.DataObjects.PTMagicData;
 
 namespace Core.MarketAnalyzer.MarketData
 {
@@ -22,49 +23,164 @@ namespace Core.MarketAnalyzer.MarketData
     public static bool HasMetrics(IReadOnlyCollection<string> metrics) =>
       metrics != null && metrics.Any(IsMetric);
 
+    public static bool IsGlobalMetric(string metric)
+    {
+      string name = MarketTrendMetrics.Normalize(metric);
+      return name == MarketTrendMetrics.MedianTakerBuyRatio ||
+        name == MarketTrendMetrics.BuyerDominanceBreadth ||
+        name == MarketTrendMetrics.StrongBuyerDominanceBreadth ||
+        name == MarketTrendMetrics.TakerImbalanceDispersion;
+    }
+
+    public static bool HasGlobalMetrics(IReadOnlyCollection<string> metrics) =>
+      metrics != null && metrics.Any(IsGlobalMetric);
+
+    public static bool HasAnyMetrics(IReadOnlyCollection<string> metrics) =>
+      HasMetrics(metrics) || HasGlobalMetrics(metrics);
+
+    /// <summary>
+    /// Equal-market-weighted aggregation of already calculated per-asset
+    /// taker ratios and imbalances, using the fixed global MarketTrend cohort.
+    /// </summary>
+    public static IReadOnlyDictionary<string, FeatureValueSnapshot> CalculateGlobal(
+      IEnumerable<string> globalSymbols, IReadOnlyCollection<string> enabled,
+      IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetMetrics,
+      DateTimeOffset asOfUtc, MarketTrend trend = null)
+    {
+      var results = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+      if (!HasGlobalMetrics(enabled))
+        return new ReadOnlyDictionary<string, FeatureValueSnapshot>(results);
+
+      string[] symbols = (globalSymbols ?? Array.Empty<string>())
+        .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+        .Select(symbol => symbol.Trim().ToUpperInvariant())
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      var ratios = new List<FeatureValueSnapshot>();
+      var imbalances = new List<FeatureValueSnapshot>();
+      foreach (string symbol in symbols)
+      {
+        if (assetMetrics == null || !assetMetrics.TryGetValue(symbol, out var values) ||
+            values == null)
+          continue;
+        if (values.TryGetValue(MarketTrendMetrics.TakerBuyRatio, out var ratio) &&
+            Usable(ratio) && ratio.Value.Value >= 0 && ratio.Value.Value <= 1)
+          ratios.Add(ratio);
+        if (values.TryGetValue(MarketTrendMetrics.TakerImbalance, out var imbalance) &&
+            Usable(imbalance) && imbalance.Value.Value >= -1 && imbalance.Value.Value <= 1)
+          imbalances.Add(imbalance);
+      }
+      double strong = trend?.StrongBuyerDominanceThreshold ?? 0.60;
+      foreach (string metric in enabled.Where(IsGlobalMetric)
+        .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase))
+      {
+        List<FeatureValueSnapshot> inputs = metric == MarketTrendMetrics.TakerImbalanceDispersion
+          ? imbalances : ratios;
+        double[] values = inputs.Select(feature => feature.Value.Value)
+          .OrderBy(value => value).ToArray();
+        string thresholdError = metric == MarketTrendMetrics.StrongBuyerDominanceBreadth &&
+          (!Double.IsFinite(strong) || strong <= 0.5 || strong > 1)
+          ? "StrongBuyerDominanceThreshold must be finite, greater than 0.5 and at most 1 (ratio)."
+          : "";
+        double? measurement = null;
+        if (thresholdError.Length == 0 && values.Length > 0)
+        {
+          switch (metric)
+          {
+            case MarketTrendMetrics.MedianTakerBuyRatio:
+              int middle = values.Length / 2;
+              measurement = values.Length % 2 == 1 ? values[middle]
+                : values[middle - 1] + (values[middle] - values[middle - 1]) / 2.0;
+              break;
+            case MarketTrendMetrics.BuyerDominanceBreadth:
+              measurement = values.Count(value => value > 0.5) * 100.0 / values.Length;
+              break;
+            case MarketTrendMetrics.StrongBuyerDominanceBreadth:
+              measurement = values.Count(value => value >= strong) * 100.0 / values.Length;
+              break;
+            case MarketTrendMetrics.TakerImbalanceDispersion:
+              double mean = values.Average();
+              measurement = Math.Sqrt(values.Average(value => (value - mean) * (value - mean)));
+              break;
+          }
+        }
+        var raw = new FeatureValueSnapshot
+        {
+          CalculatedAtUtc = asOfUtc,
+          SourceDataTimestampUtc = inputs.Count > 0 &&
+            inputs.All(value => value.SourceDataTimestampUtc.HasValue)
+              ? inputs.Min(value => value.SourceDataTimestampUtc.Value) : (DateTimeOffset?)null,
+          Value = measurement,
+          SampleCount = inputs.Count,
+          IsValid = measurement.HasValue && Double.IsFinite(measurement.Value),
+          InvalidReason = thresholdError.Length > 0 ? thresholdError :
+            measurement.HasValue ? "" : "No complete taker-flow observations are available."
+        };
+        results[metric] = MarketMetricCoverage.Apply(raw, inputs.Count, symbols.Length, asOfUtc);
+      }
+      return new ReadOnlyDictionary<string, FeatureValueSnapshot>(results);
+    }
+
+    private static bool Usable(FeatureValueSnapshot feature) =>
+      feature != null && feature.IsValid && !feature.IsStale &&
+      feature.Value.HasValue && Double.IsFinite(feature.Value.Value);
+
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> Calculate(
       IEnumerable<string> assetSymbols, IReadOnlyCollection<string> enabled,
-      MarketDataStore store, TimeSpan interval, int trendMinutes, DateTimeOffset asOfUtc)
+      MarketDataStore store, TimeSpan interval, int trendMinutes, DateTimeOffset asOfUtc,
+      IReadOnlyCollection<string> aggregateRatioSymbols = null)
     {
       var result = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
         StringComparer.OrdinalIgnoreCase);
-      if (!HasMetrics(enabled)) return new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(result);
+      if (!HasAnyMetrics(enabled))
+        return new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(result);
 
-      string[] requested = enabled.Where(IsMetric).Select(MarketTrendMetrics.Normalize)
-        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-      foreach (string symbol in (assetSymbols ?? Array.Empty<string>())
-        .Where(x => !String.IsNullOrWhiteSpace(x))
-        .Select(x => x.Trim().ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase))
+      string[] selected = (enabled ?? Array.Empty<string>()).Where(IsMetric)
+        .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+      bool assetRatio = selected.Contains(MarketTrendMetrics.TakerBuyRatio, StringComparer.OrdinalIgnoreCase);
+      bool assetImbalance = selected.Contains(MarketTrendMetrics.TakerImbalance, StringComparer.OrdinalIgnoreCase);
+      bool globalDispersion = (enabled ?? Array.Empty<string>())
+        .Contains(MarketTrendMetrics.TakerImbalanceDispersion, StringComparer.OrdinalIgnoreCase);
+      var assets = new HashSet<string>((assetSymbols ?? Array.Empty<string>())
+        .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+        .Select(symbol => symbol.Trim().ToUpperInvariant()), StringComparer.OrdinalIgnoreCase);
+      var globals = new HashSet<string>((aggregateRatioSymbols ?? Array.Empty<string>())
+        .Where(symbol => !String.IsNullOrWhiteSpace(symbol))
+        .Select(symbol => symbol.Trim().ToUpperInvariant()), StringComparer.OrdinalIgnoreCase);
+      var required = new HashSet<string>(globals, StringComparer.OrdinalIgnoreCase);
+      if (assetRatio || assetImbalance) required.UnionWith(assets);
+      foreach (string symbol in required)
       {
-        MarketDataSeriesSnapshot snapshot = store?.GetSnapshot(symbol, interval, asOfUtc);
-        FeatureValueSnapshot buy = CalculateRatio(snapshot, trendMinutes, asOfUtc);
+        bool needRatio = globals.Contains(symbol) ||
+          (assets.Contains(symbol) && (assetRatio || assetImbalance));
+        bool needImbalance = (assetImbalance && assets.Contains(symbol)) ||
+          (globalDispersion && globals.Contains(symbol));
+        if (!needRatio && !needImbalance) continue;
+
+        FeatureValueSnapshot buy = CalculateRatio(store?.GetSnapshot(symbol, interval, asOfUtc),
+          trendMinutes, asOfUtc);
         var values = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
-        foreach (string metric in requested)
+        // The ratio is already needed internally when imbalance is selected,
+        // so publish it for Monitor display without additional calculation.
+        if (needRatio) values[MarketTrendMetrics.TakerBuyRatio] = buy;
+        if (needImbalance)
         {
-          if (metric == MarketTrendMetrics.TakerBuyRatio)
-          {
-            values[metric] = buy;
-          }
-          else
-          {
-            values[metric] = !buy.IsValid || !buy.Value.HasValue
-              ? new FeatureValueSnapshot
-              {
-                CalculatedAtUtc = buy.CalculatedAtUtc,
-                SourceDataTimestampUtc = buy.SourceDataTimestampUtc,
-                SampleCount = buy.SampleCount,
-                IsStale = buy.IsStale,
-                InvalidReason = buy.InvalidReason
-              }
-              : new FeatureValueSnapshot
-              {
-                CalculatedAtUtc = buy.CalculatedAtUtc,
-                SourceDataTimestampUtc = buy.SourceDataTimestampUtc,
-                SampleCount = buy.SampleCount,
-                IsValid = true,
-                Value = 2.0 * buy.Value.Value - 1.0
-              };
-          }
+          values[MarketTrendMetrics.TakerImbalance] = !buy.IsValid || !buy.Value.HasValue
+            ? new FeatureValueSnapshot
+            {
+              CalculatedAtUtc = buy.CalculatedAtUtc,
+              SourceDataTimestampUtc = buy.SourceDataTimestampUtc,
+              SampleCount = buy.SampleCount,
+              IsStale = buy.IsStale,
+              InvalidReason = buy.InvalidReason
+            }
+            : new FeatureValueSnapshot
+            {
+              CalculatedAtUtc = buy.CalculatedAtUtc,
+              SourceDataTimestampUtc = buy.SourceDataTimestampUtc,
+              SampleCount = buy.SampleCount,
+              IsValid = true,
+              Value = 2.0 * buy.Value.Value - 1.0
+            };
         }
         result[symbol] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(values);
       }

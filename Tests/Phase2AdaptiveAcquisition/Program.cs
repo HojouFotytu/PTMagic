@@ -43,20 +43,24 @@ internal static class Program
   private static void MetricRegistry()
   {
     string[] names = MarketTrendMetrics.Names.ToArray();
-    Check(names.Length == 31 && names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 31, "Registry must have 31 distinct metrics.");
+    Check(names.Length == 35 && names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 35, "Registry must have 35 distinct metrics.");
     int global = names.Count(name => MarketTrendMetrics.TryGetScope(name, out var scope) &&
       (scope == MarketTrendMetricScope.Both || scope == MarketTrendMetricScope.Global));
     int assetOnly = names.Count(name => MarketTrendMetrics.TryGetScope(name, out var scope) &&
       scope == MarketTrendMetricScope.Asset);
-    Check(global == 22 && assetOnly == 9 && names.Contains(MarketTrendMetrics.TakerBuyRatio) &&
+    Check(global == 26 && assetOnly == 9 && names.Contains(MarketTrendMetrics.TakerBuyRatio) &&
       names.Contains(MarketTrendMetrics.TakerImbalance) && names.Contains(MarketTrendMetrics.FundingRate) &&
       names.Contains(MarketTrendMetrics.FundingSum) &&
       names.Contains(MarketTrendMetrics.MedianFundingRate) &&
       names.Contains(MarketTrendMetrics.PositiveFundingBreadth) &&
       names.Contains(MarketTrendMetrics.NegativeFundingBreadth) &&
       names.Contains(MarketTrendMetrics.ExtremePositiveFundingBreadth) &&
-      names.Contains(MarketTrendMetrics.ExtremeNegativeFundingBreadth), "Wrong retained metric scope.");
-    Passed("31-metric catalogue: 22 global-capable and 9 asset-only");
+      names.Contains(MarketTrendMetrics.ExtremeNegativeFundingBreadth) &&
+      names.Contains(MarketTrendMetrics.MedianTakerBuyRatio) &&
+      names.Contains(MarketTrendMetrics.BuyerDominanceBreadth) &&
+      names.Contains(MarketTrendMetrics.StrongBuyerDominanceBreadth) &&
+      names.Contains(MarketTrendMetrics.TakerImbalanceDispersion), "Wrong retained metric scope.");
+    Passed("35-metric catalogue: 26 global-capable and 9 asset-only");
   }
 
   private static void FundingQuota()
