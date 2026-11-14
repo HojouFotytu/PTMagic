@@ -1,7 +1,7 @@
 // TEST-ONLY PTMagic 2.10 metric analyzer; D-053 retained and Phase 2 taker-flow scope.
 // SetIdentity = PTM2.10-26-METRICS
-// SetVersion = 2.1.0
-// SetDate = 2026-11-12
+// SetVersion = 2.1.1
+// SetDate = 2026-11-14
 // TargetApplicationSource = PHASE2_TAKER_FLOW_CURRENT_BRANCH
 // VerifiedBuild = PENDING
 // VerifiedFocusedTests = PENDING
@@ -82,7 +82,7 @@
     },
     "GlobalSettings": [
       {
-        "SettingName": "DEFAULT",
+        "SettingName": "Default",
         "TriggerConnection": "OR",
         "Triggers": [
           {
@@ -241,7 +241,7 @@
         "RefreshOffTriggers": false,
         "IgnoredMarkets": "",
         "IgnoredGlobalSettings": "",
-        "AllowedGlobalSettings": "DEFAULT",
+        "AllowedGlobalSettings": "Default",
         "StopProcessWhenTriggered": false,
         "Triggers": [
           {
@@ -321,7 +321,7 @@
         "RefreshOffTriggers": false,
         "IgnoredMarkets": "",
         "IgnoredGlobalSettings": "",
-        "AllowedGlobalSettings": "DEFAULT",
+        "AllowedGlobalSettings": "Default",
         "StopProcessWhenTriggered": false,
         "Triggers": [
           {
