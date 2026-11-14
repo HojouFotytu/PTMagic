@@ -397,7 +397,7 @@ namespace Core.ProfitTrailer
       }
       return result;
     }
-    public static string GetStrategyText(Summary summary, List<Strategy> strategies, string strategyText, bool isTrue, bool isTrailingBuyActive)
+    public static string GetStrategyText(Summary summary, List<Strategy> strategies, string strategyText, bool isTrue, bool isTrailingBuyActive, bool isTPSArmed = false)
     {
       bool isValidStrategy = false;
       Regex regx = new Regex(@"[ABCDEFGHIJKLMNOPQRSTUVWXYZ]", RegexOptions.Compiled);
@@ -484,6 +484,10 @@ namespace Core.ProfitTrailer
             strategyText = "<span class=\"label label-warning\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategyText + "\">" + StrategyHelper.GetStrategyShortcut(strategyText, false) + "</span> ";
           }
         }
+      }
+      if (isTPSArmed)
+      {
+        strategyText += " <i class=\"fa fa-shield text-success\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"TPS Armed\"></i>";
       }
       return strategyText;
     }

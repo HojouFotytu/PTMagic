@@ -71,7 +71,7 @@
     isSellStrategyTrue = (dcaLogEntry.SellStrategies.FindAll(ss => !ss.IsTrue).Count == 0);
   }
 
-  string sellStrategyText = Core.ProfitTrailer.StrategyHelper.GetStrategyText(Model.Summary, dcaLogEntry.SellStrategies, dcaLogEntry.SellStrategy, isSellStrategyTrue, isTrailingSellActive);
+  string sellStrategyText = Core.ProfitTrailer.StrategyHelper.GetStrategyText(Model.Summary, dcaLogEntry.SellStrategies, dcaLogEntry.SellStrategy, isSellStrategyTrue, isTrailingSellActive, dcaLogEntry.IsTPSArmed);
   string currentSellValueText = Core.ProfitTrailer.StrategyHelper.GetCurrentValueText(dcaLogEntry.SellStrategies, dcaLogEntry.SellStrategy, dcaLogEntry.CurrentHighBBValue, dcaLogEntry.ProfitPercent, true);
   string triggerSellValueText = Core.ProfitTrailer.StrategyHelper.GetTriggerValueText(Model.Summary, dcaLogEntry.SellStrategies, dcaLogEntry.SellStrategy, dcaLogEntry.BBTrigger, dcaLogEntry.SellTrigger, 0, true);
   double currentFiatValue = Math.Round(dcaLogEntry.Amount * dcaLogEntry.CurrentPrice * Model.Summary.MainMarketPrice, 2);
