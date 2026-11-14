@@ -27,6 +27,7 @@ namespace Monitor._Internal
         public LogHelper Log = null;
         public string LatestVersion = "";
         public string CurrentBotVersion = "";
+        public string CurrentBotBuild = "";
         public string NotifyHeadline = "";
         public string NotifyMessage = "";
         public string NotifyType = "";
@@ -228,31 +229,33 @@ namespace Monitor._Internal
 
             try
             {
-                // Get current bot version
-                if (!String.IsNullOrEmpty(HttpContext.Session.GetString("CurrentBotVersion")))
+                // Read the full product version so the build can be shown in the
+                // header tooltip while the existing short version stays unchanged.
+                string ptMagicBotDllPath = PTMagicBasePath + "PTMagic.dll";
+                if (System.IO.File.Exists(ptMagicBotDllPath))
                 {
-                    CurrentBotVersion = HttpContext.Session.GetString("CurrentBotVersion");
-                }
-                else
-                {
-                    string ptMagicBotDllPath = PTMagicBasePath + "PTMagic.dll";
-                    if (System.IO.File.Exists(ptMagicBotDllPath))
+                    FileVersionInfo ptMagicDllInfo = FileVersionInfo.GetVersionInfo(ptMagicBotDllPath);
+                    string productVersion = ptMagicDllInfo.ProductVersion ?? "";
+                    int lastDot = productVersion.LastIndexOf(".");
+                    if (lastDot > 0 && lastDot < productVersion.Length - 1)
                     {
-                        FileVersionInfo ptMagicDllInfo = FileVersionInfo.GetVersionInfo(ptMagicBotDllPath);
-
-                        CurrentBotVersion = ptMagicDllInfo.ProductVersion.Substring(0, ptMagicDllInfo.ProductVersion.LastIndexOf("."));
-                        HttpContext.Session.SetString("CurrentBotVersion", CurrentBotVersion);
+                        CurrentBotVersion = productVersion.Substring(0, lastDot);
+                        CurrentBotBuild = productVersion.Substring(lastDot + 1);
                     }
                     else
                     {
-                        CurrentBotVersion = Summary.Version;
+                        CurrentBotVersion = String.IsNullOrWhiteSpace(productVersion) ? Summary.Version : productVersion;
                     }
                 }
-
+                else
+                {
+                    CurrentBotVersion = Summary.Version;
+                }
             }
             catch
             {
                 CurrentBotVersion = Summary.Version;
+                CurrentBotBuild = "";
             }
         }
 
