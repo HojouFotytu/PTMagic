@@ -278,7 +278,7 @@
         // Preserve prior Monitor diagnostics across daily log rotation.
         pending.length = 0;
         if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
-        if (key === "monitor") output.replaceChildren();
+        if (key === "monitor") render();
       }
       state.cursor = data.cursor || '';
       state.offset = typeof data.offset === 'number' ? data.offset : -1;
