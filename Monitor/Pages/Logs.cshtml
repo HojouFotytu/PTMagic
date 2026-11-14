@@ -71,7 +71,12 @@
   var toggle = document.getElementById('log-toggle');
   var clear = document.getElementById('log-clear');
   var autoScroll = document.getElementById('log-autoscroll');
-  var maxLines = 500;
+  var maxLines = 500; // Monitor only; Analyzer retains the entire current raid in memory.
+  var previousRaidSummary = [];
+  var completedRaidSummary = [];
+  var collectingSummary = false;
+  var analyzerRaidStarted = false;
+  var displayLimit = 500;
   var history = { analyzer: [], monitor: [] };
   var cursors = {
     analyzer: { cursor: '', offset: -1 },
@@ -111,7 +116,7 @@
   }
 
   function render() {
-    var lines = history[source.value].filter(matches).slice(-maxLines);
+    var lines = (source.value === "analyzer" ? previousRaidSummary.concat(history.analyzer) : history.monitor).filter(matches).slice(-displayLimit);
     output.replaceChildren();
     append(lines);
   }
@@ -127,6 +132,41 @@
     Array.prototype.push.apply(pending, lines);
     if (pending.length > maxLines) pending.splice(0, pending.length - maxLines);
     if (frame === null) frame = requestAnimationFrame(flush);
+  }
+
+  function handleAnalyzerLines(lines) {
+    var fresh = [];
+    var resetView = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (line.indexOf('Starting market trend check with Version ') !== -1) {
+        if (completedRaidSummary.length) previousRaidSummary = completedRaidSummary.slice();
+        completedRaidSummary = [];
+        collectingSummary = false;
+        analyzerRaidStarted = true;
+        history.analyzer = [];
+        resetView = true;
+      }
+      if (line.indexOf('RAID SUMMARY') !== -1) {
+        completedRaidSummary = [];
+        collectingSummary = true;
+      }
+      if (collectingSummary) {
+        completedRaidSummary.push(line);
+        if (line.indexOf('DO NOT CLOSE THIS WINDOW! THIS IS THE BOT THAT ANALYZES TRENDS AND CHANGES SETTINGS!') !== -1)
+          collectingSummary = false;
+      }
+      // Nothing before the next raid start is replayed after the initial summary.
+      if (analyzerRaidStarted) {
+        history.analyzer.push(line);
+        fresh.push(line);
+      }
+    }
+    if (resetView) {
+      pending.length = 0;
+      if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
+      render();
+    } else if (fresh.length) scheduleRender(fresh);
   }
 
   function closeStream() {
@@ -151,24 +191,35 @@
     stream.onopen = function () {
       if (generation === current) status.textContent = 'Live';
     };
+    stream.addEventListener("snapshot", function (event) {
+      if (generation !== current || key !== "analyzer") return;
+      try {
+        var data = JSON.parse(event.data);
+        previousRaidSummary = Array.isArray(data.lines) ? data.lines : [];
+        render();
+      } catch (error) { status.textContent = "Summary unavailable"; }
+    });
     stream.onmessage = function (event) {
       if (generation !== current) return;
       var data;
       try { data = JSON.parse(event.data); } catch (error) { return; }
       if (data.reset) {
-        history[key] = [];
+        if (key === "monitor") history[key] = [];
         pending.length = 0;
         if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
-        output.replaceChildren();
+        if (key === "monitor") output.replaceChildren();
       }
       state.cursor = data.cursor || '';
       state.offset = typeof data.offset === 'number' ? data.offset : -1;
       var lines = Array.isArray(data.lines) ? data.lines : [];
       if (!lines.length) return;
-      Array.prototype.push.apply(history[key], lines);
-      if (history[key].length > maxLines)
-        history[key].splice(0, history[key].length - maxLines);
-      scheduleRender(lines);
+      if (key === "analyzer") handleAnalyzerLines(lines);
+      else {
+        Array.prototype.push.apply(history[key], lines);
+        if (history[key].length > maxLines)
+          history[key].splice(0, history[key].length - maxLines);
+        scheduleRender(lines);
+      }
     };
     stream.onerror = function () {
       if (generation !== current) return;
@@ -193,6 +244,7 @@
   });
   clear.addEventListener('click', function () {
     history[source.value] = [];
+    if (source.value === "analyzer") previousRaidSummary = [];
     pending.length = 0;
     if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
     output.replaceChildren();
