@@ -1,0 +1,150 @@
+@page
+@model Monitor.Pages.LogsModel
+@{
+  ViewData["Title"] = "Logs";
+}
+<div class="row">
+  <div class="col-md-12">
+    <div class="card-box">
+      <h4 class="m-t-0 header-title">Live Logs</h4>
+      <p>Read the Analyzer and Monitor application logs as they are written. Only recent entries are retained in this browser. The viewer does not change application logging or trading settings.</p>
+      @if (!Model.LogsEnabled)
+      {
+        <div class="alert alert-warning">For security, live log viewing requires a password-protected Monitor. Configure a Monitor password to enable this page.</div>
+      }
+      else
+      {
+        <div class="form-row align-items-end mb-3">
+          <div class="form-group col-md-3">
+            <label for="log-source">Application</label>
+            <select class="form-control" id="log-source">
+              <option value="analyzer">Analyzer (PTMagic)</option>
+              <option value="monitor">Monitor</option>
+            </select>
+          </div>
+          <div class="form-group col-md-2">
+            <label for="log-level">Severity</label>
+            <select class="form-control" id="log-level">
+              <option value="">All levels</option>
+              <option value="TRACE">TRACE</option>
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO">INFO</option>
+              <option value="WARN">WARN</option>
+              <option value="ERROR">ERROR</option>
+              <option value="FATAL">FATAL</option>
+            </select>
+          </div>
+          <div class="form-group col-md-4">
+            <label for="log-search">Search loaded lines</label>
+            <input id="log-search" class="form-control" type="search" placeholder="Search log text" />
+          </div>
+          <div class="form-group col-md-3">
+            <button id="log-toggle" class="btn btn-ptmagic" type="button"><i class="fa fa-pause"></i> Pause</button>
+            <button id="log-clear" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+        </div>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div>
+            <label class="mb-0"><input type="checkbox" id="log-autoscroll" checked /> Auto-scroll</label>
+            <span id="log-status" class="ml-3 text-muted" role="status" aria-live="polite">Connecting...</span>
+          </div>
+          <span class="text-muted">Updates every second</span>
+        </div>
+        <div id="log-output" role="log" aria-label="Application logs" aria-live="off" tabindex="0"
+          style="background:#111820;color:#dde4eb;min-height:380px;max-height:68vh;overflow:auto;padding:12px;font:12px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;overflow-wrap:anywhere;"></div>
+      }
+    </div>
+  </div>
+</div>
+@if (Model.LogsEnabled)
+{
+@section Scripts {
+<script type="text/javascript">
+(function () {
+  'use strict';
+  var endpoint = '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=Tail';
+  var source = document.getElementById('log-source');
+  var level = document.getElementById('log-level');
+  var search = document.getElementById('log-search');
+  var output = document.getElementById('log-output');
+  var status = document.getElementById('log-status');
+  var toggle = document.getElementById('log-toggle');
+  var clear = document.getElementById('log-clear');
+  var autoScroll = document.getElementById('log-autoscroll');
+  var records = { analyzer: [], monitor: [] };
+  var cursors = { analyzer: { cursor: '', offset: -1 }, monitor: { cursor: '', offset: -1 } };
+  var active = true, busy = false, timer = null;
+  var maxLines = 3000;
+
+  function matches(line) {
+    var selected = level.value;
+    var found = /\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s*-/.exec(line);
+    if (selected && (!found || found[1] !== selected)) return false;
+    return line.toLowerCase().indexOf(search.value.toLowerCase()) !== -1;
+  }
+
+  function render() {
+    var frag = document.createDocumentFragment();
+    records[source.value].filter(matches).forEach(function (line) {
+      var item = document.createElement('div');
+      item.textContent = line;
+      if (/\b(ERROR|FATAL)\s*-/.test(line)) item.style.color = '#ff8080';
+      else if (/\bWARN\s*-/.test(line)) item.style.color = '#ffcc70';
+      else if (/\bDEBUG\s*-/.test(line)) item.style.color = '#a8b8c7';
+      frag.appendChild(item);
+    });
+    output.replaceChildren(frag);
+    if (autoScroll.checked) output.scrollTop = output.scrollHeight;
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    if (active && !document.hidden) timer = setTimeout(poll, 1000);
+  }
+
+  function poll() {
+    if (!active || document.hidden || busy) return;
+    busy = true;
+    var key = source.value;
+    var state = cursors[key];
+    $.ajax({
+      url: endpoint,
+      type: 'GET',
+      dataType: 'json',
+      cache: false,
+      data: { source: key, cursor: state.cursor, offset: state.offset }
+    }).done(function (data) {
+      if (data.cursor !== state.cursor && state.cursor) records[key] = [];
+      state.cursor = data.cursor;
+      state.offset = data.offset;
+      if (data.lines && data.lines.length) {
+        Array.prototype.push.apply(records[key], data.lines);
+        if (records[key].length > maxLines) records[key].splice(0, records[key].length - maxLines);
+      }
+      status.textContent = data.status || 'Live';
+      if (key === source.value) render();
+    }).fail(function (xhr) {
+      status.textContent = xhr.status === 403 ? 'Access denied: sign in to a password-protected Monitor.' : 'Log unavailable; retrying...';
+      if (xhr.status === 403) active = false;
+    }).always(function () {
+      busy = false;
+      schedule();
+    });
+  }
+
+  source.addEventListener('change', function () { render(); if (!busy) { clearTimeout(timer); poll(); } });
+  level.addEventListener('change', render);
+  search.addEventListener('input', render);
+  clear.addEventListener('click', function () { records[source.value] = []; render(); });
+  toggle.addEventListener('click', function () {
+    active = !active;
+    toggle.innerHTML = active ? '<i class="fa fa-pause"></i> Pause' : '<i class="fa fa-play"></i> Resume';
+    status.textContent = active ? 'Connecting...' : 'Paused';
+    if (active) poll(); else clearTimeout(timer);
+  });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && active) poll(); else clearTimeout(timer); });
+  poll();
+})();
+</script>
+}
+}
