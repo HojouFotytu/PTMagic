@@ -30,7 +30,7 @@
         <div class="logo">
           <a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)" class="logo"><i class="fa fa-magic text-ptmagic"></i> <span class="text-ptmagic">PTMagic</span></a>
           <span class="logo-version">
-            v<span>@Model.CurrentBotVersion</span>
+            v<span data-toggle="tooltip" data-placement="bottom" title="@(String.IsNullOrWhiteSpace(Model.CurrentBotBuild) ? "Build unavailable" : "Build " + Model.CurrentBotBuild)">@Model.CurrentBotVersion</span>
             @if (!Core.Helper.SystemHelper.IsRecentVersion(Model.CurrentBotVersion, Model.LatestVersion)) {
               <a href="https://github.com/PTMagicians/PTMagic/releases" target="_blank"><i class="fa fa-exclamation-triangle text-warning" data-toggle="tooltip" data-placement="top" title="Your PT Magic is out of date. Click here to get to the latest release."></i></a>
             } else {
