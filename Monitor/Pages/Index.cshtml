@@ -69,6 +69,8 @@
         $('[data-toggle="tooltip"]').tooltip();
         $('.text-autocolor').autocolor(false);
 
+        dashboardTopRefreshMilliseconds = $("#dashboardTop").find('[data-raid-waiting]').length
+          ? 60000 : 5000;
         if (textStatus == 'error') {
           errCountIndex["DashboardTop"]++;
           if (errCountIndex["DashboardTop"] > 2) {
@@ -99,6 +101,8 @@
 
       // Load dashboard
       $("#dashboardBottom").load('@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)_get/DashboardBottom', '', function (responseText, textStatus, XMLHttpRequest) {
+        dashboardBottomRefreshMilliseconds = $("#dashboardBottom").find('[data-raid-waiting]').length
+          ? 60000 : @Model.PTMagicConfiguration.GeneralSettings.Monitor.DashboardChartsRefreshSeconds * 1000;
         if (textStatus == 'error') {
           errCountIndex["DashboardBottom"]++;
           if (errCountIndex["DashboardBottom"] > 2) {
