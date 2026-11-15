@@ -64,15 +64,14 @@ namespace Monitor
           {
             Logger.WriteLine("INFO: settings.general.json found at " + settingsGeneralJson);
 
-            // PTMagic writes the runtime summary after its first completed raid.
-            // A missing summary is expected during initial startup, not a fatal error.
+            // Monitor can serve independent pages before the first PTMagic raid.
+            // Raid-dependent views show their own waiting notice until the
+            // runtime summary becomes available.
             string lastRuntimeSummaryJson = ptMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "LastRuntimeSummary.json";
-            while (!File.Exists(lastRuntimeSummaryJson))
-            {
-              Logger.WriteLine("INFO: PTMagic has not completed its first raid. LastRuntimeSummary.json is not yet available; Monitor is waiting and will check again in 60 seconds.");
-              System.Threading.Thread.Sleep(TimeSpan.FromMinutes(1));
-            }
-            Logger.WriteLine("INFO: LastRuntimeSummary.json found at " + lastRuntimeSummaryJson);
+            if (!File.Exists(lastRuntimeSummaryJson))
+              Logger.WriteLine("INFO: PTMagic has not completed its first raid. Monitor is starting; raid-dependent views will show a waiting message.");
+            else
+              Logger.WriteLine("INFO: LastRuntimeSummary.json found at " + lastRuntimeSummaryJson);
 
             PTMagicConfiguration ptMagicConfiguration = new PTMagicConfiguration(ptMagicBasePath);
 
