@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,12 +31,13 @@ namespace Monitor._Internal
     public bool AnySelected => IncludeBuys || IncludeSales || IncludeCurrentPositions || IncludeFunding;
   }
 
-  // Read-only exporter. Each HTTP response is bounded; complete histories live on disk, not in RAM.
+  // Rebuilt 2026-11-15. PT 2.6.1's history service uses perPage * (page - 1),
+  // NOT page * perPage. See Tests/PTDataExport/CONTRACT.md for release evidence.
+  // Pipeline: GET one page -> retain raw JSON -> append original records -> advance.
   public static class PTDataExportService
   {
-    private const int InitialPageSize = 10;
-    private const int ResponseLimit = 32 * 1024 * 1024;
-    private const int PageLimit = 10000;
+    private const int DefaultResponseLimit = 32 * 1024 * 1024;
+    private const long DefaultTransferLimit = 128L * 1024 * 1024;
     private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
     private static readonly HttpClient Client = new HttpClient(new HttpClientHandler
     {
@@ -43,22 +45,29 @@ namespace Monitor._Internal
       AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
     }) { Timeout = TimeSpan.FromSeconds(25) };
 
-    private sealed record Source(string Name, string Group, string Path, bool History = false);
+    private sealed record Source(string Name, string Group, string Path, string Sort = null, string DateField = null)
+    {
+      public bool History => Sort != null;
+    }
     private static readonly Source[] Sources =
     {
-      new Source("buys", "Buy History", "Trades/buys.json", true),
-      new Source("sales", "Sell History", "Trades/sales.json", true),
+      new Source("buys", "Buy History", "Trades/buys.json", "BOUGHTDATE", "lastBoughtDate"),
+      new Source("sales", "Sell History", "Trades/sales.json", "SOLDDATE", "soldDate"),
       new Source("watchmode", "Current Positions", "CurrentPositions/watchmode.json"),
       new Source("pending", "Current Positions", "CurrentPositions/pending.json"),
       new Source("pairs", "Current Positions", "CurrentPositions/pairs.json"),
       new Source("dca", "Current Positions", "CurrentPositions/dca.json"),
       new Source("funding", "Funding Updates", "Funding/funding-updates.json")
     };
-
-    private sealed class ExportError : Exception
+    private sealed class CollectionFailure : Exception
     {
-      public string Code { get; }
-      public ExportError(string code) : base(code) { Code = code; }
+      public CollectionFailure(string code) : base(code) { }
+    }
+    private sealed class TransferBudget
+    {
+      public long Received;
+      public readonly long Limit;
+      public TransferBudget(long limit) { Limit = limit; }
     }
 
     private static bool Selected(Source source, PTDataExportSelection selection) => source.Name switch
@@ -66,243 +75,289 @@ namespace Monitor._Internal
       "buys" => selection.IncludeBuys, "sales" => selection.IncludeSales,
       "funding" => selection.IncludeFunding, _ => selection.IncludeCurrentPositions
     };
-
     private static FileStream TemporaryFile() => new FileStream(
-      System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ptm-export-" + Guid.NewGuid().ToString("N")),
+      Path.Combine(Path.GetTempPath(), "ptm-export-" + Guid.NewGuid().ToString("N")),
       FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65536,
       FileOptions.Asynchronous | FileOptions.DeleteOnClose);
 
     private static Uri Endpoint(PTMagicConfiguration configuration, string name, string query = "")
     {
-      var application = configuration.GeneralSettings.Application;
-      if (String.IsNullOrWhiteSpace(application.ProfitTrailerServerAPIToken)
-        || !Uri.TryCreate(application.ProfitTrailerMonitorURL, UriKind.Absolute, out Uri address)
+      var app = configuration.GeneralSettings.Application;
+      if (String.IsNullOrWhiteSpace(app.ProfitTrailerServerAPIToken)
+        || !Uri.TryCreate(app.ProfitTrailerMonitorURL, UriKind.Absolute, out Uri address)
         || (address.Scheme != "http" && address.Scheme != "https")
         || address.UserInfo.Length != 0 || address.Query.Length != 0 || address.Fragment.Length != 0)
         throw new InvalidOperationException("PT connection configuration is unavailable.");
       return new UriBuilder(address)
       {
         Path = address.AbsolutePath.TrimEnd('/') + "/api/v2/data/" + name,
-        Query = "token=" + Uri.EscapeDataString(application.ProfitTrailerServerAPIToken) + query
+        Query = "token=" + Uri.EscapeDataString(app.ProfitTrailerServerAPIToken) + query
       }.Uri;
     }
 
-    private static async Task<byte[]> ReadAsync(HttpClient client, Uri uri, int limit, CancellationToken token)
+    // Only fixed error codes escape this boundary. Never export exception text,
+    // authenticated URLs, response headers, or non-success response bodies.
+    private static async Task<byte[]> FetchAsync(HttpClient client, Uri address, int responseLimit,
+      TransferBudget transfer, Dictionary<string, object> trace, CancellationToken cancellation)
     {
-      for (int attempt = 0; ; attempt++)
+      for (int attempt = 1; ; attempt++)
       {
-        using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-        if (attempt < 2 && (response.StatusCode == HttpStatusCode.TooManyRequests
+        cancellation.ThrowIfCancellationRequested();
+        if (transfer.Received >= transfer.Limit) throw new CollectionFailure("export_transfer_limit");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(25));
+        using var request = new HttpRequestMessage(HttpMethod.Get, address);
+        request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
+        trace["attempts"] = attempt;
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+        trace["http_status"] = (int)response.StatusCode;
+        if (attempt < 3 && (response.StatusCode == HttpStatusCode.TooManyRequests
           || response.StatusCode == HttpStatusCode.ServiceUnavailable))
         {
-          await Task.Delay(750 * (attempt + 1), token).ConfigureAwait(false);
+          await Task.Delay(750 * attempt, cancellation).ConfigureAwait(false);
           continue;
         }
-        if (!response.IsSuccessStatusCode)
-          throw new HttpRequestException("PT request failed.", null, response.StatusCode);
-        if (response.Content.Headers.ContentLength > limit) throw new ExportError("response_size_limit");
-        using var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+        // PT's 204 is a hash/cache response, not an empty-history page.
+        if (response.StatusCode == HttpStatusCode.NoContent) throw new CollectionFailure("http_204_no_payload");
+        if (response.StatusCode != HttpStatusCode.OK) throw new CollectionFailure("http_" + (int)response.StatusCode);
+        if (response.Content.Headers.ContentLength > responseLimit) throw new CollectionFailure("response_size_limit");
+        using var input = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
         using var output = new MemoryStream();
         var buffer = new byte[65536];
-        int count;
-        while ((count = await input.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
+        int length;
+        while ((length = await input.ReadAsync(buffer.AsMemory(), timeout.Token).ConfigureAwait(false)) != 0)
         {
-          if (output.Length + count > limit) throw new ExportError("response_size_limit");
-          output.Write(buffer, 0, count);
+          transfer.Received += length;
+          if (transfer.Received > transfer.Limit) throw new CollectionFailure("export_transfer_limit");
+          if (output.Length + length > responseLimit) throw new CollectionFailure("response_size_limit");
+          output.Write(buffer, 0, length);
         }
+        trace["bytes"] = output.Length;
         return output.ToArray();
       }
     }
 
-    // Accept a JSON array and the data/content wrappers used by paged JSON APIs.
-    // Do not guess record fields or silently turn an unknown response into an empty history.
-    private static JsonElement Records(JsonElement root)
+    private static bool Recoverable(Exception error) => error is CollectionFailure || error is HttpRequestException
+      || error is JsonException || error is OperationCanceledException || error is IOException;
+    private static string Code(Exception error) => error switch
     {
-      for (int depth = 0; depth < 4; depth++)
-      {
-        if (root.ValueKind == JsonValueKind.Array) return root;
-        if (root.ValueKind != JsonValueKind.Object) break;
-        if (root.TryGetProperty("data", out JsonElement data)) root = data;
-        else if (root.TryGetProperty("content", out JsonElement content)) root = content;
-        else break;
-      }
-      throw new ExportError("history_response_shape");
-    }
-
-    private static long? Timestamp(JsonElement record, string field)
-    {
-      if (record.ValueKind != JsonValueKind.Object || !record.TryGetProperty(field, out JsonElement value)) return null;
-      string text = value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText();
-      if (decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number))
-      {
-        if (number >= 1000000000000m) number /= 1000m;
-        return number > 0 && number <= 253402300799m ? (long)number : null;
-      }
-      if (value.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
-        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset date))
-        return date.ToUnixTimeSeconds();
-      return null;
-    }
-
-    private static string Fingerprint(JsonElement element) =>
-      Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(element.GetRawText())));
-
-    private static string ErrorCode(Exception error) => error switch
-    {
-      ExportError known => known.Code,
-      HttpRequestException http => http.StatusCode.HasValue ? "http_" + (int)http.StatusCode.Value : "connection_error",
+      CollectionFailure known => known.Message,
+      HttpRequestException => "connection_error",
       JsonException => "invalid_json",
       OperationCanceledException => "request_or_export_timeout",
       IOException => "io_error",
       _ => "collection_error"
     };
-
-    private static async Task AddAsync(ZipArchive archive, string path, Stream input, CancellationToken token)
+    private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    private static JsonElement Rows(JsonElement value)
+    {
+      for (int depth = 0; depth < 4; depth++)
+      {
+        if (value.ValueKind == JsonValueKind.Array) return value;
+        if (value.ValueKind != JsonValueKind.Object) break;
+        if (value.TryGetProperty("data", out JsonElement data)) value = data;
+        else if (value.TryGetProperty("content", out JsonElement content)) value = content;
+        else break;
+      }
+      throw new CollectionFailure("history_response_shape");
+    }
+    private static string RecordKey(JsonElement row, string fingerprint)
+    {
+      // History id is PositionHistoryEntity.id, not the current-position display index.
+      if (row.TryGetProperty("id", out JsonElement id)
+        && (id.ValueKind == JsonValueKind.Number || (id.ValueKind == JsonValueKind.String && !String.IsNullOrEmpty(id.GetString()))))
+        return "id:" + id.ToString();
+      return "content:" + fingerprint;
+    }
+    private static decimal? Timestamp(JsonElement row, string field)
+    {
+      if (!row.TryGetProperty(field, out JsonElement value)) return null;
+      string text = value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText();
+      if (decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number))
+      {
+        if (number >= 1000000000000m) number /= 1000m;
+        return number > 0 && number <= 253402300799m ? number : null;
+      }
+      if (value.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset date))
+        return date.ToUnixTimeMilliseconds() / 1000m;
+      return null;
+    }
+    private static async Task AddAsync(ZipArchive archive, string path, Stream input, CancellationToken cancellation)
     {
       using var output = archive.CreateEntry(path, CompressionLevel.Optimal).Open();
       input.Position = 0;
-      await input.CopyToAsync(output, token).ConfigureAwait(false);
+      await input.CopyToAsync(output, cancellation).ConfigureAwait(false);
     }
 
-    private static async Task HistoryAsync(PTMagicConfiguration configuration, Source source,
-      PTDataExportSelection selection, DateTime started, HttpClient client, ZipArchive archive,
-      Dictionary<string, object> item, int limit, CancellationToken budget, CancellationToken request)
+    private static async Task CollectHistoryAsync(PTMagicConfiguration configuration, Source source,
+      PTDataExportSelection selection, DateTime end, HttpClient client, ZipArchive archive,
+      Dictionary<string, object> result, TransferBudget transfer, int responseLimit, int pageLimit,
+      CancellationToken budget, CancellationToken request)
     {
-      using var aggregate = TemporaryFile();
-      using var writer = new Utf8JsonWriter(aggregate);
+      using var combined = TemporaryFile();
+      using var writer = new Utf8JsonWriter(combined);
       writer.WriteStartObject();
-      writer.WritePropertyName("data");
-      writer.WriteStartArray();
-      var seenRecords = new HashSet<string>(StringComparer.Ordinal);
-      var seenPages = new HashSet<string>(StringComparer.Ordinal);
-      var scanRecords = new HashSet<string>(StringComparer.Ordinal);
+      writer.WriteStartArray("data");
+      var seen = new Dictionary<string, string>(StringComparer.Ordinal);
       var hashes = new List<JsonElement>();
-      string dateField = source.Name == "buys" ? "lastBoughtDate" : "soldDate";
-      string sort = source.Name == "buys" ? "BOUGHTDATE" : "SOLDDATE";
-      DateTime? cutoff = selection.HistoryStartUtc(started);
-      long startSeconds = cutoff.HasValue ? new DateTimeOffset(cutoff.Value).ToUnixTimeSeconds() : 0;
-      long endSeconds = new DateTimeOffset(started).ToUnixTimeSeconds();
-      int page = 0, size = InitialPageSize, scan = 0, pages = 0, acceptedPages = 0;
-      int examined = 0, included = 0, unknownDates = 0, duplicates = 0;
-      long received = 0;
+      var traces = new List<Dictionary<string, object>>();
+      string prefix = "Trades/" + source.Name + "-pages/";
+      DateTime? start = selection.HistoryStartUtc(end);
+      decimal minimum = start.HasValue ? new DateTimeOffset(start.Value).ToUnixTimeMilliseconds() / 1000m : 0m;
+      decimal maximum = new DateTimeOffset(end).ToUnixTimeMilliseconds() / 1000m;
+      int offset = 0, size = 10, page = 1, pages = 0, accepted = 0, examined = 0, included = 0;
+      int duplicates = 0, changed = 0, undated = 0, reductions = 0;
       bool ended = false;
       string error = null;
-      string prefix = "Trades/" + source.Name + "-pages/";
-      item["raw_pages_prefix"] = prefix;
 
-      while (pages < PageLimit)
+      while (pages < pageLimit)
       {
+        // Size reductions divide the previous size (10 -> 5 -> 1).
+        // Keeping the row offset avoids both restarting and skipping records.
+        page = offset / size + 1;
+        var trace = new Dictionary<string, object>
+        {
+          ["page"] = page, ["per_page"] = size, ["row_offset"] = offset,
+          ["sort"] = source.Sort, ["sort_direction"] = "DESCENDING"
+        };
+        traces.Add(trace);
         try
         {
-          budget.ThrowIfCancellationRequested();
-          string query = $"&page={page}&perPage={size}&sort={sort}&sortDirection=DESCENDING";
           byte[] bytes;
-          try { bytes = await ReadAsync(client, Endpoint(configuration, source.Name, query), limit, budget).ConfigureAwait(false); }
-          catch (ExportError failure) when (failure.Code == "response_size_limit" && size > 1)
+          try
           {
-            // Page numbers are offsets relative to page size: restart at zero to avoid gaps.
-            // Exact-record deduplication retains already-downloaded rows without duplicating them.
-            size = Math.Max(1, size / 2);
-            page = 0;
-            scan++;
-            seenPages.Clear();
-            scanRecords.Clear();
+            bytes = await FetchAsync(client, Endpoint(configuration, source.Name,
+              $"&page={page}&perPage={size}&sort={source.Sort}&sortDirection=DESCENDING"),
+              responseLimit, transfer, trace, budget).ConfigureAwait(false);
+          }
+          catch (CollectionFailure failure) when (failure.Message == "response_size_limit" && size > 1)
+          {
+            trace["outcome"] = "response_size_limit";
+            size = size == 10 ? 5 : 1;
+            reductions++;
             continue;
           }
-          received += bytes.Length;
           using var document = JsonDocument.Parse(bytes);
-          // Retain every successful JSON response, even when its envelope is unexpected.
+          string rawPath = prefix + $"page-{page:D5}-size-{size:D2}.json";
           using (var raw = new MemoryStream(bytes, writable: false))
-            await AddAsync(archive, prefix + $"scan-{scan:D2}-page-{page:D5}.json", raw, request).ConfigureAwait(false);
+            await AddAsync(archive, rawPath, raw, request).ConfigureAwait(false);
+          trace["raw_path"] = rawPath;
+          trace["sha256"] = Convert.ToHexString(SHA256.HashData(bytes));
           pages++;
-          JsonElement data = Records(document.RootElement);
-          int count = data.GetArrayLength();
-          if (count > 0 && !seenPages.Add(Fingerprint(data))) throw new ExportError("history_page_repeated");
-          // Validate the whole page before appending it to the combined JSON.
-          foreach (JsonElement row in data.EnumerateArray())
-            if (row.ValueKind != JsonValueKind.Object) throw new ExportError("history_record_shape");
-          acceptedPages++;
+          JsonElement rows = Rows(document.RootElement);
+          int count = rows.GetArrayLength();
+          trace["row_count"] = count;
+          foreach (JsonElement row in rows.EnumerateArray())
+            if (row.ValueKind != JsonValueKind.Object) throw new CollectionFailure("history_record_shape");
+          accepted++;
           if (document.RootElement.ValueKind == JsonValueKind.Object
             && document.RootElement.TryGetProperty("hashcode", out JsonElement hash)) hashes.Add(hash.Clone());
-          foreach (JsonElement row in data.EnumerateArray())
+          int fresh = 0;
+          foreach (JsonElement row in rows.EnumerateArray())
           {
             examined++;
-            string fingerprint = Fingerprint(row);
-            if (!scanRecords.Add(fingerprint)) duplicates++;
-            if (!seenRecords.Add(fingerprint)) continue;
-            // A reused id is not an error: distinct records are preserved in full.
-            if (cutoff.HasValue)
+            string original = row.GetRawText();
+            string fingerprint = Hash(original);
+            string key = RecordKey(row, fingerprint);
+            if (seen.TryGetValue(key, out string previous))
             {
-              long? timestamp = Timestamp(row, dateField);
-              if (!timestamp.HasValue) unknownDates++;
-              else if (timestamp.Value < startSeconds || timestamp.Value > endSeconds) continue;
+              duplicates++;
+              if (previous != fingerprint) changed++;
+              continue; // Every returned version remains in its original raw page.
             }
-            row.WriteTo(writer);
+            seen.Add(key, fingerprint);
+            fresh++;
+            if (start.HasValue)
+            {
+              decimal? date = Timestamp(row, source.DateField);
+              if (!date.HasValue) undated++;
+              else if (date.Value < minimum || date.Value > maximum) continue;
+            }
+            writer.WriteRawValue(original, skipInputValidation: true);
             included++;
           }
           await writer.FlushAsync(request).ConfigureAwait(false);
-          // A short page is the final page. Do not reject responses exceeding the requested count.
+          trace["new_records"] = fresh;
+          if (count > 0 && fresh == 0) throw new CollectionFailure("history_page_repeated");
+          // A server ignoring perPage has an unverified offset contract: keep the
+          // returned records, but never invent the next offset or claim completeness.
+          if (count > size) throw new CollectionFailure("history_page_size_mismatch");
+          trace["outcome"] = "accepted";
           if (count < size) { ended = true; break; }
-          page++;
+          offset += size;
+          // Deliberately scan to the terminal page. BOUGHTDATE's database search
+          // field is not assumed to equal lastBoughtDate for every kind of buy.
+          // Local range filtering must not omit later DCA transactions.
         }
-        catch (Exception failure) when (!request.IsCancellationRequested
-          && (failure is ExportError || failure is HttpRequestException || failure is JsonException
-            || failure is OperationCanceledException || failure is IOException))
+        catch (Exception failure) when (!request.IsCancellationRequested && Recoverable(failure))
         {
-          error = ErrorCode(failure);
+          error = Code(failure);
+          trace["outcome"] = error;
           break;
         }
       }
       request.ThrowIfCancellationRequested();
       if (!ended && error == null) error = "history_page_limit";
       writer.WriteEndArray();
-      writer.WritePropertyName("sourcePageHashcodes");
-      writer.WriteStartArray();
+      writer.WriteStartArray("sourcePageHashcodes");
       foreach (JsonElement hash in hashes) hash.WriteTo(writer);
       writer.WriteEndArray();
       writer.WriteEndObject();
       await writer.FlushAsync(request).ConfigureAwait(false);
-      bool complete = ended && unknownDates == 0 && duplicates == 0;
-      item["status"] = complete ? "available" : acceptedPages > 0 ? "partial" : "failed";
-      if (acceptedPages > 0)
+      bool complete = ended && error == null && duplicates == 0 && undated == 0;
+      result["status"] = complete ? "available" : accepted > 0 ? "partial" : "failed";
+      if (accepted > 0)
       {
-        await AddAsync(archive, source.Path, aggregate, request).ConfigureAwait(false);
-        item["zip_path"] = source.Path;
+        await AddAsync(archive, source.Path, combined, request).ConfigureAwait(false);
+        result["zip_path"] = source.Path;
       }
-      if (error != null) { item["error_code"] = error; item["failed_page"] = page; }
-      item["received_bytes"] = received;
-      item["included_bytes"] = aggregate.Length;
-      item["source_record_count"] = examined;
-      item["included_record_count"] = included;
-      item["pages_retrieved"] = pages;
-      item["pagination_page_size"] = size;
-      item["page_size_reductions"] = scan;
-      item["sort"] = sort;
-      item["sort_direction"] = "DESCENDING";
-      item["date_field"] = dateField;
-      item["history_range"] = selection.HistoryRange;
-      item["history_start_utc"] = cutoff?.ToString("O");
-      item["history_end_utc"] = started.ToString("O");
-      item["reached_history_end"] = ended;
-      item["range_coverage_complete"] = complete;
-      item["duplicate_records"] = duplicates;
-      item["unfilterable_records_preserved"] = unknownDates;
-      item["raw_source_payload"] = false;
-      item["limit_applied"] = cutoff.HasValue;
-      item["record_preservation"] = "original_record_fields_and_values";
+      if (error != null) { result["error_code"] = error; result["failed_page"] = page; }
+      result["pagination_first_page"] = 1;
+      result["pagination_page_size"] = size;
+      result["page_size_reductions"] = reductions;
+      result["pages_retrieved"] = pages;
+      result["source_record_count"] = examined;
+      result["unique_record_count"] = seen.Count;
+      result["included_record_count"] = included;
+      result["duplicate_records"] = duplicates;
+      result["record_versions_changed"] = changed;
+      result["unfilterable_records_preserved"] = undated;
+      result["reached_history_end"] = ended;
+      result["range_coverage_complete"] = complete;
+      result["termination"] = ended ? "end_of_available_history" : error;
+      result["history_range"] = selection.HistoryRange;
+      result["history_start_utc"] = start?.ToString("O");
+      result["history_end_utc"] = end.ToString("O");
+      result["date_field"] = source.DateField;
+      result["sort"] = source.Sort;
+      result["sort_direction"] = "DESCENDING";
+      result["raw_pages_prefix"] = prefix;
+      result["requests"] = traces;
+      result["raw_source_payload"] = false;
+      result["record_preservation"] = "original_record_json_first_observation_all_raw_versions_retained";
+      result["snapshot_consistency_guaranteed"] = false;
+      result["warning_codes"] = new List<string>();
+      var warnings = (List<string>)result["warning_codes"];
+      if (duplicates > 0) warnings.Add("history_overlap");
+      if (changed > 0) warnings.Add("history_record_changed");
+      if (undated > 0) warnings.Add("history_date_unknown");
     }
 
     public static Task<Stream> GenerateAsync(PTMagicConfiguration configuration,
       PTDataExportSelection selection, CancellationToken requestAborted) =>
       GenerateAsync(configuration, selection, Client, requestAborted);
 
-    // The injectable client runs the actual HTTP -> JSON -> ZIP path in focused regression tests.
+    // Test seam links this production file: no separate test-only exporter.
     internal static async Task<Stream> GenerateAsync(PTMagicConfiguration configuration,
-      PTDataExportSelection selection, HttpClient client, CancellationToken requestAborted, int responseLimit = ResponseLimit)
+      PTDataExportSelection selection, HttpClient client, CancellationToken requestAborted,
+      int responseLimit = DefaultResponseLimit, long transferLimit = DefaultTransferLimit, int pageLimit = 10000)
     {
       if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+      if (client == null) throw new ArgumentNullException(nameof(client));
       if (selection == null || !selection.ValidHistoryRange || !selection.AnySelected)
         throw new ArgumentException("Select data to export and a valid history range.");
+      if (responseLimit < 1 || transferLimit < 1 || pageLimit < 1) throw new ArgumentOutOfRangeException(nameof(responseLimit));
       _ = Endpoint(configuration, "buys");
       if (!await Gate.WaitAsync(0, requestAborted).ConfigureAwait(false))
         throw new InvalidOperationException("Another PT Data export is currently running.");
@@ -311,87 +366,86 @@ namespace Monitor._Internal
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
         budget.CancelAfter(TimeSpan.FromSeconds(120));
         DateTime started = DateTime.UtcNow;
-        var results = new List<Dictionary<string, object>>();
-        var stream = TemporaryFile();
+        var transfer = new TransferBudget(transferLimit);
+        var datasets = new List<Dictionary<string, object>>();
+        var output = TemporaryFile();
         try
         {
-          using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+          using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
           {
             foreach (Source source in Sources)
             {
-              var item = new Dictionary<string, object>
+              requestAborted.ThrowIfCancellationRequested();
+              var result = new Dictionary<string, object>
               {
                 ["name"] = source.Name, ["group"] = source.Group, ["source"] = "ProfitTrailer",
                 ["status"] = "skipped", ["zip_path"] = null
               };
-              results.Add(item);
+              datasets.Add(result);
               if (!Selected(source, selection)) continue;
+              if (source.History)
+              {
+                await CollectHistoryAsync(configuration, source, selection, started, client, archive,
+                  result, transfer, responseLimit, pageLimit, budget.Token, requestAborted).ConfigureAwait(false);
+                continue;
+              }
+              var trace = new Dictionary<string, object>();
               try
               {
-                if (source.History)
-                  await HistoryAsync(configuration, source, selection, started, client, archive,
-                    item, responseLimit, budget.Token, requestAborted).ConfigureAwait(false);
-                else
-                {
-                  byte[] bytes = await ReadAsync(client, Endpoint(configuration, source.Name), responseLimit, budget.Token).ConfigureAwait(false);
-                  using var document = JsonDocument.Parse(bytes);
-                  JsonElement root = document.RootElement;
-                  if (root.ValueKind != JsonValueKind.Array && root.ValueKind != JsonValueKind.Object)
-                    throw new ExportError("snapshot_response_shape");
-                  using (var raw = new MemoryStream(bytes, writable: false))
-                    await AddAsync(archive, source.Path, raw, requestAborted).ConfigureAwait(false);
-                  item["status"] = "available";
-                  item["zip_path"] = source.Path;
-                  item["received_bytes"] = bytes.Length;
-                  item["included_bytes"] = bytes.Length;
-                  item["source_record_count"] = root.ValueKind == JsonValueKind.Array ? (int?)root.GetArrayLength() : null;
-                  item["included_record_count"] = item["source_record_count"];
-                  item["raw_source_payload"] = true;
-                  item["limit_applied"] = false;
-                }
-                item["retrieved_at_utc"] = DateTime.UtcNow.ToString("O");
+                byte[] bytes = await FetchAsync(client, Endpoint(configuration, source.Name), responseLimit,
+                  transfer, trace, budget.Token).ConfigureAwait(false);
+                using var document = JsonDocument.Parse(bytes);
+                if (document.RootElement.ValueKind != JsonValueKind.Object && document.RootElement.ValueKind != JsonValueKind.Array)
+                  throw new CollectionFailure("snapshot_response_shape");
+                using var raw = new MemoryStream(bytes, writable: false);
+                await AddAsync(archive, source.Path, raw, requestAborted).ConfigureAwait(false);
+                result["status"] = "available";
+                result["zip_path"] = source.Path;
+                result["raw_source_payload"] = true;
+                result["received_bytes"] = bytes.Length;
+                // Funding retains its existing single-response contract, not a claim
+                // that all historical funding has been collected.
+                result["collection_scope"] = "single_api_response";
               }
-              catch (Exception failure) when (!requestAborted.IsCancellationRequested
-                && (failure is ExportError || failure is HttpRequestException || failure is JsonException
-                  || failure is OperationCanceledException || failure is IOException))
+              catch (Exception failure) when (!requestAborted.IsCancellationRequested && Recoverable(failure))
               {
-                item["status"] = "failed";
-                item["error_code"] = ErrorCode(failure);
+                result["status"] = "failed";
+                result["error_code"] = Code(failure);
               }
+              result["request"] = trace;
             }
             int available = 0, partial = 0, failed = 0;
-            foreach (var item in results)
-              switch ((string)item["status"])
-              {
-                case "available": available++; break;
-                case "partial": partial++; break;
-                case "failed": failed++; break;
-              }
+            foreach (var item in datasets)
+            {
+              if ((string)item["status"] == "available") available++;
+              else if ((string)item["status"] == "partial") partial++;
+              else if ((string)item["status"] == "failed") failed++;
+            }
             var manifest = new
             {
-              schema_version = "1.2", exporter_version = "paged-json-v2",
-              export_id = Guid.NewGuid().ToString("N"),
-              export_started_utc = started.ToString("O"), export_finished_utc = DateTime.UtcNow.ToString("O"),
-              bot_scope = "configured_PT_target_of_this_Monitor",
+              schema_version = "1.3", exporter_version = "pt-history-v3",
+              export_started_utc = started.ToString("O"), export_completed_utc = DateTime.UtcNow.ToString("O"),
               bot_instance_name = configuration.GeneralSettings.Application.InstanceName,
-              history_range = selection.HistoryRange, history_start_utc = selection.HistoryStartUtc(started)?.ToString("O"),
-              history_end_utc = started.ToString("O"), history_pagination_page_size = InitialPageSize,
-              lifetime_history_complete = false,
-              history_note = "Small newest-first API pages. Combined history is date-filtered locally; raw page files are unfiltered API responses. All fields are preserved. Undated records are retained and flagged. Live pagination can shift; PT retention may limit history.",
-              positions_note = "Current Positions are point-in-time snapshots, not historical positions.",
-              funding_note = "PT funding updates may be missing while PT was offline; they are not complete settled cashflows.",
+              source_system = "ProfitTrailer", collection_method = "configured_target_read_only_api",
+              history_range = selection.HistoryRange,
+              history_start_utc = selection.HistoryStartUtc(started)?.ToString("O"), history_end_utc = started.ToString("O"),
+              overall_status = partial == 0 && failed == 0 ? "complete_for_selected_sources"
+                : available + partial > 0 ? "partial" : "failed",
               dataset_count_available = available, dataset_count_partial = partial, dataset_count_failed = failed,
-              overall_status = failed + partial == 0 ? "complete_for_selected_sources" : available + partial > 0 ? "partial" : "failed",
-              datasets = results
+              lifetime_history_complete = false, snapshot_consistency_guaranteed = false,
+              received_source_bytes = transfer.Received, source_byte_limit = transfer.Limit,
+              history_contract = "PT_2.6.1_one_based_page_offset_perPage_times_page_minus_one",
+              record_notes = "Original nested trade JSON is retained. Raw pages include out-of-range rows. Completion describes a bounded API scan, not an atomic or lifetime account history.",
+              datasets
             };
-            using var manifestStream = archive.CreateEntry("manifest.json", CompressionLevel.Optimal).Open();
-            await JsonSerializer.SerializeAsync(manifestStream, manifest,
-              new JsonSerializerOptions { WriteIndented = true }, requestAborted).ConfigureAwait(false);
+            using var manifestStream = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest,
+              new JsonSerializerOptions { WriteIndented = true }));
+            await AddAsync(archive, "manifest.json", manifestStream, requestAborted).ConfigureAwait(false);
           }
-          stream.Position = 0;
-          return stream;
+          output.Position = 0;
+          return output;
         }
-        catch { await stream.DisposeAsync().ConfigureAwait(false); throw; }
+        catch { output.Dispose(); throw; }
       }
       finally { Gate.Release(); }
     }
