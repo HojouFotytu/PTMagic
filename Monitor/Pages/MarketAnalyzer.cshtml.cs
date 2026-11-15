@@ -538,13 +538,12 @@ namespace Monitor.Pages
       MiscData = this.PTData.Misc;  
       MarketTrends = PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.OrderBy(mt => mt.TrendMinutes).ThenByDescending(mt => mt.Platform).ToList();
 
-      if (PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase)
-        && Summary?.MarketSummary != null)
+      if (PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
       {
-        Summary.MarketSummary = Summary.MarketSummary
-          .Where(market => BinanceFuturesMarketUniverse.IsMarketIncluded(market.Key, PTMagicConfiguration))
-          .ToDictionary(market => market.Key, market => market.Value, StringComparer.InvariantCultureIgnoreCase);
-
+        // The Analyzer already enforces Futures eligibility before writing
+        // LastRuntimeSummary.MarketSummary. Do not filter these markets again:
+        // the Monitor runs in a separate process and its classification cache
+        // can be empty, which would incorrectly hide every asset row.
         LoadMarketUnderlyingTypes();
       }
 
