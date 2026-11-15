@@ -18,37 +18,24 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Inspect exact PT history paging delegates (no bot execution)
+      - name: Inspect PT history SQL offset (no bot execution)
         shell: bash
         run: |
           curl --fail --location --retry 2 --max-time 120 https://github.com/taniman/profit-trailer/releases/download/2.6.1/ProfitTrailer-2.6.1.zip -o "$RUNNER_TEMP/pt-contract.zip"
           echo "ab2b63e5da061b9e7029cfb4060b5ffd7da9d4615f891bbdf9f0f3275b47a6a3  $RUNNER_TEMP/pt-contract.zip" | sha256sum --check
           python3 - <<'PY'
           import io, os, pathlib, re, subprocess, zipfile
-          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'pt-contract'
-          root.mkdir(exist_ok=True)
-          with zipfile.ZipFile(root.parent / 'pt-contract.zip') as release:
-              jarbytes = release.read(next(n for n in release.namelist() if n.endswith('ProfitTrailer.jar')))
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          with zipfile.ZipFile(root / 'pt-contract.zip') as release:
+              jarbytes=release.read(next(n for n in release.namelist() if n.endswith('ProfitTrailer.jar')))
           with zipfile.ZipFile(io.BytesIO(jarbytes)) as jar:
-              for name in jar.namelist():
-                  if not name.endswith('.class'): continue
-                  data = jar.read(name)
-                  chosen = name.endswith('/DataLogService.class') or name.endswith('/RepositoryService.class') or (b'BOUGHTDATE' in data and b'PageRequest' in data)
-                  if not chosen: continue
-                  target = root / pathlib.Path(name).name
-                  target.write_bytes(data)
-                  result = subprocess.run(['javap','-p','-c',str(target)],text=True,capture_output=True,check=True).stdout
-                  print('CONTRACT CLASS:',name)
-                  methods = re.split(r'(?=^  (?:public|private|protected) )',result,flags=re.M)[1:]
-                  for method in methods:
-                      signature = method.split('\n')[0]
-                      if re.search(r'(?i)buyLog|sellLog|history|pagin|sort',signature): print('SIGNATURE:',signature)
-                      if (re.search(r'\bgetBuyLog\(|\bgetSellLog\(',signature) or (name.endswith('/RepositoryService.class') and re.search(r'(?i)history|buylog|selllog',signature)) or ('PageRequest' in method and 'BOUGHTDATE' in method)):
-                          print(method[:30000])
-                      if 'getHistoryPosition(' in signature:
-                          lines=method.splitlines()
-                          for i,line in enumerate(lines):
-                              if re.search(r'// String (firstBoughtDate|lastBoughtDate|soldDate|extraInfo)',line): print('\n'.join(lines[max(0,i-2):i+8]))
+              name='BOOT-INF/classes/com/profittrailer/bot/services/data/PositionHistorySearchService.class'
+              target=root / 'PositionHistorySearchService.class'
+              target.write_bytes(jar.read(name))
+              text=subprocess.run(['javap','-p','-c',str(target)],text=True,capture_output=True,check=True).stdout
+              print('CONTRACT CLASS:',name)
+              for method in re.split(r'(?=^  (?:public|private|protected) )',text,flags=re.M)[1:]:
+                  if 'getAllPositionHistorySearchResults(' in method.split('\n')[0]: print(method)
           PY
       - name: Compile and exercise HTTP to JSON to ZIP implementation
         run: dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release
