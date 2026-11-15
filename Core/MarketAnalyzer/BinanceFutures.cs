@@ -16,6 +16,18 @@ namespace Core.MarketAnalyzer
     private const string ExchangeName = "BinanceFutures";
     private const string ApiBase = "https://fapi.binance.com/fapi/v1";
 
+    // Preserve legacy historical reconstruction when a non-normalized trend
+    // may still depend on it. No configured trends is also conservative.
+    internal static bool ShouldSkipLegacyHistoricalRebuild(PTMagicConfiguration configuration)
+    {
+      var trends = configuration?.AnalyzerSettings?.MarketAnalyzer?.MarketTrends;
+      if (trends == null || trends.Count == 0) return false;
+      return trends.Any(trend => trend != null &&
+          String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)) &&
+        trends.All(trend => trend == null ||
+          String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase));
+    }
+
     public static Task<double> GetMainCurrencyPriceAsync(string mainMarket, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
       return BinanceAnalyzerCommon.GetMainCurrencyPriceAsync(ExchangeName, ApiBase, mainMarket, log, false, cancellationToken);
@@ -32,8 +44,12 @@ namespace Core.MarketAnalyzer
       BinanceFuturesMarketUniverse.ConfigureProfitTrailerAllowedUnderlyingTypes(
         compiledPairsLines, systemConfiguration, log, finalizeAnalyticsUniverse: false);
 
-      List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName, ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true, false, cancellationToken,
-        symbol => BinanceFuturesMarketUniverse.IsMarketIncluded(symbol, systemConfiguration)).ConfigureAwait(false);
+      bool skipLegacy = ShouldSkipLegacyHistoricalRebuild(systemConfiguration);
+      List<string> markets = await BinanceAnalyzerCommon.GetMarketDataAsync(ExchangeName,
+        ApiBase, mainMarket, marketInfos, systemConfiguration, log, false, true, true,
+        false, cancellationToken,
+        symbol => BinanceFuturesMarketUniverse.IsMarketIncluded(symbol, systemConfiguration),
+        skipLegacyHistoricalRebuild: skipLegacy).ConfigureAwait(false);
       log.DoLogInfo("RAID TIMING - Futures universe/market metadata: " +
         marketMetadataClock.Elapsed.TotalSeconds.ToString("0.###",
           System.Globalization.CultureInfo.InvariantCulture) + "s.");

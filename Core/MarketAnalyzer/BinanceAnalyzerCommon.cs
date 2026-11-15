@@ -33,7 +33,7 @@ namespace Core.MarketAnalyzer
       return market.ToUpperInvariant();
     }
 
-    internal static async Task<List<string>> GetMarketDataAsync(string exchangeName, string apiBase, string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, bool supportsUsdMainMarket, bool logIncorrectBaseCurrency, bool caseSensitiveBaseMatch, bool parallelHistoricalBuild, CancellationToken cancellationToken = default, Func<string, bool> marketEligible = null)
+    internal static async Task<List<string>> GetMarketDataAsync(string exchangeName, string apiBase, string mainMarket, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, bool supportsUsdMainMarket, bool logIncorrectBaseCurrency, bool caseSensitiveBaseMatch, bool parallelHistoricalBuild, CancellationToken cancellationToken = default, Func<string, bool> marketEligible = null, bool skipLegacyHistoricalRebuild = false)
     {
       mainMarket = NormalizeMainMarket(mainMarket);
       List<string> result = new List<string>();
@@ -75,7 +75,16 @@ namespace Core.MarketAnalyzer
         }
         await CheckFirstSeenDatesAsync(exchangeName, apiBase, markets, marketInfos, systemConfiguration, log, cancellationToken).ConfigureAwait(false);
         BaseAnalyzer.SaveMarketInfosToFile(marketInfos, systemConfiguration, log);
-        await CheckForMarketDataRecreationAsync(exchangeName, apiBase, mainMarket, markets, systemConfiguration, log, supportsUsdMainMarket, parallelHistoricalBuild, cancellationToken).ConfigureAwait(false);
+        // Normalized Exchange MarketTrends need exact 5m history, not 96h
+        // of separate legacy 1m historical files. Retain the current ticker
+        // snapshot for legacy 24h volume/SMS compatibility.
+        if (skipLegacyHistoricalRebuild)
+          log.DoLogInfo(exchangeName + " - Skipping legacy 1m historical reconstruction; " +
+            "normalized 5m history is refreshed separately.");
+        else
+          await CheckForMarketDataRecreationAsync(exchangeName, apiBase, mainMarket,
+            markets, systemConfiguration, log, supportsUsdMainMarket,
+            parallelHistoricalBuild, cancellationToken).ConfigureAwait(false);
         SaveCurrentMarketData(exchangeName, mainMarket, markets, systemConfiguration, log);
       }
       catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

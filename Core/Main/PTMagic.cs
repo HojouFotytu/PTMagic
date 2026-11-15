@@ -1763,6 +1763,19 @@ namespace Core.Main
       _desiredGlobalSettingName = triggeredSetting.SettingName;
     }
 
+    // An unavailable monitoring-only SMS cannot change PT properties and
+    // must not prevent a conclusive global/other SMS configuration decision.
+    // Unknown SMS with overrides or stop-process precedence still blocks
+    // an uncertain initial delivery.
+    private static bool SmsCanAffectTradingProperties(SingleMarketSetting setting)
+    {
+      return setting != null &&
+        (setting.StopProcessWhenTriggered ||
+         (setting.PairsProperties?.Count ?? 0) > 0 ||
+         (setting.DCAProperties?.Count ?? 0) > 0 ||
+         (setting.IndicatorsProperties?.Count ?? 0) > 0);
+    }
+
     private void ApplySingleMarketSettings()
     {
       if (this.PTMagicConfiguration.AnalyzerSettings.SingleMarketSettings.Count > 0)
@@ -1970,7 +1983,9 @@ namespace Core.Main
                           : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList())
                     : TriggerTruthValue.Unavailable;
                   bool settingOffTriggered = offResult == TriggerTruthValue.True;
-                  if (offResult == TriggerTruthValue.Unavailable) _selectionIndeterminate = true;
+                  if (offResult == TriggerTruthValue.Unavailable &&
+                      SmsCanAffectTradingProperties(marketSetting))
+                    _selectionIndeterminate = true;
                   // Setting got off triggered, remove it from the summary
                   if (settingOffTriggered)
                   {
@@ -2184,7 +2199,8 @@ namespace Core.Main
                           : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False));
                 settingTriggered = smsResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
                 activationIndeterminate = smsResult == TriggerTruthValue.Unavailable;
-                if (activationIndeterminate) _selectionIndeterminate = true;
+                if (activationIndeterminate && SmsCanAffectTradingProperties(marketSetting))
+                  _selectionIndeterminate = true;
               }
               catch (Exception ex)
               {
