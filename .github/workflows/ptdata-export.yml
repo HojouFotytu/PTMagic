@@ -9,6 +9,8 @@ on:
       - 'Monitor/_Internal/BasePageModel.cs'
       - 'Monitor/Pages/Index.cshtml'
       - 'Monitor/Pages/_Layout.cshtml'
+      - 'Monitor/Pages/Logs.cshtml'
+      - 'Monitor/Pages/Logs.cshtml.cs'
       - 'Tests/PTDataExport/**'
       - '.github/workflows/ptdata-export.yml'
   workflow_dispatch:
