@@ -1,5 +1,14 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 15 — PT Data exporter replacement and live pagination failure (current)
+
+The read-only PT Data ZIP exporter was replaced in [`3c7eddd`](https://github.com/HojouFotytu/PTMagic/commit/3c7eddd9d4ce8694140c6210344253afef8eb41e) with `paged-json-v2` / manifest schema **1.2**. It downloads 10 records per page, adaptively reduces the page size for genuinely oversized responses, preserves raw successful page JSON and original trade details including nested transaction-time diagnostics, and retains partial histories with specific error codes. The [GitHub Actions run](https://github.com/HojouFotytu/PTMagic/actions/runs/43665987850) **passed 20/20 simulated HTTP→JSON→ZIP tests and a .NET 10 Monitor Release build with 0 errors/0 warnings**. Those offline tests do **not** establish that real PT advances pages.
+
+**Live acceptance still FAILS:** User GeorgeLong ZIP `PT-Data-GeorgeLong-2026-11-15T03-00-33Z(2).zip` confirms the new schema/version, but the two raw responses at `page=0` and `page=1` are **byte-identical** for both buys (180,843 bytes/page) and sales (120,514 bytes/page). Each combined history holds only 10 records and reports `history_page_repeated` / `partial`; `range_coverage_complete=false`. No page-size reductions occurred. Position snapshots worked (29 PAIRS, 1 DCA, empty pending/watchmode). The exact cause of non-advancement is **unproven**: inspect the actual outgoing `page`/`perPage` parameters and direct read-only PT results, compare documented pagination semantics, then correct and verify against live PT. **Do not call this resolved merely because offline tests pass.** Account Information `/api/v2/data/misc` remains deferred.
+
+[Current PT Data investigation handoff](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/handoffs/2026-11-15-pt-data-pagination-live-evidence-handoff.md). Earlier descriptions of schema-1.1 `perPage=25` and `invalid_or_oversized_data` are historical.
+
+
 **Updated:** November 15, 2026
 
 **Application version:** 2.10.0, in development
@@ -8,7 +17,7 @@
 
 **Latest analytics implementation checkpoint — November 15:** Source revision [`c6b4f9e`](https://github.com/HojouFotytu/PTMagic/commit/c6b4f9e02ec336956a5e763fbe7c2762df6b0bae) completes the planned Phase 2B funding and taker-flow aggregate families at source level: 35 registered metrics, 26 global-capable and nine asset-only. Five new global funding aggregates and four global taker-flow aggregates were implemented across `721e9f9`/`dce43f0`, `718d65e`, `d387354` and `c6b4f9e`. `FundingRate`, `FundingSum`, `TakerBuyRatio`, and `TakerImbalance` remain asset-only. Snapshot display reflects **already calculated** global and per-asset values; publishing an input does not enable it as a trigger or cause additional calculations solely for display. The **newer 35-metric revision has not been built or tested in .NET in this conversation**, nor confirmed in configured TestMode, cache-v2 migration or browser acceptance. Earlier D-053 and 26-metric source-specific passes remain historical proof for their exact SHAs, not acceptance of this revision. Next analytics stage is Phase 3 transparent price/volume/taker-flow confirmation and divergence after appropriate targeted verification. Personal strategy files, analyzers and presets remain independent.
 
-## Monitor — PT Data date-range pagination (November 13–14; live acceptance pending)
+## Monitor — HISTORICAL schema-1.1 PT Data date-range pagination (November 13–14; superseded)
 
 The **Control → PT Data** read-only ZIP exporter now uses **7-day, 1-month, 3-month, 6-month or All available** UTC trade-history windows instead of the superseded 250/1,000/5,000 record limits. Buy and sale history are retrieved from the configured ProfitTrailer target in descending `BOUGHTDATE` / `SOLDDATE` order, requesting `page=0` onward at `perPage=25`. The exporter parses nested source `{hashcode,data}` responses, deduplicates IDs, filters transaction dates, and produces `{data,sourcePageHashcodes}` aggregate history files. Original trade entries and historical `BUYNOTE`/`SELLNOTE` diagnostic `extraInfo -- CV:` contents are retained. The ZIP manifest is schema **1.1**, with date range, source page/record counts, cutoff/end and partial/failure metadata. Current positions (watchmode, pending, pairs, dca), optional funding and password-protected configured-target read-only restrictions are unchanged.
 
