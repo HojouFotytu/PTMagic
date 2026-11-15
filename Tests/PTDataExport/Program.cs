@@ -253,8 +253,14 @@ internal static class Program
     {
       var capped = await Run(c => PTPage(c, 30), pageLimit: 1);
       Check(capped.Error("buys") == "history_page_limit" && capped.Rows("buys").GetArrayLength() == 10, "page cap");
-      var bytes = await Run(c => PTPage(c, 30), transferLimit: 4000);
+      // Derive the limit from the actual serialized fixture. A fixed 4000-byte
+      // budget fits two pages here and therefore cannot assert one retained page.
+      using var firstPage = PTPage(new Call("buys", 1, 10, new Dictionary<string, string>()), 30);
+      long firstPageBytes = (await firstPage.Content.ReadAsByteArrayAsync()).LongLength;
+      var bytes = await Run(c => PTPage(c, 30), transferLimit: firstPageBytes + 1);
       Check(bytes.Error("buys") == "export_transfer_limit" && bytes.Rows("buys").GetArrayLength() == 10, "transfer cap");
+      Check(bytes.Status("buys") == "partial" && bytes.Calls.Select(c => c.Page).SequenceEqual(new[] { 1, 2 }),
+        "first page retained; cumulative byte limit stops the second request");
     });
     await Test("snapshots and optional funding remain byte-identical and unpaged", async () =>
     {
