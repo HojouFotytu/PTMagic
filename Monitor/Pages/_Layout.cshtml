@@ -172,6 +172,7 @@
   <script type="text/javascript">
     var errCount = [];
     var interval;
+    var tickerRefreshMilliseconds = 3000;
 
     var syncTickerTooltipTitle = function ($target, $source) {
       var title = $source.attr('title') || $source.attr('data-original-title') || '';
@@ -181,6 +182,7 @@
 
     var updateTickerWidgets = function (responseText) {
       var $ticker = $('#ticker-widgets');
+      if ($ticker.find('[data-raid-waiting]').length) $ticker.empty();
       var parsedNodes = $.parseHTML(responseText, document, false);
       var $incoming = $('<div></div>').append(parsedNodes);
 
@@ -251,14 +253,20 @@
         }
 
         errCount["TickerWidgets"] = 0;
-        updateTickerWidgets(responseText);
+        var waitingForRaid = responseText.indexOf('data-raid-waiting') >= 0;
+        if (waitingForRaid) {
+          $('#ticker-widgets').html(responseText);
+        } else {
+          updateTickerWidgets(responseText);
+        }
+        tickerRefreshMilliseconds = waitingForRaid ? 60000 : 3000;
       }).fail(function () {
         errCount["TickerWidgets"]++;
         if (errCount["TickerWidgets"] > 2) {
           $.Notification.notify('error', 'top left', 'Ticker update failed!', 'PTMagic Monitor failed to update data. If this error does not go away by itself, please check the connection to your hosting PC.');
         }
       }).always(function () {
-        interval = setInterval(function () { loadWidgets(); }, 3000);
+        interval = setInterval(function () { loadWidgets(); }, tickerRefreshMilliseconds);
       });
     };
 
