@@ -92,6 +92,7 @@
   var completedRaidSummary = [];
   var collectingSummary = false;
   var analyzerRaidStarted = false;
+  var analyzerHasSeenRaidStart = false;
   var displayLimit = 500;
   var history = { analyzer: [], monitor: [] };
   var cursors = {
@@ -201,13 +202,18 @@
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (line.indexOf('Starting market trend check with Version ') !== -1) {
-        if (completedRaidSummary.length) previousRaidSummary = completedRaidSummary.slice();
-        completedRaidSummary = [];
-        collectingSummary = false;
+        // Keep the first startup's already streamed lines through raid 1.
+        // Clear the current raid only when the NEXT raid begins.
+        if (analyzerHasSeenRaidStart) {
+          if (completedRaidSummary.length) previousRaidSummary = completedRaidSummary.slice();
+          completedRaidSummary = [];
+          collectingSummary = false;
+          history.analyzer = [];
+          displayLimit = 500;
+          resetView = true;
+        }
+        analyzerHasSeenRaidStart = true;
         analyzerRaidStarted = true;
-        history.analyzer = [];
-        displayLimit = 500;
-        resetView = true;
       }
       if (line.indexOf('RAID SUMMARY') !== -1) {
         completedRaidSummary = [];
@@ -258,6 +264,9 @@
       try {
         var data = JSON.parse(event.data);
         previousRaidSummary = Array.isArray(data.lines) ? data.lines : [];
+        // No completed prior raid: show the current startup log, even before
+        // the first "Starting market trend check" marker appears.
+        analyzerRaidStarted = previousRaidSummary.length === 0;
         render();
       } catch (error) { status.textContent = "Summary unavailable"; }
     });
