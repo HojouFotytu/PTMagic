@@ -217,15 +217,38 @@ internal static class Program
       foreach (string range in new[] { "7d", "1m", "3m", "6m" })
         Complete(await Run(c => Json(body), new PTDataExportSelection { IncludeSales = true, HistoryRange = range }), "sales", 4);
     });
-    await Test("buy filtering uses transaction date, not the position's first buy", async () =>
+    await Test("bounded buy history stops at cutoff instead of scanning older pages", async () =>
     {
       long recent = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
       long old = DateTimeOffset.UtcNow.AddMonths(-8).ToUnixTimeSeconds();
-      string oldPage = JsonSerializer.Serialize(Enumerable.Range(1, 10).Select(i => new { id = i, firstBoughtDate = old, lastBoughtDate = old }));
-      string laterDca = JsonSerializer.Serialize(new[] { new { id = 11, firstBoughtDate = old, lastBoughtDate = recent } });
-      var result = await Run(c => Json(c.Page == 1 ? oldPage : laterDca), new PTDataExportSelection { IncludeBuys = true, HistoryRange = "7d" });
-      Complete(result, "buys", 1);
-      Check(result.Rows("buys")[0].GetProperty("id").GetInt32() == 11, "no unsafe early date cutoff");
+      string firstPage = JsonSerializer.Serialize(Enumerable.Range(1, 10).Select(i => new
+      {
+        id = i, firstBoughtDate = old, lastBoughtDate = i <= 6 ? recent - i : old,
+        extraInfo = new[] { new { name = "DYN-BUYNOTE1", extraInfo = "CV: " + i } }
+      }));
+      var result = await Run(c => c.Page == 1 ? Json(firstPage) : throw new Exception("Must not request older pages"),
+        new PTDataExportSelection { IncludeBuys = true, HistoryRange = "7d" });
+      Complete(result, "buys", 6);
+      Check(result.Calls.Count == 1, "stops at cutoff page");
+      Check(result.Dataset("buys").GetProperty("termination").GetString() == "date_cutoff_reached", "cutoff termination");
+      Check(result.Rows("buys")[0].GetProperty("extraInfo")[0].GetProperty("extraInfo").GetString() == "CV: 1",
+        "original buy note retained");
+    });
+    await Test("bounded sales stop at cutoff; All available still traverses older pages", async () =>
+    {
+      long recent = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
+      long old = DateTimeOffset.UtcNow.AddMonths(-8).ToUnixTimeSeconds();
+      string firstPage = JsonSerializer.Serialize(Enumerable.Range(1, 10).Select(i => new
+      {
+        id = i, soldDate = i <= 7 ? recent - i : old
+      }));
+      var selection = new PTDataExportSelection { IncludeSales = true, HistoryRange = "7d" };
+      var bounded = await Run(c => c.Page == 1 ? Json(firstPage) : throw new Exception("Must not request older pages"), selection);
+      Complete(bounded, "sales", 7);
+      Check(bounded.Calls.Count == 1, "sales stop at cutoff");
+      var all = await Run(c => PTPage(c, 21), new PTDataExportSelection { IncludeSales = true, HistoryRange = "all" });
+      Complete(all, "sales", 21);
+      Check(all.Calls.Select(c => c.Page).SequenceEqual(new[] { 1, 2, 3 }), "all scans through terminal page");
     });
     await Test("unknown transaction dates remain available and explicitly unfilterable", async () =>
     {
