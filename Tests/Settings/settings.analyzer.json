@@ -1,40 +1,72 @@
-// TEST-ONLY PTMagic 2.10 metric analyzer; D-053 retained and Phase 2 taker-flow scope.
-// SetIdentity = PTM2.10-26-METRICS
-// SetVersion = 2.1.0
-// SetDate = 2026-11-12
-// TargetApplicationSource = PHASE2_TAKER_FLOW_CURRENT_BRANCH
-// VerifiedBuild = PENDING
-// VerifiedFocusedTests = PENDING
+// TEST-ONLY PTMagic 2.10 comprehensive 35-metric analyzer. Use isolated TestMode only; never live trading.
+// SetIdentity = PTM2.10-35-METRIC-MULTITREND-DIAGNOSTIC
+// SetVersion = 2.2.0
+// SetDate = 2026-11-15
+// TargetApplicationSource = c6b4f9e-or-later-35-metric-compatible
+// VerifiedBuild = PENDING_FOR_THIS_CONFIGURATION
+// VerifiedFocusedTests = PENDING_FOR_THIS_CONFIGURATION
 // ConfiguredRuntimeAcceptance = NOT VERIFIED
+// Default preset = _presets/Default; all additional GlobalSettings inherit its preset trio.
+// No new presets, installed settings, or PTMagic software modifications are part of this fixture.
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
-      "StoreDataMaxHours": 72,
+      "StoreDataMaxHours": 96,
       "IntervalMinutes": 5,
       "ExcludeMainCurrency": true,
       "UseProfitTrailerEnabledPairs": false,
       "UseProfitTrailerAllowedUnderlyingTypes": false,
       "IncludedUnderlyingTypes": [
-        "COIN"
+        "COIN",
+        "EQUITY",
+        "INDEX"
       ],
       "MarketTrends": [
+        {
+          "Name": "M15",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 15,
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "ATRPeriod": 14,
+          "VolumeExpansionLookback": 20,
+          "ATRPBreadthThreshold": 0.6,
+          "VolumeExpansionBreadthThreshold": 1.1,
+          "StrongVolumeExpansionThreshold": 1.6,
+          "TopNVolumeCount": 5,
+          "CorrelationLookback": 24,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
         {
           "Name": "M30",
           "Platform": "Exchange",
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 30,
-          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,VolumeExpansion,CorrelationToBTC,TakerBuyRatio,TakerImbalance",
+          "Metrics": "PriceTrend,MedianPriceTrend,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
-          "ATRPBreadthThreshold": 0.5,
-          "VolumeExpansionBreadthThreshold": 1,
-          "StrongVolumeExpansionThreshold": 1.5,
+          "ATRPBreadthThreshold": 0.9,
+          "VolumeExpansionBreadthThreshold": 1.15,
+          "StrongVolumeExpansionThreshold": 1.7,
           "TopNVolumeCount": 5,
-          "CorrelationLookback": 30,
+          "CorrelationLookback": 24,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
           "DisplayGraph": true,
           "DisplayOnMarketAnalyzerList": true,
           "IgnoredMarkets": "",
+          "AllowedMarkets": "",
           "TrendThreshold": 0,
           "ExcludeMainCurrency": true
         },
@@ -44,17 +76,117 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 60,
-          "Metrics": "Concentration,MedianATRP,VolatilityBreadth,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,MeanCorrelationToBTC,MedianCorrelationToBTC",
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
-          "ATRPBreadthThreshold": 0.5,
-          "VolumeExpansionBreadthThreshold": 1,
-          "StrongVolumeExpansionThreshold": 1.5,
-          "TopNVolumeCount": 5,
-          "CorrelationLookback": 30,
+          "ATRPBreadthThreshold": 1,
+          "VolumeExpansionBreadthThreshold": 1.2,
+          "StrongVolumeExpansionThreshold": 1.8,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 24,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
           "DisplayGraph": true,
           "DisplayOnMarketAnalyzerList": true,
           "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
+        {
+          "Name": "H2",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 120,
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "ATRPeriod": 14,
+          "VolumeExpansionLookback": 20,
+          "ATRPBreadthThreshold": 1,
+          "VolumeExpansionBreadthThreshold": 1.2,
+          "StrongVolumeExpansionThreshold": 1.8,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 20,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
+        {
+          "Name": "H4",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 240,
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "ATRPeriod": 14,
+          "VolumeExpansionLookback": 20,
+          "ATRPBreadthThreshold": 1.6,
+          "VolumeExpansionBreadthThreshold": 1.3,
+          "StrongVolumeExpansionThreshold": 1.9,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 16,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
+        {
+          "Name": "H6",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 360,
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "ATRPeriod": 10,
+          "VolumeExpansionLookback": 10,
+          "ATRPBreadthThreshold": 2,
+          "VolumeExpansionBreadthThreshold": 1.25,
+          "StrongVolumeExpansionThreshold": 1.7,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 10,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
+        {
+          "Name": "H12",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 720,
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "ATRPeriod": 6,
+          "VolumeExpansionLookback": 5,
+          "ATRPBreadthThreshold": 2.5,
+          "VolumeExpansionBreadthThreshold": 1.15,
+          "StrongVolumeExpansionThreshold": 1.5,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 6,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
           "TrendThreshold": 0,
           "ExcludeMainCurrency": true
         },
@@ -64,17 +196,69 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 1440,
-          "Metrics": "FundingRate,FundingSum",
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion,FundingRate,FundingSum,MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth,ExtremePositiveFundingBreadth,ExtremeNegativeFundingBreadth",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 0.5,
           "VolumeExpansionBreadthThreshold": 1,
           "StrongVolumeExpansionThreshold": 1.5,
-          "TopNVolumeCount": 5,
+          "TopNVolumeCount": 10,
           "CorrelationLookback": 30,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
           "DisplayGraph": true,
           "DisplayOnMarketAnalyzerList": true,
           "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
+        {
+          "Name": "H48",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 2880,
+          "Metrics": "PriceTrend,MedianPriceTrend,Breadth,RelativeStrengthMarket,RelativeStrengthBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion,FundingRate,FundingSum,MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth,ExtremePositiveFundingBreadth,ExtremeNegativeFundingBreadth",
+          "ATRPeriod": 14,
+          "VolumeExpansionLookback": 20,
+          "ATRPBreadthThreshold": 0.5,
+          "VolumeExpansionBreadthThreshold": 1,
+          "StrongVolumeExpansionThreshold": 1.5,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 30,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
+          "TrendThreshold": 0,
+          "ExcludeMainCurrency": true
+        },
+        {
+          "Name": "H72",
+          "Platform": "Exchange",
+          "TrendCurrency": "Market",
+          "MaxMarkets": 0,
+          "TrendMinutes": 4320,
+          "Metrics": "PriceTrend,MedianPriceTrend,Breadth,RelativeStrengthMarket,RelativeStrengthBTC,FundingRate,FundingSum,MedianFundingRate,PositiveFundingBreadth,NegativeFundingBreadth,ExtremePositiveFundingBreadth,ExtremeNegativeFundingBreadth",
+          "ATRPeriod": 14,
+          "VolumeExpansionLookback": 20,
+          "ATRPBreadthThreshold": 0.5,
+          "VolumeExpansionBreadthThreshold": 1,
+          "StrongVolumeExpansionThreshold": 1.5,
+          "TopNVolumeCount": 10,
+          "CorrelationLookback": 30,
+          "ExtremePositiveFundingThreshold": 0.05,
+          "ExtremeNegativeFundingThreshold": -0.05,
+          "StrongBuyerDominanceThreshold": 0.6,
+          "DisplayGraph": true,
+          "DisplayOnMarketAnalyzerList": true,
+          "IgnoredMarkets": "",
+          "AllowedMarkets": "",
           "TrendThreshold": 0,
           "ExcludeMainCurrency": true
         }
@@ -82,146 +266,280 @@
     },
     "GlobalSettings": [
       {
-        "SettingName": "DEFAULT",
-        "TriggerConnection": "OR",
+        "SettingName": "DIAG_G01_TAKER_BUYERS",
+        "TriggerConnection": "AND",
         "Triggers": [
           {
             "Tag": "A",
-            "MarketTrendName": "M30",
-            "Metric": "PriceTrend",
+            "MarketTrendName": "M15",
+            "Metric": "MedianTakerBuyRatio",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 0.53,
             "MaxChange": 1000000000000
           },
           {
             "Tag": "B",
-            "MarketTrendName": "M30",
-            "Metric": "MedianPriceTrend",
+            "MarketTrendName": "H1",
+            "Metric": "BuyerDominanceBreadth",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 60,
             "MaxChange": 1000000000000
           },
           {
             "Tag": "C",
-            "MarketTrendName": "M30",
-            "Metric": "MeanMedianSpread",
+            "MarketTrendName": "H4",
+            "Metric": "StrongBuyerDominanceBreadth",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 30,
             "MaxChange": 1000000000000
           },
           {
             "Tag": "D",
-            "MarketTrendName": "M30",
-            "Metric": "Breadth",
+            "MarketTrendName": "H2",
+            "Metric": "TakerImbalanceDispersion",
             "MarketTrendRelation": "Absolute",
             "MinChange": -1000000000000,
+            "MaxChange": 0.25
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G02_POSITIVE_FUNDING",
+        "TriggerConnection": "OR",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H24",
+            "Metric": "MedianFundingRate",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.025,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H48",
+            "Metric": "PositiveFundingBreadth",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 65,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H24",
+            "Metric": "ExtremePositiveFundingBreadth",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 12,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G03_NEGATIVE_FUNDING",
+        "TriggerConnection": "OR",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H24",
+            "Metric": "NegativeFundingBreadth",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 65,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H48",
+            "Metric": "ExtremeNegativeFundingBreadth",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 12,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G04_PRICE_STRUCTURE",
+        "TriggerConnection": "AND",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M15",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.25,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H2",
+            "Metric": "MedianPriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H4",
+            "Metric": "MeanMedianSpread",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": 0.8
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H6",
+            "Metric": "Breadth",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 55,
             "MaxChange": 1000000000000
           },
           {
             "Tag": "E",
-            "MarketTrendName": "M30",
+            "MarketTrendName": "H12",
             "Metric": "Dispersion",
             "MarketTrendRelation": "Absolute",
             "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
+            "MaxChange": 5
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G05_VOLUME_VOLATILITY",
+        "TriggerConnection": "OR",
+        "Triggers": [
           {
-            "Tag": "F",
-            "MarketTrendName": "H1",
-            "Metric": "Concentration",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "G",
+            "Tag": "A",
             "MarketTrendName": "H1",
             "Metric": "MedianATRP",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 1.5,
             "MaxChange": 1000000000000
           },
           {
-            "Tag": "H",
-            "MarketTrendName": "H1",
+            "Tag": "B",
+            "MarketTrendName": "H4",
             "Metric": "VolatilityBreadth",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 65,
             "MaxChange": 1000000000000
           },
           {
-            "Tag": "I",
-            "MarketTrendName": "H1",
+            "Tag": "C",
+            "MarketTrendName": "H4",
             "Metric": "MedianVolumeExpansion",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 1.35,
             "MaxChange": 1000000000000
           },
           {
-            "Tag": "J",
+            "Tag": "D",
             "MarketTrendName": "H1",
             "Metric": "VolumeExpansionBreadth",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 60,
             "MaxChange": 1000000000000
           },
           {
-            "Tag": "K",
-            "MarketTrendName": "H1",
+            "Tag": "E",
+            "MarketTrendName": "H4",
             "Metric": "StrongVolumeExpansionBreadth",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "L",
-            "MarketTrendName": "H1",
-            "Metric": "VolumeConcentration",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "M",
-            "MarketTrendName": "H1",
-            "Metric": "TopNVolumeShare",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "N",
-            "MarketTrendName": "H1",
-            "Metric": "BTCVolumeShare",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "O",
-            "MarketTrendName": "H1",
-            "Metric": "BTCETHVolumeShare",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "P",
-            "MarketTrendName": "H1",
-            "Metric": "MeanCorrelationToBTC",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "Q",
-            "MarketTrendName": "H1",
-            "Metric": "MedianCorrelationToBTC",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 35,
             "MaxChange": 1000000000000
           }
         ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G06_CONCENTRATION",
+        "TriggerConnection": "OR",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H2",
+            "Metric": "Concentration",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H4",
+            "Metric": "VolumeConcentration",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 2,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H4",
+            "Metric": "TopNVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 45,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H6",
+            "Metric": "BTCVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 20,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "E",
+            "MarketTrendName": "H2",
+            "Metric": "BTCETHVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 30,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G07_BTC_CORRELATION",
+        "TriggerConnection": "AND",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H1",
+            "Metric": "MeanCorrelationToBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.65,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H4",
+            "Metric": "MedianCorrelationToBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.65,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "Default",
+        "TriggerConnection": "AND",
+        "Triggers": [],
         "PairsProperties": {
           "File": "PAIRS.properties"
         },
@@ -235,77 +553,96 @@
     ],
     "SingleMarketSettings": [
       {
-        "SettingName": "TEST_SMS_01_BASELINE",
+        "SettingName": "DIAG_SMS01_M15_BUY_FLOW",
         "TriggerConnection": "AND",
-        "OffTriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": true,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M15",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "M15",
+            "Metric": "RelativeStrengthMarket",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.2,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "M15",
+            "Metric": "TakerBuyRatio",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.53,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M15",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": 0
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "TakerImbalance",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.1
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS02_M30_RELATIVE",
+        "TriggerConnection": "OR",
+        "OffTriggerConnection": "OR",
         "RefreshOffTriggers": false,
         "IgnoredMarkets": "",
+        "AllowedMarkets": "",
         "IgnoredGlobalSettings": "",
-        "AllowedGlobalSettings": "DEFAULT",
+        "AllowedGlobalSettings": "",
         "StopProcessWhenTriggered": false,
         "Triggers": [
           {
             "Tag": "A",
             "MarketTrendName": "M30",
-            "Metric": "PriceTrend",
+            "Metric": "RelativeStrengthBTC",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 1,
             "MaxChange": 1000000000000
           },
           {
             "Tag": "B",
             "MarketTrendName": "M30",
-            "Metric": "RelativeStrengthMarket",
+            "Metric": "TakerImbalance",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 0.08,
             "MaxChange": 1000000000000
           },
           {
             "Tag": "C",
             "MarketTrendName": "M30",
-            "Metric": "RelativeStrengthBTC",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "D",
-            "MarketTrendName": "M30",
-            "Metric": "ATRP",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "E",
-            "MarketTrendName": "M30",
             "Metric": "VolumeExpansion",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "F",
-            "MarketTrendName": "M30",
-            "Metric": "CorrelationToBTC",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "G",
-            "MarketTrendName": "M30",
-            "Metric": "TakerBuyRatio",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
-          },
-          {
-            "Tag": "H",
-            "MarketTrendName": "M30",
-            "Metric": "TakerImbalance",
-            "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 1.5,
             "MaxChange": 1000000000000
           }
         ],
@@ -315,13 +652,253 @@
         "IndicatorsProperties": {}
       },
       {
-        "SettingName": "TEST_SMS_02_FUNDING",
+        "SettingName": "DIAG_SMS03_H1_VOLATILITY",
         "TriggerConnection": "AND",
-        "OffTriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": true,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H1",
+            "Metric": "ATRP",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "VolumeExpansion",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1.2,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H1",
+            "Metric": "CorrelationToBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": 0.55
+          }
+        ],
+        "OffTriggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H1",
+            "Metric": "VolumeExpansion",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": 1
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS04_H2_COHESION",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
         "RefreshOffTriggers": false,
         "IgnoredMarkets": "",
+        "AllowedMarkets": "",
         "IgnoredGlobalSettings": "",
-        "AllowedGlobalSettings": "DEFAULT",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H2",
+            "Metric": "RelativeStrengthMarket",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H2",
+            "Metric": "CorrelationToBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.65,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H2",
+            "Metric": "TakerImbalance",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.05,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS05_H4_SWING",
+        "TriggerConnection": "OR",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": true,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H4",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 2,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H4",
+            "Metric": "RelativeStrengthBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H4",
+            "Metric": "VolumeExpansion",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1.8,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H4",
+            "Metric": "TakerBuyRatio",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.58,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H4",
+            "Metric": "TakerImbalance",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.1
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS06_H6_VOLATILE",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H6",
+            "Metric": "ATRP",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 2,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H6",
+            "Metric": "VolumeExpansion",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1.3,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H6",
+            "Metric": "RelativeStrengthMarket",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.5
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS07_H12_MEDIUM",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H12",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H12",
+            "Metric": "RelativeStrengthMarket",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H12",
+            "Metric": "TakerImbalance",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H12",
+            "Metric": "VolumeExpansion",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1.05,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS08_H24_FUNDING",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": true,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
         "StopProcessWhenTriggered": false,
         "Triggers": [
           {
@@ -329,7 +906,7 @@
             "MarketTrendName": "H24",
             "Metric": "FundingRate",
             "MarketTrendRelation": "Absolute",
-            "MinChange": -1000000000000,
+            "MinChange": 0.01,
             "MaxChange": 1000000000000
           },
           {
@@ -337,7 +914,172 @@
             "MarketTrendName": "H24",
             "Metric": "FundingSum",
             "MarketTrendRelation": "Absolute",
+            "MinChange": 0.01,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H24",
+            "Metric": "TakerBuyRatio",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.52,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H24",
+            "Metric": "FundingRate",
+            "MarketTrendRelation": "Absolute",
             "MinChange": -1000000000000,
+            "MaxChange": 0
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H24",
+            "Metric": "TakerImbalance",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.05
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS09_H48_CONTRARIAN",
+        "TriggerConnection": "OR",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": true,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H48",
+            "Metric": "FundingRate",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.01
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H48",
+            "Metric": "FundingSum",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.02
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H48",
+            "Metric": "TakerImbalance",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -1000000000000,
+            "MaxChange": -0.1
+          }
+        ],
+        "OffTriggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H48",
+            "Metric": "FundingRate",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.01,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS10_H72_LONG_CONTEXT",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H72",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H72",
+            "Metric": "RelativeStrengthBTC",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H72",
+            "Metric": "FundingSum",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS11_CROSS_HORIZON",
+        "TriggerConnection": "OR",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M15",
+            "Metric": "RelativeStrengthMarket",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H4",
+            "Metric": "ATRP",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 2,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H12",
+            "Metric": "TakerBuyRatio",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.6,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H72",
+            "Metric": "FundingRate",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.02,
             "MaxChange": 1000000000000
           }
         ],
