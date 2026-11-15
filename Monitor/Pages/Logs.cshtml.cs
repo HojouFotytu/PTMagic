@@ -65,11 +65,13 @@ namespace Monitor.Pages
       bool freshConnection = String.IsNullOrEmpty(activeCursor) && nextOffset < 0;
       bool initialAnalyzerSnapshot = source == "analyzer" && freshConnection;
       bool initialMonitorSnapshot = source == "monitor" && freshConnection;
+      bool initialAnalyzerWithoutPreviousRaid = false;
       try
       {
         if (initialAnalyzerSnapshot)
         {
           string[] previousSummary = ReadPreviousRaidSummary(folder);
+          initialAnalyzerWithoutPreviousRaid = previousSummary.Length == 0;
           await SendSnapshotAsync(previousSummary, cancellation);
         }
         if (initialMonitorSnapshot)
@@ -114,9 +116,12 @@ namespace Monitor.Pages
               if (reset)
               {
                 activeCursor = fileCursor;
-                // A fresh Analyzer viewer starts at EOF. Only the previous completed
-                // raid summary is loaded; never replay an in-progress raid.
-                nextOffset = (initialAnalyzerSnapshot || initialMonitorSnapshot) ? stream.Length : Math.Max(0, stream.Length - InitialTailBytes);
+                // With a previous completed raid, start at EOF as before.
+                // Without one, retain the ongoing first startup and raid:
+                // otherwise a viewer opened during the first raid sees nothing.
+                nextOffset = initialAnalyzerSnapshot && initialAnalyzerWithoutPreviousRaid ? 0
+                  : (initialAnalyzerSnapshot || initialMonitorSnapshot) ? stream.Length
+                  : Math.Max(0, stream.Length - InitialTailBytes);
                 initialAnalyzerSnapshot = false;
                 initialMonitorSnapshot = false;
               }
