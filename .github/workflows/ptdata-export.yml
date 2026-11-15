@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Inspect pinned official PT 2.6.1 history API contract (no bot execution)
+      - name: Inspect pinned PT history service (no bot execution)
         shell: bash
         run: |
           curl --fail --location --retry 2 --max-time 120 https://github.com/taniman/profit-trailer/releases/download/2.6.1/ProfitTrailer-2.6.1.zip -o "$RUNNER_TEMP/pt-contract.zip"
@@ -30,24 +30,25 @@ jobs:
           with zipfile.ZipFile(root.parent / 'pt-contract.zip') as release:
               jarname = next(n for n in release.namelist() if n.endswith('/ProfitTrailer.jar') or n == 'ProfitTrailer.jar')
               jarbytes = release.read(jarname)
+          total = 0
           with zipfile.ZipFile(io.BytesIO(jarbytes)) as jar:
-              candidates = []
               for name in jar.namelist():
                   if not name.endswith('.class'): continue
                   data = jar.read(name)
-                  if b'/api/v2/data' in data or (b'perPage' in data and b'sortDirection' in data and (b'buys' in data or b'sales' in data)):
-                      candidates.append(name)
-                      target = root / pathlib.Path(name).name
-                      target.write_bytes(data)
-                      result = subprocess.run(['javap', '-p', '-c', '-v', str(target)], text=True, capture_output=True, check=True).stdout
-                      methods = re.split(r'(?=^  (?:public|private|protected) )', result, flags=re.M)
-                      print('CONTRACT CLASS:', name)
-                      for method in methods[1:]:
-                          if re.search(r'(?i)\b(buys|sales|getBuys|getSales|buyHistory|sellHistory|saleHistory)\b', method):
-                              print(method[:40000])
-              print('CONTRACT CANDIDATES:', candidates)
+                  if not (name.endswith('/DataLogService.class') or (b'perPage' in data and b'subList' in data) or (b'BOUGHTDATE' in data and (b'getLastBoughtDate' in data or b'getFirstBoughtDate' in data))): continue
+                  target = root / pathlib.Path(name).name
+                  target.write_bytes(data)
+                  result = subprocess.run(['javap', '-p', '-c', str(target)], text=True, capture_output=True, check=True).stdout
+                  methods = re.split(r'(?=^  (?:public|private|protected) )', result, flags=re.M)
+                  print('CONTRACT CLASS:', name)
+                  for method in methods[1:]:
+                      if re.search(r'getBuyLogJson|getSellLogJson|subList|\.skip:|BOUGHTDATE|getLastBoughtDate|getFirstBoughtDate', method):
+                          output = method[:18000]
+                          if total + len(output) < 100000:
+                              print(output)
+                              total += len(output)
           PY
       - name: Compile and exercise the actual HTTP to JSON to ZIP implementation
         run: dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release
-      - name: Build Monitor with the replacement exporter
+      - name: Build Monitor
         run: dotnet build Monitor/Monitor.csproj --configuration Release
