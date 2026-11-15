@@ -34,7 +34,7 @@ Combined files remain `Trades/buys.json` and `Trades/sales.json`, `{data,sourceP
 
 Record identity uses history id when available, otherwise exact content hash. The first observation is retained in combined JSON. Every raw version remains available. Overlap, changed duplicate IDs and undated rows in a finite window make coverage partial. A page containing no new identities stops with `history_page_repeated`, even if mutable ticker fields changed. If a server exceeds the requested page size, all returned records are retained but coverage is partial: the next offset must not be invented.
 
-Date ranges remain 7d/1m/3m/6m/all. Finite ranges filter buys on lastBoughtDate and sales on soldDate, with a fixed UTC upper bound. **This rebuild scans to the terminal short/empty page, then applies filtering during collection; it does not early-stop at the first old buy.** The database search field `bought_date` was observed, but its equivalence to lastBoughtDate for all initial/DCA history types was not established. Prefer a complete bounded scan over a speculative cutoff that can omit recent DCA transactions from older positions. Raw evidence pages can contain out-of-range records. Time/byte/page limits remain explicit and produce partial status, never false completeness.
+Date ranges remain 7d/1m/3m/6m/all. Finite ranges filter buys on lastBoughtDate and sales on soldDate, with a fixed UTC upper bound. **This rebuild scans to the terminal short/empty page, applying date filtering during collection; it does not early-stop at the first old buy.** The database search field `bought_date` was observed, but its equivalence to lastBoughtDate for all initial/DCA history types was not established. Prefer a complete bounded scan over a speculative cutoff that can omit recent DCA transactions from older positions. Raw evidence pages can contain out-of-range records. Time/byte/page limits remain explicit and produce partial status, never false completeness.
 
 HTTP 429/503: up to three attempts on the same page. No redirect following with the production client. Per-response 32 MiB, shared downloaded-source budget 128 MiB, 10,000 JSON pages per history, per-request 25 seconds, export 120 seconds. Disk-backed aggregate and ZIP avoid holding entire history in memory. Per-page safe diagnostics include page, size, offset, status, attempts, length, SHA-256 and outcome, never token/host/full URL or exception text. Caller cancellation aborts and releases the gate.
 
@@ -44,4 +44,19 @@ Current positions and optional funding keep their original single-response behav
 
 `dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release` compiles the actual production source with only connection settings stubbed. Tests now emulate the independently inspected one-based contract, not the previous client's zero-based assumption. Boundary groups exercise both endpoints at 0/1/9/10/11/20/21/400 records, original JSON, repeated/changed/overlapping pages, failures, UTC filtering, late DCA dates, size/byte/page limits, cancellation and unchanged snapshots.
 
-Compile/test success must be recorded from the rebuild's own CI run, not the inspection runs above (those still ran the old exporter). Live acceptance still requires a newly built Monitor download showing `pt-history-v3`, first API pages 1 and 2 with advancing records, correct counts/range and unchanged position snapshots. No synthetic run proves live acceptance. `range_coverage_complete` means the bounded scan terminated without detected uncertainty, not an atomic snapshot or full account lifetime history.
+Live acceptance still requires a newly built Monitor download showing `pt-history-v3`, first API pages 1 and 2 with advancing records, correct counts/range and unchanged position snapshots. No synthetic run proves live acceptance. `range_coverage_complete` means the bounded scan terminated without detected uncertainty, not an atomic snapshot or full account lifetime history.
+
+## Recorded validation — 2026-11-15
+
+Fresh implementation commit: `7580a96c3d5ea4242959a6e26244c6aaf7826b50` on the existing `phase1/market-data-foundation` branch.
+
+The initial rebuild run `43679795101` failed in the transfer-budget test after the first 20 groups passed. The test used a fixed 4,000-byte budget but incorrectly expected only one retained page even though two serialized fixture pages fit. This was a test expectation defect, not evidence of a production transfer-limit failure; the Monitor build step was skipped in that run.
+
+Test correction `e63170fa12e8eb263e4880003fc384ca3ea0ecf6` derives the budget from the actual first response byte count plus one. It verifies that page 1 is retained, page 2 exceeds the cumulative budget, the archive remains valid and the dataset is partial. No production exporter behavior changed in that correction.
+
+[Workflow run 43694100671](https://github.com/HojouFotytu/PTMagic/actions/runs/43694100671), job `132750725594`, tested commit `e63170fa12e8eb263e4880003fc384ca3ea0ecf6`:
+- **PASS: all 25 HTTP-to-JSON-to-ZIP test groups.** These compile the production collector against simulated HTTP responses.
+- **PASS: .NET 10 Monitor Release build, 0 warnings and 0 errors**, elapsed 13.46 seconds. This was a Monitor project build, not a full-solution build.
+- **Live ProfitTrailer export / browser acceptance: not yet verified.** No live bot requests or deployment were performed by this validation.
+
+These results validate the fresh collector and corrected tests, not the earlier zero-based exporter or an installed Monitor instance. Do not report live pagination fixed until a new real ZIP confirms advancement.
