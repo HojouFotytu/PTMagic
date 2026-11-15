@@ -17,6 +17,17 @@ namespace Core.MarketAnalyzer.MarketData
   internal static class BinanceKlineClient
   {
     private const int MaxKlinesPerRequest = 500;
+    // Binance Futures 5m: 500/1000 candles have the same five-unit IP weight.
+    // Larger pages reduce round trips without bypassing the shared limiter.
+    private const int MaxFuturesFiveMinuteKlinesPerRequest = 1000;
+
+    internal static int PlanKlineRequestLimit(string exchangeName, string intervalName, int remaining)
+    {
+      int cap = String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+        && String.Equals(intervalName, "5m", StringComparison.OrdinalIgnoreCase)
+        ? MaxFuturesFiveMinuteKlinesPerRequest : MaxKlinesPerRequest;
+      return Math.Min(cap, Math.Max(0, remaining));
+    }
     private static readonly TimeSpan OneMinuteInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan FiveMinuteInterval = TimeSpan.FromMinutes(5);
 
@@ -58,7 +69,8 @@ namespace Core.MarketAnalyzer.MarketData
       {
         cancellationToken.ThrowIfCancellationRequested();
 
-        int requestLimit = Math.Min(MaxKlinesPerRequest, candlesNeeded - candlesFetched);
+        int requestLimit = PlanKlineRequestLimit(exchangeName, intervalName,
+          candlesNeeded - candlesFetched);
         string url = apiBase + "/klines?interval=" + intervalName + "&symbol=" + symbol + "&endTime=" + endTimeMilliseconds.ToString() + "&limit=" + requestLimit.ToString();
 
         log.DoLogDebug(exchangeName + " - Getting " + requestLimit.ToString() + " normalized " + intervalName + " candles for '" + symbol + "'...");

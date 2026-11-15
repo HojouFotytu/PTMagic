@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -28,6 +29,7 @@ internal static class Program
       MetricRegistry();
       FundingQuota();
       IPWeight();
+      FuturesKlinePagePlanning();
       Cooldowns();
       await RecoverableWait();
       await CancellationWait();
@@ -71,6 +73,41 @@ internal static class Program
     Check(limiter.ReserveOrDelay(Funding, Now) > TimeSpan.Zero, "Funding quota missing safe cap.");
     Check(limiter.ReserveOrDelay(Funding, Now.AddMinutes(5).AddSeconds(1)) == TimeSpan.Zero, "Quota did not recover.");
     Passed("Funding five-minute provider quota");
+  }
+
+  private static void FuturesKlinePagePlanning()
+  {
+    Type source = typeof(MarketCandle).Assembly.GetType(
+      "Core.MarketAnalyzer.MarketData.BinanceKlineClient")
+      ?? throw new InvalidOperationException("Kline client not found.");
+    MethodInfo plan = source.GetMethod("PlanKlineRequestLimit",
+      BindingFlags.Static | BindingFlags.NonPublic)
+      ?? throw new InvalidOperationException("Kline page planner not found.");
+    int Limit(string exchange, string interval, int remaining) =>
+      (int)(plan.Invoke(null, new object[] { exchange, interval, remaining })
+        ?? throw new InvalidOperationException("Missing page size."));
+    Check(Limit("BinanceFutures", "5m", 1154) == 1000 &&
+      Limit("BinanceFutures", "5m", 154) == 154,
+      "Cold 96-hour history should require two Futures pages, not three.");
+    Check(Limit("BinanceFutures", "5m", 3) == 3 &&
+      Limit("BinanceFutures", "5m", 0) == 0,
+      "Incremental and no-work request limits must be preserved.");
+    Check(Limit("BinanceFutures", "1m", 1154) == 500 &&
+      Limit("Binance", "5m", 1154) == 500 &&
+      Limit("BinanceUS", "5m", 1154) == 500,
+      "Futures 1m, Binance Spot and Binance US retain 500 per page.");
+    var oldUri = new Uri("https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&limit=500");
+    var newUri = new Uri("https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&limit=1000");
+    var oldWeights = new BinanceRateLimitTracker();
+    var newWeights = new BinanceRateLimitTracker();
+    for (int i = 0; i < 384; i++)
+      Check(oldWeights.ReserveOrDelay(oldUri, Now) == TimeSpan.Zero &&
+        newWeights.ReserveOrDelay(newUri, Now) == TimeSpan.Zero,
+        "500 and 1000 candle Futures pages must both consume 5 weight.");
+    Check(oldWeights.ReserveOrDelay(oldUri, Now) > TimeSpan.Zero &&
+      newWeights.ReserveOrDelay(newUri, Now) > TimeSpan.Zero,
+      "Neither page size may exceed the 80% shared Futures weight cap.");
+    Passed("Futures 5m pagination and request-weight invariants");
   }
 
   private static void IPWeight()

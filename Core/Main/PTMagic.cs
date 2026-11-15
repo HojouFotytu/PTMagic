@@ -906,6 +906,18 @@ namespace Core.Main
             this.WriteStateToFile();
             this.RunCount++;
             this.LastRuntime = DateTime.UtcNow;
+            var raidClock = System.Diagnostics.Stopwatch.StartNew();
+            TimeSpan previousStage = TimeSpan.Zero;
+            void RaidStage(string stage)
+            {
+              TimeSpan elapsed = raidClock.Elapsed;
+              this.Log.DoLogInfo("RAID TIMING - " + stage + ": " +
+                (elapsed - previousStage).TotalSeconds.ToString("0.###",
+                  System.Globalization.CultureInfo.InvariantCulture) +
+                "s; cumulative=" + elapsed.TotalSeconds.ToString("0.###",
+                  System.Globalization.CultureInfo.InvariantCulture) + "s.");
+              previousStage = elapsed;
+            }
             _raidId = Guid.NewGuid().ToString("N");
             _historyWritten = false;
             _raidAnalysisBuilt = false;
@@ -960,12 +972,14 @@ namespace Core.Main
 
               // Check for latest GitHub version after the startup guard is confirmed.
               await this.CheckLatestGitHubVersionAsync(this.LastRuntimeSummary.Version).ConfigureAwait(false);
+              RaidStage("startup, guard, and version check");
 
               // Get saved market info
               this.MarketInfos = BaseAnalyzer.GetMarketInfosFromFile(this.PTMagicConfiguration, this.Log);
 
               // Build exchange market data
               await this.BuildMarketDataAsync().ConfigureAwait(false);
+              RaidStage("exchange metadata and normalized candle acquisition");
 
               // Get markets from PT properties
               this.BuildMarketList();
@@ -982,16 +996,20 @@ namespace Core.Main
                   this.PairsLines, this.PTMagicConfiguration, this.Log);
               }
               this.InitializeMarketTrendData();
+              RaidStage("universe and legacy trend preparation");
 
               if (normalizedExchange)
               {
                 await BinanceFuturesAnalyticsRuntime.RefreshFundingHistoriesAsync(
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots).ConfigureAwait(false);
+                RaidStage("funding history acquisition");
                 BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
                   this.GlobalMarketTrendChanges, this.SingleMarketTrendChanges,
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots);
+                RaidStage("configured MarketTrend metric evaluations");
                 this.ApplyNormalizedPriceTrends();
                 MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
+                RaidStage("trend overlay and Monitor snapshot");
               }
               _raidAnalysisBuilt = true;
               _decisionFresh = this.IsRaidFresh(out string raidFreshnessReason);
@@ -1001,6 +1019,7 @@ namespace Core.Main
               GlobalSetting triggeredSetting = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings.Find(s => s.SettingName.Equals(this.DefaultSettingName, StringComparison.InvariantCultureIgnoreCase));
               List<string> matchedTriggers = new List<string>();
               this.CheckGlobalSettingsTriggers(ref triggeredSetting, ref matchedTriggers);
+              RaidStage("GlobalSetting trigger evaluation");
 
               // Record the actual setting-name transition separately from forced
               // reapplication of the same preset.
@@ -1011,6 +1030,7 @@ namespace Core.Main
 
               // Check for single market trend triggers
               if (_decisionFresh) this.ApplySingleMarketSettings();
+              RaidStage("SMS selection (skipped when stale)");
 
               // Ignore quarterly futures
               if (this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase))
@@ -1036,6 +1056,7 @@ namespace Core.Main
 
               // Save new properties to Profit Trailer
               this.SaveProfitTrailerProperties();
+              RaidStage("configuration decision and delivery");
               bool globalSettingSwitchedThisRaid = _normalDecisionCommittedThisRaid && !String.Equals(
                 previousActiveSettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase);
 

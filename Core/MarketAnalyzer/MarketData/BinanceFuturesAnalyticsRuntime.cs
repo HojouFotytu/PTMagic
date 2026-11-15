@@ -40,7 +40,8 @@ namespace Core.MarketAnalyzer.MarketData
       }
     }
 
-    private const int RefreshConcurrency = 2;
+    private const int SpotRefreshConcurrency = 2;
+    private const int FuturesRefreshConcurrency = 4;
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
     private static readonly MarketDataService DataServiceInstance = new MarketDataService(
@@ -221,13 +222,16 @@ namespace Core.MarketAnalyzer.MarketData
             trend, systemConfiguration.AnalyzerSettings)))
         .Select(trend => trend.TrendMinutes).Where(minutes => minutes > 0)
         .Distinct().ToArray();
+      int concurrency = String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+        ? FuturesRefreshConcurrency : SpotRefreshConcurrency;
+      var refreshTiming = System.Diagnostics.Stopwatch.StartNew();
       IReadOnlyList<MarketDataRefreshStatus> statuses = await DataServiceInstance.RefreshAtAsync(
         refreshSymbols,
         BaseInterval,
         targetHistoryCandles,
         (symbol, count, logger, ct, asOfUtc) => GetFiveMinuteMarketCandlesAsync(exchangeName, symbol, count, logger, ct, asOfUtc),
         log,
-        RefreshConcurrency,
+        concurrency,
         cancellationToken,
         refreshAsOfUtc,
         exchangeName,
@@ -244,6 +248,22 @@ namespace Core.MarketAnalyzer.MarketData
       int refreshed = statusSnapshot.Count(status => status != null && status.Succeeded && !status.Skipped);
       int failed = statusSnapshot.Count(status => status == null || !status.Succeeded);
       int receivedCandles = statusSnapshot.Where(status => status != null).Sum(status => status.ReceivedCandleCount);
+      int fullHistoryRequests = statusSnapshot.Count(status => status != null &&
+        !status.Skipped && status.RequestedCandleCount >= targetHistoryCandles);
+      int incrementalRequests = statusSnapshot.Count(status => status != null &&
+        !status.Skipped && status.RequestedCandleCount > 0 &&
+        status.RequestedCandleCount < targetHistoryCandles);
+      long requestedCandles = statusSnapshot.Where(status => status != null)
+        .Sum(status => (long)status.RequestedCandleCount);
+      log.DoLogInfo("RAID TIMING - normalized 5m refresh: " +
+        refreshTiming.Elapsed.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture) +
+        "s; markets=" + refreshSymbols.Length +
+        ", full-history requests=" + fullHistoryRequests +
+        ", incremental requests=" + incrementalRequests +
+        ", skipped=" + skipped + ", failed=" + failed +
+        ", requested candles=" + requestedCandles +
+        ", received candles=" + receivedCandles +
+        ", concurrency=" + concurrency + ".");
 
       if (refreshed == 0 && failed == 0)
       {
