@@ -1074,7 +1074,12 @@ namespace Core.Main
 
               // Summarise raid              
               this.Log.DoLogInfo("##########################################################");
-              this.Log.DoLogInfo("#******************* RAID SUMMARY ********************#");
+              // Keep the existing 58-character summary border while displaying
+              // the same per-process raid counter previously used below.
+              string raidSummaryTitle = " RAID SUMMARY #" + this.RunCount.ToString() + " ";
+              this.Log.DoLogInfo("#" +
+                raidSummaryTitle.PadLeft((56 + raidSummaryTitle.Length) / 2, '*')
+                  .PadRight(56, '*') + "#");
               this.Log.DoLogInfo("+ PT Magic Version: " + this.LastRuntimeSummary.Version +
                 " (Build " + BuildIdentity.CommitBuildNumber + ")");
               if (!SystemHelper.IsRecentVersion(this.LastRuntimeSummary.Version, this.LatestVersion))
@@ -1125,7 +1130,7 @@ namespace Core.Main
                   this.Log.DoLogInfo("+ Metric warnings: none");
                 }
               }
-              this.Log.DoLogInfo("+ " + this.TotalElapsedSeconds.ToString() + " Magicbots killed in " + this.RunCount.ToString() + " raids on Cryptodragon's Lair " + this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.IntervalMinutes.ToString() + ".");
+
               this.Log.DoLogInfo("");
               this.Log.DoLogInfo("DO NOT CLOSE THIS WINDOW! THIS IS THE BOT THAT ANALYZES TRENDS AND CHANGES SETTINGS!");
               this.Log.DoLogInfo("");
