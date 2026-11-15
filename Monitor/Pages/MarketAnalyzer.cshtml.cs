@@ -52,6 +52,57 @@ namespace Monitor.Pages
       Summary?.MarketSummary != null && Summary.MarketSummary.TryGetValue(market, out MarketPairSummary summary)
         ? summary : null;
 
+    private static bool TryGetPublishedValue(FeatureValueSnapshot feature, out double value)
+    {
+      value = 0;
+      if (feature == null || !feature.IsValid || feature.IsStale || !feature.Value.HasValue
+        || !Double.IsFinite(feature.Value.Value))
+        return false;
+      value = feature.Value.Value;
+      return true;
+    }
+
+    // Legacy summary values remain authoritative when present. For assets
+    // outside the trading summary, reuse the already-published PriceTrend.
+    public bool TryGetAssetPriceTrend(string market, string trendName, out double value)
+    {
+      value = 0;
+      if (GetAssetTableMarketSummary(market)?.MarketTrendChanges != null
+        && GetAssetTableMarketSummary(market).MarketTrendChanges.TryGetValue(trendName, out double summaryValue)
+        && Double.IsFinite(summaryValue))
+      {
+        value = summaryValue;
+        return true;
+      }
+      if (Analytics?.Trends != null && Analytics.Trends.TryGetValue(trendName, out MarketTrendAnalyticsMonitorTrend trend)
+        && trend?.AssetMetrics != null
+        && trend.AssetMetrics.TryGetValue(market, out Dictionary<string, FeatureValueSnapshot> metrics)
+        && metrics != null && metrics.TryGetValue(MarketTrendMetrics.PriceTrend, out FeatureValueSnapshot feature))
+        return TryGetPublishedValue(feature, out value);
+      return false;
+    }
+
+    public bool TryGetGlobalPriceTrend(string trendName, out double value)
+    {
+      value = 0;
+      if (Summary?.MarketTrendChanges != null
+        && Summary.MarketTrendChanges.TryGetValue(trendName, out List<MarketTrendChange> history)
+        && history != null && history.Count > 0)
+      {
+        double latest = history.OrderByDescending(item => item.TrendDateTime).First().TrendChange;
+        if (Double.IsFinite(latest))
+        {
+          value = latest;
+          return true;
+        }
+      }
+      if (Analytics?.Trends != null && Analytics.Trends.TryGetValue(trendName, out MarketTrendAnalyticsMonitorTrend trend)
+        && trend?.MarketMetrics != null
+        && trend.MarketMetrics.TryGetValue(MarketTrendMetrics.PriceTrend, out FeatureValueSnapshot feature))
+        return TryGetPublishedValue(feature, out value);
+      return false;
+    }
+
     public bool HasAssetMetricsForMarket(string market) =>
       !String.IsNullOrWhiteSpace(market) && InlineAssetMetricRows.ContainsKey(market);
 
