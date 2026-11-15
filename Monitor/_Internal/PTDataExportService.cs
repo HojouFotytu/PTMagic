@@ -208,7 +208,7 @@ namespace Monitor._Internal
       decimal maximum = new DateTimeOffset(end).ToUnixTimeMilliseconds() / 1000m;
       int offset = 0, size = 10, page = 1, pages = 0, accepted = 0, examined = 0, included = 0;
       int duplicates = 0, changed = 0, undated = 0, reductions = 0;
-      bool ended = false;
+      bool ended = false, cutoffReached = false;
       string error = null;
 
       while (pages < pageLimit)
@@ -254,6 +254,7 @@ namespace Monitor._Internal
           if (document.RootElement.ValueKind == JsonValueKind.Object
             && document.RootElement.TryGetProperty("hashcode", out JsonElement hash)) hashes.Add(hash.Clone());
           int fresh = 0;
+          bool pageOlderThanCutoff = false;
           foreach (JsonElement row in rows.EnumerateArray())
           {
             examined++;
@@ -272,7 +273,8 @@ namespace Monitor._Internal
             {
               decimal? date = Timestamp(row, source.DateField);
               if (!date.HasValue) undated++;
-              else if (date.Value < minimum || date.Value > maximum) continue;
+              else if (date.Value < minimum) { pageOlderThanCutoff = true; continue; }
+              else if (date.Value > maximum) continue;
             }
             writer.WriteRawValue(original, skipInputValidation: true);
             included++;
@@ -285,10 +287,10 @@ namespace Monitor._Internal
           if (count > size) throw new CollectionFailure("history_page_size_mismatch");
           trace["outcome"] = "accepted";
           if (count < size) { ended = true; break; }
+          // Date-window requests stop as soon as a descending page reaches the
+          // cutoff. Do not scan older positions to reconstruct asset history.
+          if (pageOlderThanCutoff) { cutoffReached = true; break; }
           offset += size;
-          // Deliberately scan to the terminal page. BOUGHTDATE's database search
-          // field is not assumed to equal lastBoughtDate for every kind of buy.
-          // Local range filtering must not omit later DCA transactions.
         }
         catch (Exception failure) when (!request.IsCancellationRequested && Recoverable(failure))
         {
@@ -298,14 +300,14 @@ namespace Monitor._Internal
         }
       }
       request.ThrowIfCancellationRequested();
-      if (!ended && error == null) error = "history_page_limit";
+      if (!ended && !cutoffReached && error == null) error = "history_page_limit";
       writer.WriteEndArray();
       writer.WriteStartArray("sourcePageHashcodes");
       foreach (JsonElement hash in hashes) hash.WriteTo(writer);
       writer.WriteEndArray();
       writer.WriteEndObject();
       await writer.FlushAsync(request).ConfigureAwait(false);
-      bool complete = ended && error == null && duplicates == 0 && undated == 0;
+      bool complete = (ended || cutoffReached) && error == null && duplicates == 0 && undated == 0;
       result["status"] = complete ? "available" : accepted > 0 ? "partial" : "failed";
       if (accepted > 0)
       {
@@ -325,7 +327,7 @@ namespace Monitor._Internal
       result["unfilterable_records_preserved"] = undated;
       result["reached_history_end"] = ended;
       result["range_coverage_complete"] = complete;
-      result["termination"] = ended ? "end_of_available_history" : error;
+      result["termination"] = cutoffReached ? "date_cutoff_reached" : ended ? "end_of_available_history" : error;
       result["history_range"] = selection.HistoryRange;
       result["history_start_utc"] = start?.ToString("O");
       result["history_end_utc"] = end.ToString("O");
