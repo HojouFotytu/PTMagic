@@ -45,6 +45,12 @@ namespace Monitor.Pages
     public Dictionary<string, List<InlineAssetMetricRow>> InlineAssetMetricRows { get; } =
       new Dictionary<string, List<InlineAssetMetricRow>>(StringComparer.OrdinalIgnoreCase);
     public string InlineAssetMetricRowsJson { get; private set; } = "{}";
+    public List<MarketTrend> AssetTableTrends { get; private set; } = new List<MarketTrend>();
+    public List<string> AssetTableMarkets { get; private set; } = new List<string>();
+
+    public MarketPairSummary GetAssetTableMarketSummary(string market) =>
+      Summary?.MarketSummary != null && Summary.MarketSummary.TryGetValue(market, out MarketPairSummary summary)
+        ? summary : null;
 
     public bool HasAssetMetricsForMarket(string market) =>
       !String.IsNullOrWhiteSpace(market) && InlineAssetMetricRows.ContainsKey(market);
@@ -153,39 +159,60 @@ namespace Monitor.Pages
     {
       InlineAssetMetricRows.Clear();
       InlineAssetMetricRowsJson = "{}";
-      if (Analytics?.Trends == null || Analytics.Trends.Count == 0 || Summary?.MarketSummary == null)
-      {
-        return;
-      }
 
-      // These columns must match the existing Absolute / Relative Trend tables exactly.
-      MarketTrend[] displayedTrends = MarketTrends
+      // Keep configured visible trends, and also show any configured trend
+      // with published per-asset data, regardless of why it was calculated.
+      // These are the shared columns of both existing asset tables.
+      AssetTableTrends = (MarketTrends ?? new List<MarketTrend>())
         .Where(trend => trend != null
           && String.Equals(trend.Platform, "Exchange", StringComparison.OrdinalIgnoreCase)
-          && trend.DisplayOnMarketAnalyzerList)
-        .ToArray();
-      if (displayedTrends.Length == 0)
-      {
-        return;
-      }
+          && !String.IsNullOrWhiteSpace(trend.Name)
+          && (trend.DisplayOnMarketAnalyzerList
+            || (Analytics?.Trends != null
+              && Analytics.Trends.TryGetValue(trend.Name, out MarketTrendAnalyticsMonitorTrend published)
+              && published?.AssetMetrics != null
+              && published.AssetMetrics.Values.Any(values => values != null && values.Count > 0))))
+        .ToList();
 
+      // An acquired asset can have computed data without being a trading pair
+      // in LastRuntimeSummary. Preserve both sources without inventing values.
+      HashSet<string> markets = new HashSet<string>(
+        Summary?.MarketSummary?.Keys ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+      if (Analytics?.Trends != null)
+      {
+        foreach (MarketTrend trend in AssetTableTrends)
+        {
+          if (!Analytics.Trends.TryGetValue(trend.Name, out MarketTrendAnalyticsMonitorTrend published)
+            || published?.AssetMetrics == null)
+            continue;
+          foreach (var asset in published.AssetMetrics)
+          {
+            if (!String.IsNullOrWhiteSpace(asset.Key) && asset.Value != null && asset.Value.Count > 0)
+              markets.Add(asset.Key);
+          }
+        }
+      }
+      AssetTableMarkets = markets.OrderBy(market => market, StringComparer.OrdinalIgnoreCase).ToList();
+
+      if (Analytics?.Trends == null || Analytics.Trends.Count == 0 || AssetTableTrends.Count == 0)
+        return;
+
+      MarketTrend[] displayedTrends = AssetTableTrends.ToArray();
       MarketTrendAnalyticsMonitorTrend[] snapshots = displayedTrends.Select(trend =>
       {
         Analytics.Trends.TryGetValue(trend.Name, out MarketTrendAnalyticsMonitorTrend snapshot);
         return snapshot;
       }).ToArray();
 
-      // Display available per-asset calculations whether or not selected for
-      // triggers; this does not calculate unrelated or unrequested data families.
+      // Every published per-asset metric is eligible for display, including
+      // values calculated as global prerequisites and unregistered metric keys.
+      // This does not initiate new calculations or data acquisition.
       string[][] availableAssetMetrics = snapshots.Select(snapshot =>
         snapshot?.AssetMetrics == null ? Array.Empty<string>() :
           snapshot.AssetMetrics.Values
             .Where(features => features != null)
             .SelectMany(features => features.Keys)
-            .Where(metric =>
-              !String.Equals(metric, MarketTrendMetrics.PriceTrend, StringComparison.OrdinalIgnoreCase)
-              && MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope)
-              && (scope == MarketTrendMetricScope.Asset || scope == MarketTrendMetricScope.Both))
+            .Where(metric => !String.IsNullOrWhiteSpace(metric))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(metric => metric, StringComparer.OrdinalIgnoreCase)
             .ToArray()).ToArray();
@@ -193,11 +220,8 @@ namespace Monitor.Pages
         .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
       if (metrics.Length == 0)
         return;
-      HashSet<string>[] eligibleSymbols = snapshots.Select(snapshot =>
-        new HashSet<string>(snapshot?.AssetSymbols ?? new List<string>(), StringComparer.OrdinalIgnoreCase))
-        .ToArray();
 
-      foreach (string market in Summary.MarketSummary.Keys)
+      foreach (string market in AssetTableMarkets)
       {
         List<InlineAssetMetricRow> rows = new List<InlineAssetMetricRow>();
         foreach (string metric in metrics)
@@ -213,8 +237,7 @@ namespace Monitor.Pages
           {
             MarketTrendAnalyticsMonitorTrend snapshot = snapshots[index];
             if (!availableAssetMetrics[index].Contains(metric, StringComparer.OrdinalIgnoreCase)
-              || snapshot == null || !eligibleSymbols[index].Contains(market)
-              || snapshot.AssetMetrics == null
+              || snapshot == null || snapshot.AssetMetrics == null
               || !snapshot.AssetMetrics.TryGetValue(market, out Dictionary<string, FeatureValueSnapshot> marketMetrics)
               || marketMetrics == null || !marketMetrics.TryGetValue(metric, out FeatureValueSnapshot feature))
             {
