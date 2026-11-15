@@ -4,6 +4,11 @@ on:
     branches: [phase1/market-data-foundation]
     paths:
       - 'Monitor/_Internal/PTDataExportService.cs'
+      - 'Monitor/Program.cs'
+      - 'Monitor/Startup.cs'
+      - 'Monitor/_Internal/BasePageModel.cs'
+      - 'Monitor/Pages/Index.cshtml'
+      - 'Monitor/Pages/_Layout.cshtml'
       - 'Tests/PTDataExport/**'
       - '.github/workflows/ptdata-export.yml'
   workflow_dispatch:
