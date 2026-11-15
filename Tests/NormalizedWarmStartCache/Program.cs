@@ -32,6 +32,8 @@ internal static class Program
       TestBoundedRestoration(root);
       TestFileSaveThrottle(root);
       await TestLegacyTakerUpgrade(root);
+      await TestM15BoundaryIncrementalWithH48();
+      await TestNullTakerFieldTargetedRepair();
       await TestTakerBeyondCapacityAvoidsFullReload();
       Console.WriteLine("Normalized warm-start cache tests passed: " + _passed + ".");
       return 0;
@@ -265,6 +267,63 @@ internal static class Program
       takerTrendMinutes: new[] { 10 });
     Assert(restartRequested == 3,
       "Restored v2 taker coverage must avoid repeated taker-window backfill.");
+    _passed++;
+  }
+
+  // Regression for the 15-minute cyclic H48 overfetch observed on 2026-11-15.
+  private static async Task TestM15BoundaryIncrementalWithH48()
+  {
+    const int count = 1154;
+    DateTimeOffset pinned = Boundary.AddMinutes(15);
+    DateTimeOffset latest = Boundary.AddMinutes(5);
+    var store = new MarketDataStore(count);
+    store.UpsertCandles(Enumerable.Range(0, count).Select(i =>
+      Candle("BTCUSDT", latest.AddMinutes((i - count + 1) * 5), 100, takerQuote: 10)));
+    var service = new MarketDataService(store);
+    int requested = -1;
+    await service.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, count,
+      (symbol, amount, logger, ct, asOf) =>
+      {
+        requested = amount;
+        return Task.FromResult(Enumerable.Range(0, amount).Select(i =>
+          Candle(symbol, asOf.AddMinutes((i - amount) * 5), 100, takerQuote: 10)).ToList());
+      }, Log, maxConcurrency: 1, refreshAsOfUtc: pinned,
+      takerTrendMinutes: new[] { 15, 2880 });
+    Assert(requested >= 3 && requested <= 6,
+      "New M15 candle must use incremental refresh, not H48-sized repair.");
+    Assert(service.Store.GetSnapshot("BTCUSDT", Interval, pinned).ClosedCandles
+      .Any(x => x.OpenTimeUtc == Boundary.AddMinutes(10) && x.TakerBuyQuoteVolume == 10),
+      "M15 newly closed candle is restored.");
+    _passed++;
+  }
+
+  private static async Task TestNullTakerFieldTargetedRepair()
+  {
+    const int count = 1154;
+    DateTimeOffset pinned = Boundary.AddMinutes(15);
+    DateTimeOffset latest = Boundary.AddMinutes(10);
+    var store = new MarketDataStore(count);
+    store.UpsertCandles(Enumerable.Range(0, count).Select(i =>
+    {
+      DateTimeOffset open = latest.AddMinutes((i - count + 1) * 5);
+      return Candle("BTCUSDT", open, 100,
+        takerQuote: open == Boundary ? null : 10);
+    }));
+    var service = new MarketDataService(store);
+    int requested = -1;
+    await service.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, count,
+      (symbol, amount, logger, ct, asOf) =>
+      {
+        requested = amount;
+        return Task.FromResult(Enumerable.Range(0, amount).Select(i =>
+          Candle(symbol, asOf.AddMinutes((i - amount) * 5), 100, takerQuote: 10)).ToList());
+      }, Log, maxConcurrency: 1, refreshAsOfUtc: pinned,
+      takerTrendMinutes: new[] { 15, 2880 });
+    Assert(requested == 6,
+      "An actual M15 null taker field needs six candles, not an H48 reload.");
+    Assert(service.Store.GetSnapshot("BTCUSDT", Interval, pinned).ClosedCandles
+      .Single(x => x.OpenTimeUtc == Boundary).TakerBuyQuoteVolume == 10,
+      "Targeted repair fills the source-verified null field.");
     _passed++;
   }
 

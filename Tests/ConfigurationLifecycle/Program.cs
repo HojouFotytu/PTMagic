@@ -775,6 +775,56 @@ internal static class Program
         Call(fixture.Bot, "SaveProfitTrailerProperties");
         Require(fixture.Sent.Count == 0 && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
       });
+      Check("Futures only-normalized trends skip unnecessary legacy 1m reconstruction", () =>
+      {
+        using var fixture = new Fixture();
+        var method = typeof(Core.MarketAnalyzer.BinanceFutures).GetMethod(
+          "ShouldSkipLegacyHistoricalRebuild", BindingFlags.Static | BindingFlags.NonPublic);
+        Require(method != null);
+        bool Skip() => (bool)method.Invoke(null, new object[] { fixture.Configuration });
+        Require(!Skip());
+        fixture.Configuration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Add(
+          new MarketTrend { Name = "M15", Platform = "Exchange", TrendMinutes = 15 });
+        Require(Skip());
+        fixture.Configuration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Add(
+          new MarketTrend { Name = "H1Legacy", Platform = "Legacy", TrendMinutes = 60 });
+        Require(!Skip());
+      });
+      Check("property-free diagnostic SMS unknown does not defer initial configuration", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
+        fixture.Sms.PairsProperties.Clear();
+        fixture.Sms.Triggers = new List<Trigger> {
+          new Trigger { Tag = "A", MarketTrendName = "MissingTrend",
+            Metric = "TakerBuyRatio", MarketTrendRelation = "Absolute", MinChange = 0.5 } };
+        Call(fixture.Bot, "ApplySingleMarketSettings");
+        Require(!Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default");
+      });
+      Check("property-changing and stop-process SMS unknown still defers initial configuration", () =>
+      {
+        foreach (bool stop in new[] { false, true })
+        {
+          using var fixture = new Fixture();
+          fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
+          fixture.Sms.Triggers = new List<Trigger> {
+            new Trigger { Tag = "A", MarketTrendName = "MissingTrend",
+              Metric = "TakerBuyRatio", MarketTrendRelation = "Absolute", MinChange = 0.5 } };
+          if (stop)
+          {
+            fixture.Sms.PairsProperties.Clear();
+            fixture.Sms.StopProcessWhenTriggered = true;
+          }
+          Call(fixture.Bot, "ApplySingleMarketSettings");
+          Require(Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+          Call(fixture.Bot, "SaveProfitTrailerProperties");
+          Require(fixture.Sent.Count == 0 &&
+            fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
+        }
+      });
       Check("last SMS removal on clean rebuilt properties still sends removal", () =>
       {
         using var fixture = new Fixture(); fixture.Bot.MarketList = new List<string> { "BTCUSDT" }; fixture.RecentVolume(100);
