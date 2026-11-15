@@ -34,7 +34,7 @@ Combined files remain `Trades/buys.json` and `Trades/sales.json`, `{data,sourceP
 
 Record identity uses history id when available, otherwise exact content hash. The first observation is retained in combined JSON. Every raw version remains available. Overlap, changed duplicate IDs and undated rows in a finite window make coverage partial. A page containing no new identities stops with `history_page_repeated`, even if mutable ticker fields changed. If a server exceeds the requested page size, all returned records are retained but coverage is partial: the next offset must not be invented.
 
-Date ranges remain 7d/1m/3m/6m/all. Finite ranges filter buys on lastBoughtDate and sales on soldDate, with a fixed UTC upper bound. **This rebuild scans to the terminal short/empty page, applying date filtering during collection; it does not early-stop at the first old buy.** The database search field `bought_date` was observed, but its equivalence to lastBoughtDate for all initial/DCA history types was not established. Prefer a complete bounded scan over a speculative cutoff that can omit recent DCA transactions from older positions. Raw evidence pages can contain out-of-range records. Time/byte/page limits remain explicit and produce partial status, never false completeness.
+Date ranges remain 7d/1m/3m/6m/all. Finite ranges filter buy records using `lastBoughtDate` and sales using `soldDate`, with a fixed UTC upper bound. **For bounded selections, collection stops after processing the first descending page containing a transaction older than the cutoff**, rather than scanning older pages to reconstruct per-asset history. Older records on that page are excluded; raw page evidence is retained. `All available` still pages to the end. PT's database sort fields are `bought_date` and `sold_date`; the mapping of `bought_date` to the exposed `lastBoughtDate` for all buy types remains a live acceptance qualification. Time, byte, and page limits produce explicit partial status.
 
 HTTP 429/503: up to three attempts on the same page. No redirect following with the production client. Per-response 32 MiB, shared downloaded-source budget 128 MiB, 10,000 JSON pages per history, per-request 25 seconds, export 120 seconds. Disk-backed aggregate and ZIP avoid holding entire history in memory. Per-page safe diagnostics include page, size, offset, status, attempts, length, SHA-256 and outcome, never token/host/full URL or exception text. Caller cancellation aborts and releases the gate.
 
@@ -42,7 +42,7 @@ Current positions and optional funding keep their original single-response behav
 
 ## Validation boundaries
 
-`dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release` compiles the actual production source with only connection settings stubbed. Tests now emulate the independently inspected one-based contract, not the previous client's zero-based assumption. Boundary groups exercise both endpoints at 0/1/9/10/11/20/21/400 records, original JSON, repeated/changed/overlapping pages, failures, UTC filtering, late DCA dates, size/byte/page limits, cancellation and unchanged snapshots.
+`dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release` compiles the actual production source with only connection settings stubbed. Tests now emulate the independently inspected one-based contract, not the previous client's zero-based assumption. Boundary groups exercise both endpoints at 0/1/9/10/11/20/21/400 records, original JSON, repeated/changed/overlapping pages, failures, UTC filtering, bounded buy/sell cutoff and unchanged All-available traversal, size/byte/page limits, cancellation and unchanged snapshots.
 
 Live acceptance still requires a newly built Monitor download showing `pt-history-v3`, first API pages 1 and 2 with advancing records, correct counts/range and unchanged position snapshots. No synthetic run proves live acceptance. `range_coverage_complete` means the bounded scan terminated without detected uncertainty, not an atomic snapshot or full account lifetime history.
 
@@ -60,3 +60,8 @@ Test correction `e63170fa12e8eb263e4880003fc384ca3ea0ecf6` derives the budget fr
 - **Live ProfitTrailer export / browser acceptance: not yet verified.** No live bot requests or deployment were performed by this validation.
 
 These results validate the fresh collector and corrected tests, not the earlier zero-based exporter or an installed Monitor instance. Do not report live pagination fixed until a new real ZIP confirms advancement.
+
+
+## November 15 — user-directed date-range correction
+
+Only transactions within the selected 7d, 1m, 3m, or 6m range are included. A DCA transaction six months ago is excluded from a seven-day export, regardless of the position's age. Bounded history retrieval stops when the sorted API page reaches the date cutoff; it no longer scans older history for per-asset completeness. `All available` retains full pagination. No change to the UI, endpoints, position snapshots, or funding behavior. These semantics were validated by the 26/26 CI test groups and Monitor Release build in [run 43695709351](https://github.com/HojouFotytu/PTMagic/actions/runs/43695709351). Live PT acceptance remains pending.
