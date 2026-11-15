@@ -154,43 +154,52 @@ namespace Monitor._Internal
         private Summary LoadRuntimeSummary()
         {
             string summaryPath = PTMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "LastRuntimeSummary.json";
-
             lock (_runtimeSummaryLock)
             {
-                while (true)
+                // Independent Monitor pages can load before the first raid.
+                // Do not busy-wait or cache a placeholder as completed raid data.
+                if (!System.IO.File.Exists(summaryPath))
                 {
-                    DateTime lastWriteBeforeReadUtc = System.IO.File.GetLastWriteTimeUtc(summaryPath);
+                    _cachedRuntimeSummary = null;
+                    _cachedRuntimeSummaryPath = summaryPath;
+                    _cachedRuntimeSummaryLastWriteUtc = DateTime.MinValue;
+                    return new Summary();
+                }
 
-                    if (_cachedRuntimeSummary != null
-                        && String.Equals(_cachedRuntimeSummaryPath, summaryPath, StringComparison.Ordinal)
-                        && lastWriteBeforeReadUtc == _cachedRuntimeSummaryLastWriteUtc)
-                    {
-                        return _cachedRuntimeSummary;
-                    }
-
+                for (int attempt = 0; attempt < 3; attempt++)
+                {
                     try
                     {
-                        string summaryJson = System.IO.File.ReadAllText(summaryPath);
-                        DateTime lastWriteAfterReadUtc = System.IO.File.GetLastWriteTimeUtc(summaryPath);
-
-                        if (lastWriteBeforeReadUtc != lastWriteAfterReadUtc)
+                        DateTime before = System.IO.File.GetLastWriteTimeUtc(summaryPath);
+                        string json = System.IO.File.ReadAllText(summaryPath);
+                        DateTime after = System.IO.File.GetLastWriteTimeUtc(summaryPath);
+                        if (before != after)
                         {
                             Thread.Sleep(250);
                             continue;
                         }
+                        if (_cachedRuntimeSummary != null
+                            && String.Equals(_cachedRuntimeSummaryPath, summaryPath, StringComparison.Ordinal)
+                            && after == _cachedRuntimeSummaryLastWriteUtc)
+                            return _cachedRuntimeSummary;
 
-                        Summary runtimeSummary = JsonConvert.DeserializeObject<Summary>(summaryJson);
-                        _cachedRuntimeSummary = runtimeSummary;
-                        _cachedRuntimeSummaryPath = summaryPath;
-                        _cachedRuntimeSummaryLastWriteUtc = lastWriteAfterReadUtc;
-                        return runtimeSummary;
+                        Summary summary = JsonConvert.DeserializeObject<Summary>(json);
+                        if (summary != null && summary.LastRuntime > Constants.confMinDate)
+                        {
+                            _cachedRuntimeSummary = summary;
+                            _cachedRuntimeSummaryPath = summaryPath;
+                            _cachedRuntimeSummaryLastWriteUtc = after;
+                            return summary;
+                        }
                     }
-                    catch (IOException)
-                    {
-                        // Preserve the existing retry behavior when PTMagic is writing the summary file.
-                        Thread.Sleep(250);
-                    }
+                    catch (IOException) { }
+                    catch (JsonException) { }
+                    Thread.Sleep(250);
                 }
+
+                // A first-raid file may still be in the middle of being written.
+                // Allow the next request to try again rather than blocking one.
+                return _cachedRuntimeSummary ?? new Summary();
             }
         }
 
