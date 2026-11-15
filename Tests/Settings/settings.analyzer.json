@@ -6,7 +6,7 @@
 // VerifiedBuild = PENDING_FOR_THIS_CONFIGURATION
 // VerifiedFocusedTests = PENDING_FOR_THIS_CONFIGURATION
 // ConfiguredRuntimeAcceptance = NOT VERIFIED
-// Default preset = _presets/Default; all additional GlobalSettings inherit its preset trio.
+// Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
 // No new presets, installed settings, or PTMagic software modifications are part of this fixture.
 {
   "AnalyzerSettings": {
@@ -537,7 +537,7 @@
         "IndicatorsProperties": {}
       },
       {
-        "SettingName": "Default",
+        "SettingName": "DEFAULT",
         "TriggerConnection": "AND",
         "Triggers": [],
         "PairsProperties": {

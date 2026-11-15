@@ -6,7 +6,7 @@
 
 - **10 MarketTrends:** M15, M30, H1, H2, H4, H6, H12, H24, H48 and H72, with **both global- and asset-capable metrics in every trend**, graph and market-list display enabled.
 - **All 35 registered names selected** across the timeframes. **Every one of the 26 global-capable metrics** is referenced by a diagnostic GlobalSetting trigger; **every one of the 10 asset-capable metric names** (nine asset-only plus both-scope PriceTrend) appears in an SMS activation or OffTrigger.
-- **8 GlobalSettings:** 7 non-default groups for taker pressure, positive funding, negative funding, price/breadth, volatility/volume, concentration and BTC correlation; plus `Default` as the final fallback. The first matching group has priority. The non-default groups have **empty** property dictionaries and inherit the same Default preset.
+- **8 GlobalSettings:** 7 non-default groups for taker pressure, positive funding, negative funding, price/breadth, volatility/volume, concentration and BTC correlation; plus `DEFAULT` as the final fallback. The first matching group has priority. The non-default groups have **empty** property dictionaries and inherit the same DEFAULT preset.
 - **11 SMS:** short-horizon flow, relative strength, volatility, correlation, swing, higher-horizon, funding/contrarian and cross-timeframe diagnostics. Several have OffTriggers; all use empty property dictionaries and apply under all GlobalSettings.
 - **96h of normalized source retention**, adjusted ATR/volume/correlation lookbacks on longer horizons, and H24/H48/H72 funding. `MaxMarkets=0` at every trend (no global cap). COIN, EQUITY and INDEX are eligible without PT allowed-pair filtering or a fixed allowlist.
 
@@ -27,9 +27,9 @@ The Market Analyzer's grouped **Market-Wide Metrics** and its **expandable per-a
 
 ## Preset validity and diagnostic safety
 
-The repository contains only `PTMagic/_presets/Default`; the default setting is named **`Default`** to match Linux case-sensitive directories. It references `PAIRS.properties`, `DCA.properties` and `INDICATORS.properties`; verify the **installed local** file names match exact case. The other seven GlobalSettings contain **no `File` entries**, so PTMagic inherits the default trio rather than looking for missing diagnostic preset folders. **No preset directory or property file is created or renamed.**
+The configured test instance uses **`_presets/DEFAULT`** and the default GlobalSetting is named **`DEFAULT`**, matching its case-sensitive Linux directory. The repository's example template is separately named `PTMagic/_presets/Default`; it is **not** the installed preset directory targeted by this test analyzer. It references `PAIRS.properties`, `DCA.properties` and `INDICATORS.properties`; verify the **installed local** file names match exact case. The other seven GlobalSettings contain **no `File` entries**, so PTMagic inherits the default trio rather than looking for missing diagnostic preset folders. **No preset directory or property file is created or renamed.**
 
-Trigger thresholds are diagnostic examples, not investment/trading rules. Ordered global triggers may stop after the first match; other groups can be configured but not selected in a particular raid. SMS may similarly remain inactive because of real market conditions or missing data. OffTriggers exercise existing SMS lifecycle behavior. All GS/SMS property overrides are empty except the inherited Default file references. Do not load into a live trading installation.
+Trigger thresholds are diagnostic examples, not investment/trading rules. Ordered global triggers may stop after the first match; other groups can be configured but not selected in a particular raid. SMS may similarly remain inactive because of real market conditions or missing data. OffTriggers exercise existing SMS lifecycle behavior. All GS/SMS property overrides are empty except the inherited DEFAULT file references. Do not load into a live trading installation.
 
 ## Verification boundary
 
