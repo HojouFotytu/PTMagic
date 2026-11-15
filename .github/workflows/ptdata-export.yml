@@ -1,0 +1,24 @@
+name: PT Data export regression tests
+on:
+  push:
+    branches: [phase1/market-data-foundation]
+    paths:
+      - 'Monitor/_Internal/PTDataExportService.cs'
+      - 'Tests/PTDataExport/**'
+      - '.github/workflows/ptdata-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compile and exercise the actual HTTP to JSON to ZIP implementation
+        run: dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release
+      - name: Build Monitor with the replacement exporter
+        run: dotnet build Monitor/Monitor.csproj --configuration Release
