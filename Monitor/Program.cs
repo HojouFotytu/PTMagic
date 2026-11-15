@@ -64,18 +64,17 @@ namespace Monitor
           {
             Logger.WriteLine("INFO: settings.general.json found at " + settingsGeneralJson);
 
-            // Check if PT Magic settings file exists
+            // PTMagic writes the runtime summary after its first completed raid.
+            // A missing summary is expected during initial startup, not a fatal error.
             string lastRuntimeSummaryJson = ptMagicBasePath + Constants.PTMagicPathData + Path.DirectorySeparatorChar + "LastRuntimeSummary.json";
-            if (!File.Exists(lastRuntimeSummaryJson))
+            while (!File.Exists(lastRuntimeSummaryJson))
             {
-              Logger.WriteLine("ERROR: PT Magic runtime summary not found: '" + lastRuntimeSummaryJson + "'. Please wait for PT Magic to complete its first run!");
-              if (!Console.IsInputRedirected) Console.ReadKey();
+              Logger.WriteLine("INFO: PTMagic has not completed its first raid. LastRuntimeSummary.json is not yet available; Monitor is waiting and will check again in 60 seconds.");
+              System.Threading.Thread.Sleep(TimeSpan.FromMinutes(1));
             }
-            else
-            {
-              Logger.WriteLine("INFO: LastRuntimeSummary.json found at " + lastRuntimeSummaryJson);
+            Logger.WriteLine("INFO: LastRuntimeSummary.json found at " + lastRuntimeSummaryJson);
 
-              PTMagicConfiguration ptMagicConfiguration = new PTMagicConfiguration(ptMagicBasePath);
+            PTMagicConfiguration ptMagicConfiguration = new PTMagicConfiguration(ptMagicBasePath);
 
               string wwwrootPath = monitorBasePath + Path.DirectorySeparatorChar + "wwwroot";
               if (!Directory.Exists(wwwrootPath))
@@ -107,8 +106,6 @@ namespace Monitor
                   BuildWebHost(args, monitorBasePath, monitorBasePath + Path.DirectorySeparatorChar + "wwwroot", ptMagicConfiguration.GeneralSettings.Monitor.Port).Run();
                 }
               }
-
-            }
           }
         }
       }
