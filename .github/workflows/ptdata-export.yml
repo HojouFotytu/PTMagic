@@ -27,3 +27,28 @@ jobs:
         run: dotnet run --project Tests/PTDataExport/PTDataExport.csproj --configuration Release
       - name: Build Monitor
         run: dotnet build Monitor/Monitor.csproj --configuration Release
+      - name: Smoke test Monitor startup before first raid (Linux, no summary)
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$PWD/PTMagic/_defaults/_default_settings_PT_2.x"
+          test ! -e "$root/_data/LastRuntimeSummary.json"
+          printf '{"PTMagicBasePath":"%s"}\\n' "$root" > Monitor/appsettings.json
+          dotnet run --project Monitor/Monitor.csproj --configuration Release --no-build --no-launch-profile > "$RUNNER_TEMP/monitor-first-raid.log" 2>&1 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+          for try in $(seq 1 25); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8080/ -o "$RUNNER_TEMP/monitor-home.html"; then
+              echo "PASS Monitor accepted HTTP requests without LastRuntimeSummary.json"
+              exit 0
+            fi
+            if ! kill -0 "$monitor_pid" 2>/dev/null; then
+              echo "::error::Monitor exited before listening; startup log follows"
+              cat "$RUNNER_TEMP/monitor-first-raid.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "::error::Monitor did not listen within startup check window"
+          cat "$RUNNER_TEMP/monitor-first-raid.log"
+          exit 1
