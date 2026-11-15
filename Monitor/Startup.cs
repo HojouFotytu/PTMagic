@@ -40,7 +40,11 @@ namespace Monitor
 
       systemConfiguration = new PTMagicConfiguration(ptMagicBasePath);
 
-      services.AddMvc(option => option.EnableEndpointRouting = false);
+      services.AddMvc(option =>
+      {
+        option.EnableEndpointRouting = false;
+        option.Filters.Add(new FirstRaidDataFilter(ptMagicBasePath, systemConfiguration.GeneralSettings.Monitor.RootUrl));
+      });
       services.AddAntiforgery(o => o.HeaderName = "XSRF-TOKEN");
       services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
       services.AddSingleton<LiveTcvService>(serviceProvider => new LiveTcvService(ptMagicBasePath, serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<LiveTcvService>>()));
@@ -107,4 +111,81 @@ namespace Monitor
       }
     }
   }
+
+  // Only data-dependent views are gated. Login, Logs, settings, PT Data and
+  // other independent Monitor routes remain accessible before the first raid.
+  internal sealed class FirstRaidDataFilter : Microsoft.AspNetCore.Mvc.Filters.IAsyncPageFilter
+  {
+    private static readonly System.Collections.Generic.HashSet<string> RaidDependentPages =
+      new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+      {
+        "/MarketAnalyzer", "/StatusSummary", "/ManageSMS", "/DCACalculator",
+        "/_get/DashboardTop", "/_get/DashboardBottom", "/_get/TickerWidgets",
+        "/_get/BagDetails", "/_get/BagList", "/_get/BuyList"
+      };
+
+    private readonly string _summaryPath;
+    private readonly string _logsPath;
+
+    public FirstRaidDataFilter(string basePath, string rootUrl)
+    {
+      _summaryPath = Path.Combine(basePath, Constants.PTMagicPathData, "LastRuntimeSummary.json");
+      _logsPath = (rootUrl ?? "/").TrimEnd('/') + "/Logs";
+    }
+
+    public System.Threading.Tasks.Task OnPageHandlerSelectionAsync(
+      Microsoft.AspNetCore.Mvc.Filters.PageHandlerSelectedContext context) =>
+      System.Threading.Tasks.Task.CompletedTask;
+
+    public async System.Threading.Tasks.Task OnPageHandlerExecutionAsync(
+      Microsoft.AspNetCore.Mvc.Filters.PageHandlerExecutingContext context,
+      Microsoft.AspNetCore.Mvc.Filters.PageHandlerExecutionDelegate next)
+    {
+      string route = (context.ActionDescriptor as Microsoft.AspNetCore.Mvc.RazorPages.PageActionDescriptor)?.ViewEnginePath;
+      if (!RaidDependentPages.Contains(route ?? "") || HasCompletedFirstRaid())
+      {
+        await next();
+        return;
+      }
+
+      if (context.HandlerInstance is _Internal.BasePageModelSecure secure)
+      {
+        // Run the existing session/cookie security check before disclosing
+        // anything from a protected Monitor page.
+        secure.Init();
+        if (context.HttpContext.Response.StatusCode >= 300
+          && context.HttpContext.Response.StatusCode < 400)
+        {
+          context.Result = new Microsoft.AspNetCore.Mvc.EmptyResult();
+          return;
+        }
+      }
+
+      context.HttpContext.Response.Headers["Cache-Control"] = "no-store";
+      context.HttpContext.Response.Headers["Refresh"] = "60";
+      string safeLink = System.Net.WebUtility.HtmlEncode(_logsPath);
+      context.Result = new Microsoft.AspNetCore.Mvc.ContentResult
+      {
+        ContentType = "text/html; charset=utf-8",
+        Content = "<div class=\"card-box\" data-raid-waiting=\"true\" style=\"padding:20px;margin:12px 0\">"
+          + "Data Unavailable until PTMagic completes its first raid. See <a href=\""
+          + safeLink + "\">Logs</a>. This section will check again in one minute.</div>",
+        StatusCode = 200
+      };
+    }
+
+    private bool HasCompletedFirstRaid()
+    {
+      try
+      {
+        if (!File.Exists(_summaryPath)) return false;
+        string json = File.ReadAllText(_summaryPath);
+        var summary = Newtonsoft.Json.JsonConvert.DeserializeObject<Core.Main.DataObjects.PTMagicData.Summary>(json);
+        return summary != null && summary.LastRuntime > Constants.confMinDate;
+      }
+      catch (IOException) { return false; }
+      catch (Newtonsoft.Json.JsonException) { return false; }
+    }
+  }
+
 }
