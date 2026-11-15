@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           root="$PWD/PTMagic/_defaults/_default_settings_PT_2.x"
           test ! -e "$root/_data/LastRuntimeSummary.json"
-          printf '{"PTMagicBasePath":"%s"}\\n' "$root" > Monitor/appsettings.json
+          printf '{"PTMagicBasePath":"%s"}\n' "$root" > Monitor/appsettings.json
           dotnet run --project Monitor/Monitor.csproj --configuration Release --no-build --no-launch-profile > "$RUNNER_TEMP/monitor-first-raid.log" 2>&1 &
           monitor_pid=$!
           trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
