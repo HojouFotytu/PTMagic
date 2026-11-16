@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +22,85 @@ namespace Monitor.Pages
       base.Init();
       if (!IsLoggedIn(HttpContext)) return RedirectToPage("/Login");
       return Page();
+    }
+
+    // Download complete source files, independently of the filtered/bounded log
+    // viewer. Keep the ZIP on a temporary disk stream to avoid buffering all
+    // log history in memory; ASP.NET disposes the stream after the download.
+    public async Task<IActionResult> OnGetDownloadAsync(CancellationToken cancellationToken)
+    {
+      base.Init();
+      if (!IsLoggedIn(HttpContext) || !LogsEnabled)
+        return StatusCode(StatusCodes.Status403Forbidden);
+
+      string analyzerFolder = Path.Combine(PTMagicBasePath, "_logs");
+      string monitorFolder = Path.Combine(PTMagicMonitorBasePath, "_logs");
+      if (!Directory.Exists(monitorFolder))
+        monitorFolder = Path.Combine(AppContext.BaseDirectory, "_logs");
+
+      var folders = new[]
+      {
+        (Path: analyzerFolder, Prefix: "PTMagic/"),
+        (Path: monitorFolder, Prefix: "Monitor/")
+      };
+      var files = folders
+        .Where(folder => Directory.Exists(folder.Path))
+        .SelectMany(folder => Directory.EnumerateFiles(folder.Path, "*", SearchOption.TopDirectoryOnly)
+          // Logs stored as links must not expose files outside the log folder.
+          .Where(path => (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
+          .Select(path => (Path: path, Entry: folder.Prefix + Path.GetFileName(path))))
+        .ToArray();
+
+      if (files.Length == 0)
+        return NotFound("No log files are available to download.");
+
+      string temporaryPath = Path.Combine(Path.GetTempPath(),
+        "ptmagic-logs-" + Guid.NewGuid().ToString("N") + ".zip");
+      FileStream archiveStream = new FileStream(temporaryPath, FileMode.CreateNew,
+        FileAccess.ReadWrite, FileShare.None, 81920,
+        FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+
+      try
+      {
+        int archivedFiles = 0;
+        using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+          foreach (var file in files)
+          {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+              // Allow active NLog writers and daily rotation to continue.
+              using var logStream = new FileStream(file.Path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete, 81920,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+              ZipArchiveEntry entry = archive.CreateEntry(file.Entry, CompressionLevel.Fastest);
+              using Stream entryStream = entry.Open();
+              await logStream.CopyToAsync(entryStream, 81920, cancellationToken);
+              archivedFiles++;
+            }
+            catch (FileNotFoundException)
+            {
+              // A dated log can rotate between discovery and opening.
+            }
+          }
+        }
+
+        if (archivedFiles == 0)
+        {
+          await archiveStream.DisposeAsync();
+          return NotFound("No log files are available to download.");
+        }
+
+        archiveStream.Position = 0;
+        string fileName = "PTMagic-Logs-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
+        return File(archiveStream, "application/zip", fileName);
+      }
+      catch
+      {
+        await archiveStream.DisposeAsync();
+        throw;
+      }
     }
 
     // A single authenticated SSE connection follows one log file. The filesystem watcher
