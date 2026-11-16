@@ -236,35 +236,34 @@ namespace Monitor._Internal
             }
             catch { }
 
-            try
-            {
-                // Read the full product version so the build can be shown in the
-                // header tooltip while the existing short version stays unchanged.
-                string ptMagicBotDllPath = PTMagicBasePath + "PTMagic.dll";
-                if (System.IO.File.Exists(ptMagicBotDllPath))
-                {
-                    FileVersionInfo ptMagicDllInfo = FileVersionInfo.GetVersionInfo(ptMagicBotDllPath);
-                    string productVersion = ptMagicDllInfo.ProductVersion ?? "";
-                    int lastDot = productVersion.LastIndexOf(".");
-                    if (lastDot > 0 && lastDot < productVersion.Length - 1)
-                    {
-                        CurrentBotVersion = productVersion.Substring(0, lastDot);
-                        CurrentBotBuild = productVersion.Substring(lastDot + 1);
-                    }
-                    else
-                    {
-                        CurrentBotVersion = String.IsNullOrWhiteSpace(productVersion) ? Summary.Version : productVersion;
-                    }
-                }
-                else
-                {
-                    CurrentBotVersion = Summary.Version;
-                }
-            }
-            catch
-            {
-                CurrentBotVersion = Summary.Version;
+            // PTMagic's build number is the stamped Git commit timestamp,
+            // not the final component of PTMagic.dll's ProductVersion.
+            // Match the value PTMagic logs in its RAID SUMMARY.
+            CurrentBotBuild = BuildIdentity.CommitBuildNumber;
+            if (String.Equals(CurrentBotBuild, "unknown", StringComparison.OrdinalIgnoreCase))
                 CurrentBotBuild = "";
+
+            // Prefer the running bot's reported version. Before its first raid,
+            // fall back to the executable's assembly/file version.
+            CurrentBotVersion = Summary.Version ?? "";
+            if (String.IsNullOrWhiteSpace(CurrentBotVersion))
+            {
+                try
+                {
+                    string ptMagicBotDllPath = PTMagicBasePath + "PTMagic.dll";
+                    if (System.IO.File.Exists(ptMagicBotDllPath))
+                    {
+                        FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(ptMagicBotDllPath);
+                        if (Version.TryParse(versionInfo.FileVersion, out Version fileVersion)
+                            && fileVersion.Build >= 0)
+                        {
+                            CurrentBotVersion = fileVersion.Major + "." + fileVersion.Minor
+                                + "." + fileVersion.Build;
+                        }
+                    }
+                }
+                catch (System.IO.IOException) { }
+                catch (System.UnauthorizedAccessException) { }
             }
         }
 
