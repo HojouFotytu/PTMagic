@@ -47,7 +47,7 @@ namespace Monitor.Pages
         .Where(folder => Directory.Exists(folder.Path))
         .SelectMany(folder => Directory.EnumerateFiles(folder.Path, "*", SearchOption.TopDirectoryOnly)
           // Logs stored as links must not expose files outside the log folder.
-          .Where(path => (File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
+          .Where(path => (System.IO.File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
           .Select(path => (Path: path, Entry: folder.Prefix + Path.GetFileName(path))))
         .ToArray();
 
@@ -56,9 +56,14 @@ namespace Monitor.Pages
 
       string temporaryPath = Path.Combine(Path.GetTempPath(),
         "ptmagic-logs-" + Guid.NewGuid().ToString("N") + ".zip");
-      FileStream archiveStream = new FileStream(temporaryPath, FileMode.CreateNew,
-        FileAccess.ReadWrite, FileShare.None, 81920,
-        FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+      FileStream archiveStream = new FileStream(temporaryPath, new FileStreamOptions
+      {
+        Mode = FileMode.CreateNew,
+        Access = FileAccess.ReadWrite,
+        Share = FileShare.None,
+        BufferSize = 81920,
+        Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+      });
 
       try
       {
