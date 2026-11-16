@@ -41,6 +41,9 @@
           <div class="form-group col-md-3">
             <button id="log-toggle" class="btn btn-ptmagic" type="button"><i class="fa fa-pause"></i> Pause</button>
             <button id="log-clear" class="btn btn-secondary" type="button">Clear</button>
+            <a id="log-download" class="btn btn-secondary" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=Download" title="Download all available PTMagic and Monitor log files, not just the displayed lines">
+              <i class="fa fa-download"></i> Download Logs ZIP
+            </a>
           </div>
         </div>
         <div class="d-flex align-items-center justify-content-between mb-2">
