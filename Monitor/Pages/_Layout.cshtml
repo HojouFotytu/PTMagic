@@ -29,8 +29,8 @@
         <!-- Logo container-->
         <div class="logo">
           <a href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)" class="logo"><i class="fa fa-magic text-ptmagic"></i> <span class="text-ptmagic">PTMagic</span></a>
-          <span class="logo-version">
-            v<span data-toggle="tooltip" data-placement="bottom" title="@(String.IsNullOrWhiteSpace(Model.CurrentBotBuild) ? "Build unavailable" : "Build " + Model.CurrentBotBuild)">@Model.CurrentBotVersion</span>
+          <span class="logo-version" data-toggle="tooltip" data-placement="bottom" title="@(String.IsNullOrWhiteSpace(Model.CurrentBotBuild) ? "Build unavailable" : "Build " + Model.CurrentBotBuild)">
+            v<span>@Model.CurrentBotVersion</span>
             @if (String.IsNullOrWhiteSpace(Model.CurrentBotVersion) || String.IsNullOrWhiteSpace(Model.LatestVersion)) {
               <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Version information is unavailable until PTMagic reports its version."></i>
             } else if (!Core.Helper.SystemHelper.IsRecentVersion(Model.CurrentBotVersion, Model.LatestVersion)) {
