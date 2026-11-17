@@ -8,6 +8,17 @@
     <div class="card-box">
       <h4 class="m-t-0 header-title">Live Logs</h4>
       <p>Read the Analyzer and Monitor application logs as they are written. Only recent entries are retained in this browser. The viewer does not change application logging or trading settings.</p>
+      @if (Model.LogsEnabled)
+      {
+        <div class="mb-3">
+          <a id="log-download" class="btn btn-secondary mr-2 mb-1" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=Download" title="Download all available PTMagic and Monitor log files, not just the displayed lines">
+            <i class="fa fa-download"></i> Download Logs ZIP
+          </a>
+          <a id="data-download" class="btn btn-secondary mb-1" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=DownloadData" title="Download the complete PTMagic _data folder, including subfolders">
+            <i class="fa fa-download"></i> Download _data ZIP
+          </a>
+        </div>
+      }
       @if (!Model.LogsEnabled)
       {
         <div class="alert alert-warning">For security, live log viewing requires a password-protected Monitor. Configure a Monitor password to enable this page.</div>
@@ -41,9 +52,6 @@
           <div class="form-group col-md-3">
             <button id="log-toggle" class="btn btn-ptmagic" type="button"><i class="fa fa-pause"></i> Pause</button>
             <button id="log-clear" class="btn btn-secondary" type="button">Clear</button>
-            <a id="log-download" class="btn btn-secondary" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=Download" title="Download all available PTMagic and Monitor log files, not just the displayed lines">
-              <i class="fa fa-download"></i> Download Logs ZIP
-            </a>
           </div>
         </div>
         <div class="d-flex align-items-center justify-content-between mb-2">
