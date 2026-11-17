@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -106,6 +107,98 @@ namespace Monitor.Pages
         if (safeInstanceName.Length > 64) safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
         if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
         string fileName = "PTMagic-Logs-" + safeInstanceName + "-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
+        return File(archiveStream, "application/zip", fileName);
+      }
+      catch
+      {
+        await archiveStream.DisposeAsync();
+        throw;
+      }
+    }
+
+
+    // Download the complete on-disk _data tree for this PTMagic instance.
+    // Keep the archive disk-backed, preserve subfolders, and never follow links.
+    public async Task<IActionResult> OnGetDownloadDataAsync(CancellationToken cancellationToken)
+    {
+      base.Init();
+      if (!IsLoggedIn(HttpContext) || !LogsEnabled)
+        return StatusCode(StatusCodes.Status403Forbidden);
+
+      string dataFolder = Path.Combine(PTMagicBasePath, Core.Main.Constants.PTMagicPathData);
+      if (!Directory.Exists(dataFolder)
+        || (System.IO.File.GetAttributes(dataFolder) & FileAttributes.ReparsePoint) != 0)
+        return NotFound("The PTMagic _data folder is unavailable.");
+
+      string temporaryPath = Path.Combine(Path.GetTempPath(),
+        "ptmagic-data-" + Guid.NewGuid().ToString("N") + ".zip");
+      FileStream archiveStream = new FileStream(temporaryPath, new FileStreamOptions
+      {
+        Mode = FileMode.CreateNew,
+        Access = FileAccess.ReadWrite,
+        Share = FileShare.None,
+        BufferSize = 81920,
+        Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+      });
+
+      try
+      {
+        using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+          archive.CreateEntry("_data/");
+          var pendingFolders = new Stack<string>();
+          pendingFolders.Push(dataFolder);
+          while (pendingFolders.Count > 0)
+          {
+            cancellationToken.ThrowIfCancellationRequested();
+            string folder = pendingFolders.Pop();
+            foreach (string path in Directory.EnumerateFileSystemEntries(folder))
+            {
+              cancellationToken.ThrowIfCancellationRequested();
+              FileAttributes attributes;
+              try
+              {
+                attributes = System.IO.File.GetAttributes(path);
+              }
+              catch (FileNotFoundException) { continue; }
+              catch (DirectoryNotFoundException) { continue; }
+
+              // Exclude symbolic links and junctions, including linked directories.
+              if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
+              string entryName = "_data/" + Path.GetRelativePath(dataFolder, path).Replace('\\', '/');
+              if ((attributes & FileAttributes.Directory) != 0)
+              {
+                archive.CreateEntry(entryName.TrimEnd('/') + "/");
+                pendingFolders.Push(path);
+                continue;
+              }
+
+              try
+              {
+                // Opening before CreateEntry avoids an empty member if a file vanishes.
+                using var dataStream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                  FileShare.ReadWrite | FileShare.Delete, 81920,
+                  FileOptions.Asynchronous | FileOptions.SequentialScan);
+                ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                using Stream entryStream = entry.Open();
+                await dataStream.CopyToAsync(entryStream, 81920, cancellationToken);
+              }
+              catch (FileNotFoundException) { /* Data file removed during enumeration. */ }
+              catch (DirectoryNotFoundException) { /* Parent removed during enumeration. */ }
+            }
+          }
+        }
+
+        archiveStream.Position = 0;
+        string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
+        string safeInstanceName = System.Text.RegularExpressions.Regex
+          .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-")
+          .Trim('-', '_');
+        if (safeInstanceName.Length > 64)
+          safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
+        if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
+        string fileName = "PTMagic-_data-" + safeInstanceName + "-"
+          + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
         return File(archiveStream, "application/zip", fileName);
       }
       catch
