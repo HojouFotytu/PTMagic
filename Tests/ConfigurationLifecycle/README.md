@@ -1,5 +1,16 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## Current verification — 84/84 PASS on November 17, 2026
+
+**Two owner-executed `ConfigurationLifecycle` runs: 84/84 PASS** after `70146fa` and again after [`303b2e7`](https://github.com/HojouFotytu/PTMagic/commit/303b2e7f98d33a5d9cb07c13cf016406a1a49804). An earlier full Core/PTMagic/Monitor build **PASS 16.0s** at `fd4aa2e`; the final `303b2e7` `dotnet run` is not a newly reported *complete solution* build. `70146fa` updated a stale Monitor assertion `Model.GlobalMetricGroups` → `Model.DisplayedGlobalMetricGroups` that had stopped the first 84-group attempt.
+
+`fd4aa2e` removes per-market and per-SMS DEBUG, periodic ten-market INFO and per-SMS-name INFO summary counts. The entire SMS evaluation produces a **single incremental console progress line**, one dot per 25 completed markets, and one DEBUG file-log summary. `303b2e7` removes separate `SettingsHandler` compilation dots. Regression checks prove one line with 51 markets (three dots) and again for an **activated, property-compiling SMS**; both PASS in the 84-group suite. Multiple progress lines in the test transcript come from **separate test cases**. All decision/trigger/compilation logic remains unchanged. Latest production runtime of the consolidated output is still pending.
+
+**Authoritative global SOM:** enable-only; PTMagic never sends `enabled=false`. User manually releases SOM in ProfitTrailer. Older 66/79-check and automatic-release descriptions below are historical and superseded.
+
+
+
+
 Status: **66 checks passed in the user's .NET 10.0.403 run at source `d331fbd059041241069646c3bb82ac6549423a70`.** Core, PTMagic and Monitor built successfully in 10.9 seconds, then all lifecycle checks and all 13 DecisionHistory checks completed. This resolves the earlier fixture compilation failure at `86c2ea3`. Together with the 193 passes from ten unchanged harnesses at that earlier revision, all 272 groups have passed across the two recorded runs. This is not a claim of a single twelve-harness run at `d331fbd`; configured runtime acceptance remains separate under D-021.
 
 **November 10 SOM safety update:** Startup global SOM is now enable-only, with manual release in PT. The test harness has been revised to reject all automatic `enabled=false` API calls, migrate v1 release checkpoints, prevent repeated commands after unconfirmed enables, and verify that the raid-1/raid-2 warning flag clears at raid 3 and rearms on a new startup. These revised tests have **not** yet been run; previous 66/66 lifecycle evidence belongs to the earlier source.
@@ -22,8 +33,8 @@ Coverage includes:
 - Bounded HTTP 503 retries (2s, 5s, 10s; 17s total wait), response Retry-After handling, freshness checks between attempts, and no immediate retry when the server asks for a delay beyond the budget. Deterministic injected waits avoid real sleeps; HTTP 401/500 and timeout handling retain their existing behavior.
 - `POST api/v2/globalSellOnlyMode` with encoded `token` and `enabled` query values, preserved PT base/context paths, no property body, distinct additional-target tokens and the documented primary-token fallback.
 - Startup control changes no PAIRS, DCA or INDICATORS content and does not advance or overwrite normal configuration acknowledgement metadata.
-- Startup API guard persistence through indeterminate selection, stale raids and failed normal delivery, followed by the ordered sequence of normal configuration acknowledgement and `enabled=false`.
-- Failed release keeps normal configuration confirmed and guard control pending. The next raid reasserts `enabled=true`, reevaluates fresh data and retries release without resending unchanged properties.
+- Startup SOM enable-only guard persistence through indeterminate selection, stale raids and failed normal delivery; no automatic `enabled=false` after acknowledgement.
+- Failed enable remains reviewable; no automatic OFF/release retry can override manual PT SOM state.
 - Freshness expiration during normal configuration delivery prevents the subsequent release command. Missing API credentials, mismatched token lists and partial target failures cannot be reported as complete acknowledgement.
 - Separate metadata-only startup guard checkpoint, restart recovery, opt-out behavior with and without an outstanding owned operation, and TestMode isolation of both API calls and live checkpoint files.
 - Removal of the final SMS after the preset has already been rebuilt without SMS markers; the actual SMS evaluator and configuration sender must still deliver the clean payload.
@@ -41,11 +52,11 @@ if ($LASTEXITCODE -ne 0) { throw "ConfigurationLifecycle failed." }
 Expected final line after a successful run of this revision:
 
 ```text
-Configuration lifecycle checks passed: 79.
+Configuration lifecycle checks passed: 84.
 ```
 
-The recorded 66-check result above is historical; the new 503-specific cases require a fresh local run.
+The historic 66/79-group evidence is superseded by the user-run 84/84 PASS at the current checkpoint above.
 
 This fixture does not execute the full scheduled raid loop, live exchange collection, a real ProfitTrailer server or Monitor Razor/JavaScript. The native build and harness have passed at the recorded source; configured TestMode observation, PT integration and the documented browser acceptance remain required before claiming release readiness. Reflection intentionally couples these cases to the production methods; a method/field rename must update the fixture rather than replace it with a simulated algorithm.
 
-The supplied API contract is a setter. These tests do not claim a getter/readback of pre-existing global SOM, preservation of independently enabled manual SOM, or native PT trade behavior. Enabling PTM's startup option gives PTM control of the global SOM startup lifecycle: request `true`, complete a fresh conclusive acknowledged configuration, then request `false`.
+The supplied API contract is a setter. These tests do not claim a getter/readback of pre-existing global SOM, preservation of independently enabled manual SOM, or native PT trade behavior. Enabling PTM's startup option requests `true` only; PTMagic never requests `false`. The user manually releases global SOM in ProfitTrailer.

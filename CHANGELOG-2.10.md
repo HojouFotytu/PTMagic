@@ -1,5 +1,20 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 17, 2026 — Dev 10 Phase 3 and SMS logs, verified source boundaries
+
+**Current app source [`303b2e7`](https://github.com/HojouFotytu/PTMagic/commit/303b2e7f98d33a5d9cb07c13cf016406a1a49804).** `cbe919aa` adds eight Phase 3 confirmation/divergence metrics using the existing taker-source candle traversal rather than calculating rolling PriceTrend again, with **100% global cohort coverage**; `33a33f0` corrects H72 *test* alignment; `3a25105` updates the existing direction-neutral TestMode fixture: **43 metrics (30 global-capable/13 asset-only)**; 10 trends, 9 GS (`DEFAULT` final), 12 SMS, all eight new metrics on H1.
+
+**User-run proof:** solution build **PASS 16.9s** at `cbe919aa`, `Phase1COhlcv` **20/20 PASS** after `33a33f0`, `Phase2AdaptiveAcquisition` **9/9 PASS** (43-name catalogue). Later solution build **PASS 16.0s** at `fd4aa2e`. `ConfigurationLifecycle` **84/84 PASS** after `70146fa` and again at latest [`303b2e7`](https://github.com/HojouFotytu/PTMagic/commit/303b2e7f98d33a5d9cb07c13cf016406a1a49804). **The new 21st OHLCV reason-category test added at `f45360d` has NOT been run**; do not claim 21/21.
+
+**Deployed TestMode:** LONG/SHORT `PTMagic-Logs-2026-11-17T08-04-32Z.zip` / `08-04-36Z.zip` ran `24d70402` (older than final logs/diagnostics). **7 raids each, 6 conclusive post-cold each, 19–25s steady, first 5m21s deferred, zero PT writes/ERROR/CRITICAL**. H1 Phase 3 shares valid **719/719** and changed on the UTC hour boundary; Phase 3 SMS active **682–692** assets. G08 GlobalSetting not decisively exercised after the cold first raid because earlier GS matched. M15/M30 taker metrics reported 2–4 warning groups for seven M15 and one final M30 market; the old combined reason cannot prove zero-volume source.
+
+**Log cleanup:** `fd4aa2e` outputs one SMS-evaluation console line, dot per 25 markets, one DEBUG file summary and no market/SMS DEBUG. `70146fa` fixes unrelated stale Monitor assertion. `303b2e7` removes redundant compiler dots and adds an active-SMS one-line regression. `f45360d` distinguishes source missing/unverified, invalid numeric and zero-total-volume `0/0`. All calculations/UNAVAILABLE, NLog DEBUG level, PT delivery and SOM behavior unchanged. **84/84 tests PASS**; live post-change log acceptance pending.
+
+**Next:** run `dotnet run --project .\Tests\Phase1COhlcv` (expect 21); optionally confirm G08 first in a temporary isolated TestMode fixture and collect newer logs for warnings/console. Cold-first-raid performance is separate, with the 300s pinned age check intact. Phase 4/5 remain planned; independent LONG/SHORT trading settings untouched. [Full handoff](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/handoffs/2026-11-17-ptm-210-dev10-to-dev11.md).
+
+
+
+
 ## November 17, 2026 — Remove redundant SMS compilation progress dots
 
 After introducing one progress line for the complete SMS evaluation, the separate `SettingsHandler.CompileSingleMarketProperties` routine still printed one dot per activated SMS and a following newline. That produced standalone `.` lines in the configuration lifecycle output even though the evaluation itself passed the first progress-format test. Remove only that compilation-time console output (and its conditional newline in the exception path). The one evaluation progress line stays in `Core/Main/PTMagic.cs`; SMS property compilation, matched setting records, three-valued safety, error logging, persistence and PT delivery are unchanged. Extend the existing `ConfigurationLifecycle` console-capture regression to include an actively triggered SMS and assert that evaluation plus compilation produces exactly one line.

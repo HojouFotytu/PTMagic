@@ -1,5 +1,16 @@
 # PTMagic 2.10 — 43-metric multi-trend diagnostic analyzer
 
+## Current LONG/SHORT configured TestMode evidence — November 17, 2026
+
+**One shared direction-neutral diagnostic analyzer** can be used unchanged by **separately isolated** LONG and SHORT `TestMode=true` bots. Log ZIPs `PTMagic-Logs-2026-11-17T08-04-32Z.zip` and `08-04-36Z.zip` ran deployed application source `24d704026ac017082eab663daad6639d818c9021`, NOT current HEAD. **Each bot: 7 completed raids, first uncached raid 5m21s/deferred at pinned 300s, 6/6 later conclusive TestMode decisions**, no PT writes or PTMagic ERROR/CRITICAL. H1 four new global Phase 3 shares were **719/719 available (100%)** and held the same values within the complete UTC hour. `DIAG_SMS12_H1_PHASE3_FLOW` activated **682** markets in post-cold raids 2–6 and **692** in raid 7.
+
+H1 global share changes across 17:00 KST (percent, not market breadth): buyer confirmation **0.9682541 → 3.84586799**, seller confirmation **4.44556117 → 0.99484792**, buyer divergence **0.90183547 → 0.08800639**, seller divergence **0.15749786 → 1.9748316**. The 100%-coverage policy remains strict.
+
+**Open acceptance:** No *fresh decisive* `DIAG_G08_PHASE3_FLOW` GlobalSetting activation (earlier GS matched first); a temporary isolated TestMode G08-first diagnostic would address that separately. M15/M30 `TakerBuyRatio` and `TakerImbalance` had 2–4 grouped warnings, old text cannot distinguish zero volume from invalid accumulated values. `f45360d` added precise diagnostics but its OHLCV **21-group suite is pending**; `303b2e7` single-line SMS logging is **84/84 focused PASS** but these old deployed logs cannot verify the newer output. See the [Dev 10 → Dev 11 handoff](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/handoffs/2026-11-17-ptm-210-dev10-to-dev11.md).
+
+
+
+
 **Updated:** 2026-11-17. **Fixture:** `settings.analyzer.json` v2.3.0. **Application:** PTMagic `cbe919aa` or later with Phase 3 (the H72 fixture correction is `33a33f0`). **Test-only:** run exclusively in an isolated Binance Futures instance with `TestMode=true` in a separate local `settings.general.json`.
 
 ## Exact coverage
@@ -34,7 +45,7 @@ The Market Analyzer's grouped **Market-Wide Metrics** and its **expandable per-a
 
 ## Preset validity and diagnostic safety
 
-The configured test instance uses **`_presets/DEFAULT`** and the default GlobalSetting is named **`DEFAULT`**, matching its case-sensitive Linux directory. The repository's example template is separately named `PTMagic/_presets/Default`; it is **not** the installed preset directory targeted by this test analyzer. It references `PAIRS.properties`, `DCA.properties` and `INDICATORS.properties`; verify the **installed local** file names match exact case. The other seven GlobalSettings contain **no `File` entries**, so PTMagic inherits the default trio rather than looking for missing diagnostic preset folders. **No preset directory or property file is created or renamed.**
+The configured test instance uses **`_presets/DEFAULT`** and the default GlobalSetting is named **`DEFAULT`**, matching its case-sensitive Linux directory. The repository's example template is separately named `PTMagic/_presets/Default`; it is **not** the installed preset directory targeted by this test analyzer. It references `PAIRS.properties`, `DCA.properties` and `INDICATORS.properties`; verify the **installed local** file names match exact case. The other eight GlobalSettings contain **no `File` entries**, so PTMagic inherits the default trio rather than looking for missing diagnostic preset folders. **No preset directory or property file is created or renamed.**
 
 Trigger thresholds are diagnostic examples, not investment/trading rules. Ordered global triggers may stop after the first match; other groups can be configured but not selected in a particular raid. SMS may similarly remain inactive because of real market conditions or missing data. OffTriggers exercise existing SMS lifecycle behavior. All GS/SMS property overrides are empty except the inherited DEFAULT file references. Do not load into a live trading installation.
 

@@ -1,8 +1,15 @@
 # Funding-only adaptive acquisition checks
 
+## Current 43-metric acquisition verification — November 17, 2026
+
+**User-run `Phase2AdaptiveAcquisition` 9/9 PASS** at the Phase 3 checkpoint following `33a33f0`: **43 canonical names, 30 globally capable, 13 asset-only**. Funding provider quota, shared IP weight, Futures 5m pagination/request-weight invariants, 429/418 cooldowns, recoverable waits, cancellation, freshness/capacity deadlines and absence of the former sixty-page ceiling all PASS. This harness no longer validates removed open-interest/positioning families, and offline checks do not prove configured runtime or PT delivery. Older 26-metric/8-check evidence below is historical.
+
+
+
+
 D-053 removes the open-interest and positioning services. The existing `Phase2AdaptiveAcquisition` harness now tests the retained funding path: the 26-metric catalogue (17 global-capable, nine asset-only), funding quota, Binance IP-weight headers, 429/418 cooldowns, deadline-bounded admission, recoverable waits, cancellation and absence of a fixed 60-page funding ceiling.
 
-Run `Tests/Phase2OpenInterestIncremental/Run-Phase2Validation.ps1` or `dotnet run --project .\Tests\Phase2AdaptiveAcquisition\Phase2AdaptiveAcquisition.csproj`. Offline tests do not prove live provider/Monitor/PT behavior.
+Run `dotnet run --project .\Tests\Phase2AdaptiveAcquisition\Phase2AdaptiveAcquisition.csproj`. Do not use retired OI/positioning validation scripts as an active acceptance requirement. Offline tests do not prove live provider/Monitor/PT behavior.
 
 **Verification boundary:** All eight current groups **passed at `f7d802facfabb4611098d695d88a269d60daa278`**, including the 26-metric registry check (17 globally evaluable, nine asset-only). The earlier 8/8 run at `e31635a1` was the pre-taker baseline. The removed OI/positioning groups are obsolete. [November 12 source audit](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/updates/2026-11-12-d053-removal-code-audit.md).
 
