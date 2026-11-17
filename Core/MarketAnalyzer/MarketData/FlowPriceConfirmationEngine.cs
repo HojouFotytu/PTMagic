@@ -88,6 +88,7 @@ namespace Core.MarketAnalyzer.MarketData
               SourceDataTimestampUtc = input?.TakerBuyRatio?.SourceDataTimestampUtc,
               SampleCount = input?.TakerBuyRatio?.SampleCount ?? 0,
               IsStale = input?.TakerBuyRatio?.IsStale == true,
+              IsNoTrades = input?.TakerBuyRatio?.IsNoTrades == true,
               InvalidReason = !String.IsNullOrWhiteSpace(input?.TakerBuyRatio?.InvalidReason)
                 ? input.TakerBuyRatio.InvalidReason
                 : "Aligned price, quote volume or source-verified taker ratio is unavailable."
@@ -99,33 +100,38 @@ namespace Core.MarketAnalyzer.MarketData
 
       if (globalActive)
       {
-        // Global volume-share denominators must cover the whole frozen
-        // population: omitting even one liquid asset distorts the share.
-        var valid = globalSymbolsArray.Where(s => alignedPeriods != null &&
-          alignedPeriods.TryGetValue(s, out var v) && IsUsable(v))
+        // Coverage is measured against the unchanged frozen population.
+        // Verified no-trade assets are complete zero-volume observations;
+        // otherwise missing/invalid markets contribute neither data nor a
+        // fabricated zero. Require the standard >=90% observation coverage.
+        var observed = globalSymbolsArray.Where(s => alignedPeriods != null &&
+          alignedPeriods.TryGetValue(s, out var v) && (IsUsable(v) || IsVerifiedNoTrades(v)))
           .Select(s => alignedPeriods[s]).ToArray();
-        double totalQuote = valid.Sum(v => v.QuoteVolume.Value);
-        bool goodDenominator = valid.Length > 0 && Double.IsFinite(totalQuote) && totalQuote > 0;
+        var active = observed.Where(IsUsable).ToArray();
+        double totalQuote = active.Sum(v => v.QuoteVolume.Value);
+        bool goodDenominator = observed.Length > 0 && Double.IsFinite(totalQuote) && totalQuote > 0;
         foreach (var c in Conditions.Where(c => selected.Contains(c.Global)))
         {
           double numerator = goodDenominator
-            ? valid.Where(v => Matches(c.Asset, v)).Sum(v =>
+            ? active.Where(v => Matches(c.Asset, v)).Sum(v =>
                 Math.Abs(v.QuoteVolume.Value * (2.0 * v.TakerBuyRatio.Value.Value - 1.0)))
             : Double.NaN;
-          double share = numerator / totalQuote * 100.0;
+          double share = goodDenominator ? numerator / totalQuote * 100.0 : Double.NaN;
           bool validShare = goodDenominator && Double.IsFinite(share) &&
             share >= 0 && share <= 100.00000001;
           var raw = new FeatureValueSnapshot
           {
             CalculatedAtUtc = asOfUtc,
-            SourceDataTimestampUtc = valid.Length == 0 ? null
-              : valid.Min(v => v.TakerBuyRatio.SourceDataTimestampUtc),
+            SourceDataTimestampUtc = observed.Length == 0 ? null
+              : observed.Min(v => v.TakerBuyRatio.SourceDataTimestampUtc),
             Value = validShare ? Math.Clamp(share, 0.0, 100.0) : null,
-            IsValid = validShare, SampleCount = valid.Length,
+            IsValid = validShare, SampleCount = observed.Length,
             InvalidReason = validShare ? "" : "Invalid complete-period quote-volume denominator or net taker flow."
           };
+          // Apply the normal 90% minimum; the denominator still uses only
+          // source-verified positive trading volume, never missing assets.
           globals[c.Global] = MarketMetricCoverage.Apply(
-            raw, valid.Length, globalSymbolsArray.Length, asOfUtc, requireComplete: true);
+            raw, observed.Length, globalSymbolsArray.Length, asOfUtc);
         }
       }
       return new FlowPriceConfirmationResult
@@ -152,6 +158,14 @@ namespace Core.MarketAnalyzer.MarketData
       return Double.IsFinite(ratio) && ratio >= 0 && ratio <= 1 &&
         Double.IsFinite(v.PriceReturnPercent.Value) &&
         Double.IsFinite(v.QuoteVolume.Value) && v.QuoteVolume.Value > 0;
+    }
+
+    private static bool IsVerifiedNoTrades(AlignedTakerFlowPeriod v)
+    {
+      FeatureValueSnapshot ratio = v?.TakerBuyRatio;
+      return ratio != null && ratio.IsNoTrades && !ratio.IsValid && !ratio.IsStale &&
+        !ratio.Value.HasValue && ratio.SourceDataTimestampUtc.HasValue &&
+        ratio.SampleCount > 0 && v.QuoteVolume.HasValue && v.QuoteVolume.Value == 0;
     }
 
     private static bool Matches(string metric, AlignedTakerFlowPeriod v)

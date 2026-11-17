@@ -25,6 +25,9 @@ namespace Core.MarketAnalyzer.MarketData
 
   public static class TakerFlowFeatureEngine
   {
+    public const string VerifiedNoTradesReason =
+      "Zero total quote volume in the latest complete MarketTrend period (NO_TRADES: source-verified zero base volume, taker-buy quote volume and trade count); taker-buy ratio is undefined (0/0).";
+
     public static bool IsMetric(string metric)
     {
       string name = MarketTrendMetrics.Normalize(metric);
@@ -194,6 +197,7 @@ namespace Core.MarketAnalyzer.MarketData
               SourceDataTimestampUtc = buy.SourceDataTimestampUtc,
               SampleCount = buy.SampleCount,
               IsStale = buy.IsStale,
+              IsNoTrades = buy.IsNoTrades,
               InvalidReason = buy.InvalidReason
             }
             : new FeatureValueSnapshot
@@ -281,6 +285,10 @@ namespace Core.MarketAnalyzer.MarketData
           return Invalid("Invalid total quote-volume value in a source candle (negative or nonfinite).", count);
         if (!double.IsFinite(b) || b < 0 || b > q)
           return Invalid("Invalid taker-buy quote-volume value in a source candle (negative, nonfinite or greater than total).", count);
+        // A zero quote-volume candle is verified inactive only if the other
+        // independent source fields also confirm zero execution activity.
+        if (q == 0 && (candle.BaseVolume != 0 || candle.TradeCount != 0))
+          return Invalid("Zero quote volume conflicts with nonzero base volume or trade count in a source candle.", count);
         total += q;
         bought += b;
         if (includeAlignedPrice)
@@ -299,7 +307,19 @@ namespace Core.MarketAnalyzer.MarketData
       if (!double.IsFinite(total) || total < 0)
         return Invalid("Invalid accumulated total quote volume in the latest complete MarketTrend period.", count);
       if (total == 0)
-        return Invalid("Zero total quote volume in the latest complete MarketTrend period; taker-buy ratio is undefined (0/0).", count);
+      {
+        // Valid source coverage and zero executed quote volume are distinct
+        // from a mathematically undefined per-asset taker ratio.
+        if (includeAlignedPrice) alignedQuoteVolume = 0;
+        return new FeatureValueSnapshot
+        {
+          CalculatedAtUtc = asOfUtc,
+          SourceDataTimestampUtc = expectedCloseUtc,
+          SampleCount = count,
+          IsNoTrades = true,
+          InvalidReason = VerifiedNoTradesReason
+        };
+      }
       if (!double.IsFinite(bought) || bought < 0 || bought > total)
         return Invalid("Invalid accumulated taker-buy quote volume in the latest complete MarketTrend period.", count);
 

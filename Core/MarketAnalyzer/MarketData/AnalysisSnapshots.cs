@@ -18,6 +18,8 @@ namespace Core.MarketAnalyzer.MarketData
     public double? CoveragePercent { get; init; }
     public bool IsValid { get; init; }
     public bool IsStale { get; init; }
+    // A complete, source-verified no-trade interval; no ratio value exists.
+    public bool IsNoTrades { get; init; }
     public string InvalidReason { get; init; } = "";
   }
 

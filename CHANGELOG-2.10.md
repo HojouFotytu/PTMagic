@@ -1,5 +1,11 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 17, 2026 — No-trade normalization and 90% Phase 3 global coverage
+
+Verified zero-trade periods are now identified from complete, aligned Binance 5m candles with source-confirmed zero quote volume, base volume, taker-buy quote volume and trade count. These periods remain UNAVAILABLE for per-asset TakerBuyRatio, TakerImbalance and Phase 3 flow flags, without inventing 0/0 values. Source contradictions, absent fields, incomplete candles and stale data remain real warnings. Verified inactivity is recorded as a grouped DEBUG summary rather than repeated WARN entries.
+
+Phase 3 global *quote-volume share* metrics now use the standard **90% minimum fixed-cohort coverage** instead of the former 100%. Valid traded symbols contribute to the measured numerator/denominator; verified no-trade symbols count as observed with exactly zero volume; other missing/invalid markets do not contribute to either sum and still count against the frozen eligible-population coverage threshold. A zero combined denominator remains UNAVAILABLE. This is a deliberate relaxation: results with 90–99% coverage are based on the observed subset and can differ from a complete-population share. No new endpoint, metric name, PT delivery behavior, SOM behavior or settings fixture changes. Added focused OHLCV and warning regression groups; local .NET and live-run checks are still pending.
+
 ## November 17, 2026 — Dev 10 Phase 3 and SMS logs, verified source boundaries
 
 **Current app source [`303b2e7`](https://github.com/HojouFotytu/PTMagic/commit/303b2e7f98d33a5d9cb07c13cf016406a1a49804).** `cbe919aa` adds eight Phase 3 confirmation/divergence metrics using the existing taker-source candle traversal rather than calculating rolling PriceTrend again, with **100% global cohort coverage**; `33a33f0` corrects H72 *test* alignment; `3a25105` updates the existing direction-neutral TestMode fixture: **43 metrics (30 global-capable/13 asset-only)**; 10 trends, 9 GS (`DEFAULT` final), 12 SMS, all eight new metrics on H1.

@@ -64,6 +64,9 @@ namespace Core.MarketAnalyzer.MarketData
       string source = null, string settingName = null, string marketSymbol = null,
       string relation = null, string trigger = null)
     {
+      // The calculator's exact verified NO_TRADES tag represents inactivity,
+      // not a corrupt source. Do not suppress other missing-data failures.
+      if (Contains(reason, "(NO_TRADES: source-verified")) return;
       Issue issue = GetIssue(Name(trendName, "(unknown trend)"), MarketTrendMetrics.Normalize(metricName));
       issue.FailedRequests++;
       string cleaned = Clean(reason);
@@ -155,7 +158,7 @@ namespace Core.MarketAnalyzer.MarketData
                 metrics.TryGetValue(metric, out feature);
               }
 
-              if (IsUsable(feature))
+              if (IsUsable(feature) || (feature?.IsNoTrades == true && !feature.IsStale))
               {
                 continue;
               }
@@ -211,6 +214,34 @@ namespace Core.MarketAnalyzer.MarketData
         lines.Add("+   " + ExplainGlobalDecision(_globalDecision));
       }
 
+      return lines;
+    }
+
+    /// <summary>
+    /// Group verified inactivity at DEBUG without repeating a warning for
+    /// each unavailable taker metric or SMS trigger on the same asset.
+    /// </summary>
+    public IReadOnlyList<string> BuildNoTradeDebugLines(
+      IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> analyses)
+    {
+      var lines = new List<string>();
+      if (analyses == null) return lines;
+      foreach (MarketTrendAnalysisSnapshot analysis in analyses.Values
+        .Where(item => item != null)
+        .OrderBy(item => item.MarketTrendName, StringComparer.OrdinalIgnoreCase))
+      {
+        string[] inactive = analysis.AssetSymbols.Where(symbol =>
+          analysis.AssetMetrics.TryGetValue(symbol, out var metrics) && metrics != null &&
+          metrics.Values.Any(feature => feature?.IsNoTrades == true && !feature.IsStale))
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)
+          .ToArray();
+        if (inactive.Length == 0) continue;
+        lines.Add("MarketTrend '" + analysis.MarketTrendName + "': " + inactive.Length +
+          " verified NO_TRADES markets; per-asset taker ratios unavailable." +
+          " Examples: " + String.Join(", ", inactive.Take(5)) +
+          (inactive.Length > 5 ? ", ..." : "") + ".");
+      }
       return lines;
     }
 

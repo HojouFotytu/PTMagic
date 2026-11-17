@@ -1114,6 +1114,10 @@ namespace Core.Main
                 IReadOnlyDictionary<string, Core.MarketAnalyzer.MarketData.MarketTrendAnalysisSnapshot> analyses =
                   Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses;
                 IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses);
+                foreach (string noTradeSummary in this._raidMetricWarnings.BuildNoTradeDebugLines(analyses))
+                {
+                  this.Log.DoLogDebug(noTradeSummary);
+                }
                 if (warnings.Count > 0)
                 {
                   foreach (string warning in warnings)

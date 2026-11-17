@@ -29,6 +29,7 @@ internal static class Program
       TestPlainLanguageCoverage();
       TestPlainLanguageDisabledMetric();
       TestPlainLanguageGroupedCallers();
+      TestVerifiedNoTradesWarnSuppression();
       Console.WriteLine("Phase 1 metric-warning summary tests passed: " + _passed + ".");
       return 0;
     }
@@ -326,6 +327,72 @@ internal static class Program
       lines[1].Contains("2") && lines[1].Contains("SMS_BTC") &&
       lines[1].Contains("SMS_ETH") && lines[1].Contains("11 of 15"),
       "A grouped warning should remain one readable line while identifying distinct callers.");
+    _passed++;
+  }
+
+  private static void TestVerifiedNoTradesWarnSuppression()
+  {
+    var warnings = new RaidMetricWarnings();
+    const string trendName = "M15";
+    string reason = TakerFlowFeatureEngine.VerifiedNoTradesReason;
+    warnings.ReportUnavailable(trendName, MarketTrendMetrics.TakerBuyRatio,
+      "Metric unavailable; reason=" + reason,
+      "SMS activation", "DIAG_SMS01", "SNOWUSDT", "Absolute", "#1");
+    var inactive = new FeatureValueSnapshot
+    {
+      IsNoTrades = true, InvalidReason = reason, SampleCount = 3,
+      SourceDataTimestampUtc = new DateTimeOffset(2026, 11, 17, 14, 15, 0, TimeSpan.Zero)
+    };
+    var analysis = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = trendName,
+      EnabledMetrics = new[] { MarketTrendMetrics.TakerBuyRatio, MarketTrendMetrics.TakerImbalance },
+      AssetSymbols = new[] { "SNOWUSDT", "BTCUSDT" },
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      {
+        ["SNOWUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        {
+          [MarketTrendMetrics.TakerBuyRatio] = inactive,
+          [MarketTrendMetrics.TakerImbalance] = inactive
+        },
+        ["BTCUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        {
+          [MarketTrendMetrics.TakerBuyRatio] = Valid(0.6),
+          [MarketTrendMetrics.TakerImbalance] = Valid(0.2)
+        }
+      }
+    };
+    var source = Analyses(analysis);
+    Expect(warnings.BuildLines(source).Count == 0,
+      "Verified inactivity must not cause WARN-level missing-data summaries.");
+    var debug = warnings.BuildNoTradeDebugLines(source);
+    Expect(debug.Count == 1 && debug[0].Contains("1 verified NO_TRADES") &&
+      debug[0].Contains("SNOWUSDT"),
+      "Identical per-asset inactive conditions must produce one DEBUG summary.");
+
+    warnings.ReportUnavailable(trendName, MarketTrendMetrics.TakerBuyRatio,
+      "The required source candle is missing", "SMS activation",
+      "DIAG_SMS01", "BTCUSDT", "Absolute", "#1");
+    var mixed = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = trendName, EnabledMetrics = analysis.EnabledMetrics,
+      AssetSymbols = analysis.AssetSymbols,
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      {
+        ["SNOWUSDT"] = analysis.AssetMetrics["SNOWUSDT"],
+        ["BTCUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        {
+          [MarketTrendMetrics.TakerBuyRatio] = Invalid("The required source candle is missing"),
+          [MarketTrendMetrics.TakerImbalance] = Valid(0.2)
+        }
+      }
+    };
+    var trueWarnings = warnings.BuildLines(Analyses(mixed));
+    Expect(trueWarnings.Count == 2 && trueWarnings[1].Contains("BTCUSDT"),
+      "Genuinely missing market data must still WARN.");
+    warnings.ReportGlobalDecision("selection indeterminate; retained 'DEFAULT'.");
+    Expect(warnings.BuildLines(source).Any(line => line.Contains("retained 'DEFAULT'")),
+      "NO_TRADES suppression must not suppress unrelated GlobalSetting safety warnings.");
     _passed++;
   }
 

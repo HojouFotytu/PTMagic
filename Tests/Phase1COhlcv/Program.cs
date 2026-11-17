@@ -35,6 +35,7 @@ internal static class Program
       TestTakerGlobalIntegration();
       TestPhase3SharedPass();
       TestPhase3UnavailableAndNeutral();
+      TestPhase3VerifiedNoTradesAndCoverage();
       TestPhase3H72();
       TestTakerKlineMapper();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
@@ -404,7 +405,7 @@ internal static class Program
       CloseTimeUtc = Start.AddMinutes((index + 1) * 5).AddMilliseconds(-1),
       Open = 100, High = 101, Low = 99, Close = 100,
       QuoteVolume = quote, TakerBuyQuoteVolume = buy,
-      BaseVolume = 1, TradeCount = 1, IsClosed = true
+      BaseVolume = quote == 0 ? 0 : 1, TradeCount = quote == 0 ? 0 : 1, IsClosed = true
     };
 
     FeatureValueSnapshot Ratio() => TakerFlowFeatureEngine.Calculate(
@@ -428,8 +429,22 @@ internal static class Program
     var zero = Ratio();
     Invalid(zero, "Fully present zero-total-volume period");
     Assert(zero.InvalidReason.StartsWith("Zero total quote volume") &&
-      zero.SampleCount == 2,
-      "Zero total quote volume must be diagnosed only after all required candles are verified.");
+      zero.SampleCount == 2 && zero.IsNoTrades &&
+      zero.SourceDataTimestampUtc == Start.AddMinutes(10).AddMilliseconds(-1),
+      "Only complete zero-volume source periods may be classified NO_TRADES.");
+
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "DIAGUSDT", Interval = Interval, OpenTimeUtc = Start.AddMinutes(5),
+      CloseTimeUtc = Start.AddMinutes(10).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      BaseVolume = 1, QuoteVolume = 0, TakerBuyQuoteVolume = 0,
+      TradeCount = 1, IsClosed = true
+    });
+    var contradictory = Ratio();
+    Invalid(contradictory, "Zero quote volume with trades is inconsistent");
+    Assert(!contradictory.IsNoTrades && contradictory.InvalidReason.Contains("conflicts"),
+      "Contradictory source volume must remain a genuine warning.");
 
     store.UpsertCandle(Bar(1, 10, 5));
     Near(Ratio(), 0.5, "A zero-volume constituent candle is valid if the period total is positive");
@@ -705,6 +720,96 @@ internal static class Program
       "Global quote volume shares require 100% eligible coverage");
     Assert(missing.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare]
       .EligibleSampleCount == 2, "Fixed market denominator must be retained.");
+    _passed++;
+  }
+
+  private static void TestPhase3VerifiedNoTradesAndCoverage()
+  {
+    var store = NewStore();
+    string[] symbols = Enumerable.Range(1, 10)
+      .Select(i => "COVER" + i.ToString("D2") + "USDT").ToArray();
+    foreach (string symbol in symbols)
+      AddFlowBars(store, symbol, 110, 100, 0.75);
+
+    var trend = new MarketTrend
+    {
+      Name = "M10Coverage", TrendMinutes = 10,
+      Metrics = "TakerBuyRatio,TakerImbalance,BuyerFlowPriceConfirmation," +
+        "BuyerFlowPriceConfirmationVolumeShare"
+    };
+    var now = Start.AddMinutes(10).AddSeconds(1);
+    FeatureValueSnapshot Global() =>
+      MarketTrendAnalyticsEngine.Calculate(trend, symbols, symbols, store, Interval, now)
+        .MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare];
+
+    // One missing asset: exactly 90% observed, using only the 9 valid
+    // source volumes as numerator and denominator (never imputing zero).
+    AddFlowBars(store, symbols[9], 110, 100, 0.75, verified: false);
+    var ninety = Global();
+    Near(ninety, 50, "Phase 3 global volume share accepts 90% valid coverage");
+    Assert(ninety.SampleCount == 9 && ninety.EligibleSampleCount == 10 &&
+      ninety.CoveragePercent == 90, "Global coverage retains the 10-asset cohort.");
+    AddFlowBars(store, symbols[8], 110, 100, 0.75, verified: false);
+    Invalid(Global(), "80% valid observations must fail the 90% threshold");
+
+    // Verified inactivity restores one complete source observation but
+    // does not invent a taker-buy ratio or an active-volume contribution.
+    for (int i = 0; i < 2; i++)
+    {
+      var opened = Start.AddMinutes(i * 5);
+      store.UpsertCandle(new MarketCandle
+      {
+        Symbol = symbols[9], Interval = Interval,
+        OpenTimeUtc = opened, CloseTimeUtc = opened.AddMinutes(5).AddMilliseconds(-1),
+        Open = 100, High = 100, Low = 100, Close = 100,
+        BaseVolume = 0, QuoteVolume = 0, TakerBuyQuoteVolume = 0,
+        TradeCount = 0, IsClosed = true
+      });
+    }
+    var mixed = MarketTrendAnalyticsEngine.Calculate(trend, symbols, symbols, store, Interval, now);
+    Near(mixed.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare], 50,
+      "Eight traded and one verified inactive markets satisfy 90% coverage");
+    Assert(mixed.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare].SampleCount == 9,
+      "Zero-volume verified market counts as complete data, not fabricated activity.");
+    foreach (string name in new[] { MarketTrendMetrics.TakerBuyRatio,
+      MarketTrendMetrics.TakerImbalance, MarketTrendMetrics.BuyerFlowPriceConfirmation })
+    {
+      var feature = mixed.AssetMetrics[symbols[9]][name];
+      Invalid(feature, "No-trade " + name + " must stay undefined");
+      Assert(feature.IsNoTrades, "Per-asset NO_TRADES marker must propagate to " + name + ".");
+    }
+
+    // A contradictory source candle must not satisfy the coverage threshold.
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = symbols[9], Interval = Interval,
+      OpenTimeUtc = Start.AddMinutes(5),
+      CloseTimeUtc = Start.AddMinutes(10).AddMilliseconds(-1),
+      Open = 100, High = 100, Low = 100, Close = 100,
+      BaseVolume = 1, QuoteVolume = 0, TakerBuyQuoteVolume = 0,
+      TradeCount = 1, IsClosed = true
+    });
+    Invalid(Global(), "One missing and one contradictory market leaves 80% coverage");
+
+    // All complete sources with zero volume: no global 0/0 value.
+    foreach (string symbol in symbols)
+      for (int i = 0; i < 2; i++)
+      {
+        var opened = Start.AddMinutes(i * 5);
+        store.UpsertCandle(new MarketCandle
+        {
+          Symbol = symbol, Interval = Interval,
+          OpenTimeUtc = opened, CloseTimeUtc = opened.AddMinutes(5).AddMilliseconds(-1),
+          Open = 100, High = 100, Low = 100, Close = 100,
+          BaseVolume = 0, QuoteVolume = 0, TakerBuyQuoteVolume = 0,
+          TradeCount = 0, IsClosed = true
+        });
+      }
+    var idle = Global();
+    Invalid(idle, "A zero global denominator is unavailable even at full coverage");
+    Assert(idle.SampleCount == 10 && idle.EligibleSampleCount == 10 &&
+      idle.InvalidReason.Contains("denominator"),
+      "100% source coverage must not fabricate a zero-volume global ratio.");
     _passed++;
   }
 
