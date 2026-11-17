@@ -11,6 +11,18 @@ namespace Core.MarketAnalyzer.MarketData
   /// UTC-aligned MarketTrend duration using the shared normalized kline store.
   /// Ratios are dimensionless; no independent exchange acquisition occurs.
   /// </summary>
+  /// <summary>
+  /// Optional phase-3 outputs captured while computing the existing taker
+  /// ratio, not by traversing the same source candles a second time.
+  /// Price and quote volume are native to that exact complete UTC period.
+  /// </summary>
+  public sealed class AlignedTakerFlowPeriod
+  {
+    public FeatureValueSnapshot TakerBuyRatio { get; init; }
+    public double? PriceReturnPercent { get; init; }
+    public double? QuoteVolume { get; init; }
+  }
+
   public static class TakerFlowFeatureEngine
   {
     public static bool IsMetric(string metric)
@@ -127,7 +139,8 @@ namespace Core.MarketAnalyzer.MarketData
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> Calculate(
       IEnumerable<string> assetSymbols, IReadOnlyCollection<string> enabled,
       MarketDataStore store, TimeSpan interval, int trendMinutes, DateTimeOffset asOfUtc,
-      IReadOnlyCollection<string> aggregateRatioSymbols = null)
+      IReadOnlyCollection<string> aggregateRatioSymbols = null,
+      IDictionary<string, AlignedTakerFlowPeriod> alignedPeriods = null)
     {
       var result = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
         StringComparer.OrdinalIgnoreCase);
@@ -157,7 +170,17 @@ namespace Core.MarketAnalyzer.MarketData
         if (!needRatio && !needImbalance) continue;
 
         FeatureValueSnapshot buy = CalculateRatio(store?.GetSnapshot(symbol, interval, asOfUtc),
-          trendMinutes, asOfUtc);
+          trendMinutes, asOfUtc, alignedPeriods != null, out double? alignedPriceReturn,
+          out double? alignedQuoteVolume);
+        if (alignedPeriods != null)
+        {
+          alignedPeriods[symbol] = new AlignedTakerFlowPeriod
+          {
+            TakerBuyRatio = buy,
+            PriceReturnPercent = alignedPriceReturn,
+            QuoteVolume = alignedQuoteVolume
+          };
+        }
         var values = new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
         // The ratio is already needed internally when imbalance is selected,
         // so publish it for Monitor display without additional calculation.
@@ -209,8 +232,12 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     private static FeatureValueSnapshot CalculateRatio(
-      MarketDataSeriesSnapshot snapshot, int minutes, DateTimeOffset asOfUtc)
+      MarketDataSeriesSnapshot snapshot, int minutes, DateTimeOffset asOfUtc,
+      bool includeAlignedPrice, out double? alignedReturnPercent,
+      out double? alignedQuoteVolume)
     {
+      alignedReturnPercent = null;
+      alignedQuoteVolume = null;
       FeatureValueSnapshot Invalid(string reason, int samples = 0, bool stale = false) =>
         new FeatureValueSnapshot
         {
@@ -234,6 +261,9 @@ namespace Core.MarketAnalyzer.MarketData
 
       double total = 0;
       double bought = 0;
+      double firstPrice = 0;
+      double lastPrice = 0;
+      bool validPrice = true;
       int count = 0;
       for (long open = firstOpen; open < firstOpen + trendMs; open += intervalMs)
       {
@@ -248,6 +278,17 @@ namespace Core.MarketAnalyzer.MarketData
           return Invalid("Invalid taker-buy or total quote volume in the requested period.", count);
         total += q;
         bought += b;
+        if (includeAlignedPrice)
+        {
+          if (count == 0) firstPrice = candle.Open;
+          lastPrice = candle.Close;
+          validPrice &= Double.IsFinite(candle.Open) && Double.IsFinite(candle.Close)
+            && Double.IsFinite(candle.High) && Double.IsFinite(candle.Low)
+            && candle.Open > 0 && candle.Close > 0 && candle.Low > 0
+            && candle.High >= Math.Max(candle.Open, candle.Close)
+            && candle.Low <= Math.Min(candle.Open, candle.Close)
+            && candle.High >= candle.Low;
+        }
         count++;
       }
       if (!double.IsFinite(total) || !double.IsFinite(bought) || total <= 0 ||
@@ -257,6 +298,16 @@ namespace Core.MarketAnalyzer.MarketData
       double ratio = bought / total;
       if (!double.IsFinite(ratio) || ratio < 0 || ratio > 1)
         return Invalid("Taker-buy ratio is outside the valid [0,1] interval.", count);
+
+      if (includeAlignedPrice)
+      {
+        // The same verified taker-volume pass already visited every candle.
+        // Existing ratio validity is independent of price validity.
+        alignedQuoteVolume = total;
+        double priceChange = (lastPrice / firstPrice - 1.0) * 100.0;
+        if (validPrice && Double.IsFinite(priceChange))
+          alignedReturnPercent = priceChange;
+      }
 
       return new FeatureValueSnapshot
       {

@@ -56,6 +56,14 @@ namespace Core.MarketAnalyzer.MarketData
     public const string BuyerDominanceBreadth = "BuyerDominanceBreadth";
     public const string StrongBuyerDominanceBreadth = "StrongBuyerDominanceBreadth";
     public const string TakerImbalanceDispersion = "TakerImbalanceDispersion";
+    public const string BuyerFlowPriceConfirmation = "BuyerFlowPriceConfirmation";
+    public const string SellerFlowPriceConfirmation = "SellerFlowPriceConfirmation";
+    public const string BuyerFlowPriceDivergence = "BuyerFlowPriceDivergence";
+    public const string SellerFlowPriceDivergence = "SellerFlowPriceDivergence";
+    public const string BuyerFlowPriceConfirmationVolumeShare = "BuyerFlowPriceConfirmationVolumeShare";
+    public const string SellerFlowPriceConfirmationVolumeShare = "SellerFlowPriceConfirmationVolumeShare";
+    public const string BuyerFlowPriceDivergenceVolumeShare = "BuyerFlowPriceDivergenceVolumeShare";
+    public const string SellerFlowPriceDivergenceVolumeShare = "SellerFlowPriceDivergenceVolumeShare";
 
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
@@ -95,6 +103,14 @@ namespace Core.MarketAnalyzer.MarketData
         [BuyerDominanceBreadth] = MarketTrendMetricScope.Global,
         [StrongBuyerDominanceBreadth] = MarketTrendMetricScope.Global,
         [TakerImbalanceDispersion] = MarketTrendMetricScope.Global,
+        [BuyerFlowPriceConfirmation] = MarketTrendMetricScope.Asset,
+        [SellerFlowPriceConfirmation] = MarketTrendMetricScope.Asset,
+        [BuyerFlowPriceDivergence] = MarketTrendMetricScope.Asset,
+        [SellerFlowPriceDivergence] = MarketTrendMetricScope.Asset,
+        [BuyerFlowPriceConfirmationVolumeShare] = MarketTrendMetricScope.Global,
+        [SellerFlowPriceConfirmationVolumeShare] = MarketTrendMetricScope.Global,
+        [BuyerFlowPriceDivergenceVolumeShare] = MarketTrendMetricScope.Global,
+        [SellerFlowPriceDivergenceVolumeShare] = MarketTrendMetricScope.Global,
       };
 
     public static IReadOnlyCollection<string> Names => KnownMetrics.Keys.ToArray();

@@ -117,6 +117,18 @@ namespace Core.MarketAnalyzer.MarketData
             ? "Global metric across the frozen MaxMarkets cohort, requiring 90% verified per-asset taker coverage. "
             : "") + "One exact complete UTC MarketTrend period of source-verified taker-buy and total quote volume, with no missing 5m candles.";
         }
+        else if (FlowPriceConfirmationEngine.IsAssetMetric(metric) ||
+          FlowPriceConfirmationEngine.IsGlobalMetric(metric))
+        {
+          alignedTrendPeriods = true;
+          minimumSourceCount = trendSourceCount;
+          basis = (FlowPriceConfirmationEngine.IsGlobalMetric(metric)
+            ? "Complete (100%) frozen eligible cohort required for quote-volume-weighted net aggressive flow share. "
+            : "Binary asset agreement/divergence flag. ") +
+            "One exact UTC-completed TrendMinutes period of contiguous verified taker-buy and total quote-volume candles, " +
+            "plus the first candle open and final candle close captured in the existing taker-flow pass. " +
+            "No additional lookback or exchange endpoint.";
+        }
         else if (metric == MarketTrendMetrics.Concentration)
         {
           basis = "Trailing TrendMinutes quote-volume ranking plus the same-window return and reference close; complete selected population required.";

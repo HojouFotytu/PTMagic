@@ -308,12 +308,22 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      if (TakerFlowFeatureEngine.HasAnyMetrics(enabledMetrics))
+      bool phase3Global = FlowPriceConfirmationEngine.HasGlobalMetrics(enabledMetrics);
+      bool phase3Asset = FlowPriceConfirmationEngine.HasAssetMetrics(enabledMetrics);
+      Dictionary<string, AlignedTakerFlowPeriod> phase3Periods =
+        phase3Global || phase3Asset
+          ? new Dictionary<string, AlignedTakerFlowPeriod>(StringComparer.OrdinalIgnoreCase) : null;
+      var takerDependencies = new HashSet<string>(enabledMetrics, StringComparer.OrdinalIgnoreCase);
+      // Phase 3 uses the same source-candle traversal as the existing taker ratio.
+      if (phase3Global) takerDependencies.Add(MarketTrendMetrics.MedianTakerBuyRatio);
+      if (phase3Asset) takerDependencies.Add(MarketTrendMetrics.TakerBuyRatio);
+      if (TakerFlowFeatureEngine.HasAnyMetrics(takerDependencies))
       {
-        string[] globalTakerSymbols = TakerFlowFeatureEngine.HasGlobalMetrics(enabledMetrics)
+        string[] globalTakerSymbols = TakerFlowFeatureEngine.HasGlobalMetrics(takerDependencies)
           ? globalUniverse : Array.Empty<string>();
-        var taker = TakerFlowFeatureEngine.Calculate(assetUniverse, enabledMetrics,
-          store, interval, marketTrend.TrendMinutes, calculatedAtUtc, globalTakerSymbols);
+        var taker = TakerFlowFeatureEngine.Calculate(assetUniverse, takerDependencies,
+          store, interval, marketTrend.TrendMinutes, calculatedAtUtc, globalTakerSymbols,
+          phase3Periods);
         foreach (var asset in taker)
         {
           Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
@@ -329,6 +339,23 @@ namespace Core.MarketAnalyzer.MarketData
             globalUniverse, enabledMetrics, assetMetrics, calculatedAtUtc, marketTrend);
           foreach (var aggregate in aggregates)
             marketMetrics[aggregate.Key] = aggregate.Value;
+        }
+      }
+
+      if (phase3Periods != null)
+      {
+        var combined = FlowPriceConfirmationEngine.Calculate(globalUniverse, assetUniverse,
+          enabledMetrics, phase3Periods, calculatedAtUtc);
+        foreach (var pair in combined.GlobalMetrics)
+          marketMetrics[pair.Key] = pair.Value;
+        foreach (var asset in combined.AssetMetrics)
+        {
+          Dictionary<string, FeatureValueSnapshot> merged = assetMetrics.TryGetValue(asset.Key,
+              out IReadOnlyDictionary<string, FeatureValueSnapshot> existing)
+            ? new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
+          assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
         }
       }
 

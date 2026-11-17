@@ -32,6 +32,9 @@ internal static class Program
       TestTakerFlowAndMissingHistory();
       TestTakerGlobalAggregates();
       TestTakerGlobalIntegration();
+      TestPhase3SharedPass();
+      TestPhase3UnavailableAndNeutral();
+      TestPhase3H72();
       TestTakerKlineMapper();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
       return 0;
@@ -534,6 +537,131 @@ internal static class Program
       store, Interval, now);
     Assert(incomplete.MarketMetrics.Values.All(value => !value.IsValid &&
       !value.Value.HasValue), "Insufficient fixed global taker coverage fails closed");
+    _passed++;
+  }
+
+  private static void AddFlowBars(MarketDataStore store, string name,
+    double priceClose, double quote, double buyRatio, bool verified = true)
+  {
+    for (int i = 0; i < 2; ++i)
+    {
+      var time = Start.AddMinutes(i * 5);
+      double close = i == 1 ? priceClose : 100;
+      store.UpsertCandle(new MarketCandle
+      {
+        Symbol = name, Interval = Interval, OpenTimeUtc = time,
+        CloseTimeUtc = time.AddMinutes(5).AddMilliseconds(-1),
+        Open = 100, Close = close, High = Math.Max(100, close) + 1,
+        Low = Math.Min(100, close) - 1,
+        QuoteVolume = quote / 2, TakerBuyQuoteVolume = verified ? quote * buyRatio / 2 : null,
+        BaseVolume = 1, TradeCount = 1, IsClosed = true
+      });
+    }
+  }
+
+  private static void TestPhase3SharedPass()
+  {
+    var store = NewStore();
+    string[] symbols = { "AAAUSDT", "BBBUSDT", "CCCUSDT", "DDDUSDT" };
+    AddFlowBars(store, symbols[0], 110, 100, 0.75);
+    AddFlowBars(store, symbols[1], 90, 200, 0.25);
+    AddFlowBars(store, symbols[2], 90, 300, 0.75);
+    AddFlowBars(store, symbols[3], 110, 400, 0.25);
+    var trend = new MarketTrend
+    {
+      Name = "M10Phase3", TrendMinutes = 10,
+      Metrics = "BuyerFlowPriceConfirmation,SellerFlowPriceConfirmation," +
+        "BuyerFlowPriceDivergence,SellerFlowPriceDivergence," +
+        "BuyerFlowPriceConfirmationVolumeShare,SellerFlowPriceConfirmationVolumeShare," +
+        "BuyerFlowPriceDivergenceVolumeShare,SellerFlowPriceDivergenceVolumeShare"
+    };
+    var now = Start.AddMinutes(10).AddSeconds(1);
+    var a = MarketTrendAnalyticsEngine.Calculate(trend, symbols, symbols, store, Interval, now);
+    Near(a.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare], 5,
+      "Buyer/up represents 50 of 1000 quote units");
+    Near(a.MarketMetrics[MarketTrendMetrics.SellerFlowPriceConfirmationVolumeShare], 10,
+      "Seller/down represents 100 of 1000 quote units");
+    Near(a.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceDivergenceVolumeShare], 15,
+      "Buyer/down represents 150 of 1000 quote units");
+    Near(a.MarketMetrics[MarketTrendMetrics.SellerFlowPriceDivergenceVolumeShare], 20,
+      "Seller/up represents 200 of 1000 quote units");
+    Near(a.AssetMetrics[symbols[0]][MarketTrendMetrics.BuyerFlowPriceConfirmation], 1, "Buyer confirmation flag");
+    Near(a.AssetMetrics[symbols[1]][MarketTrendMetrics.SellerFlowPriceConfirmation], 1, "Seller confirmation flag");
+    Near(a.AssetMetrics[symbols[2]][MarketTrendMetrics.BuyerFlowPriceDivergence], 1, "Buyer divergence flag");
+    Near(a.AssetMetrics[symbols[3]][MarketTrendMetrics.SellerFlowPriceDivergence], 1, "Seller divergence flag");
+    Near(a.AssetMetrics[symbols[0]][MarketTrendMetrics.BuyerFlowPriceDivergence], 0, "Nonmatch is valid zero");
+    Assert(!a.EnabledMetrics.Contains(MarketTrendMetrics.TakerBuyRatio) &&
+      a.AssetMetrics[symbols[0]].ContainsKey(MarketTrendMetrics.TakerBuyRatio),
+      "Already calculated dependency does not become a trigger-enabled metric.");
+    Assert(a.AssetMetrics[symbols[0]][MarketTrendMetrics.BuyerFlowPriceConfirmation]
+      .SourceDataTimestampUtc == Start.AddMinutes(10).AddMilliseconds(-1),
+      "Aligned source must end at exact UTC period close.");
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = symbols[0], Interval = Interval,
+      OpenTimeUtc = Start.AddMinutes(10),
+      CloseTimeUtc = Start.AddMinutes(15).AddMilliseconds(-1),
+      Open = 110, Close = 1000, High = 1001, Low = 109,
+      QuoteVolume = 90000, TakerBuyQuoteVolume = 0,
+      BaseVolume = 1, TradeCount = 1, IsClosed = true
+    });
+    var next = MarketTrendAnalyticsEngine.Calculate(trend, symbols, symbols, store,
+      Interval, Start.AddMinutes(15).AddSeconds(1));
+    Near(next.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare], 5,
+      "Incomplete following UTC period must be excluded.");
+    _passed++;
+  }
+
+  private static void TestPhase3UnavailableAndNeutral()
+  {
+    var store = NewStore();
+    string[] symbols = { "AAAUSDT", "BBBUSDT" };
+    AddFlowBars(store, symbols[0], 100, 100, 0.5);
+    AddFlowBars(store, symbols[1], 110, 100, 0.75);
+    var trend = new MarketTrend { Name = "M10Flow", TrendMinutes = 10,
+      Metrics = "BuyerFlowPriceConfirmation,BuyerFlowPriceConfirmationVolumeShare" };
+    var now = Start.AddMinutes(10).AddSeconds(1);
+    var valid = MarketTrendAnalyticsEngine.Calculate(trend, symbols, symbols, store, Interval, now);
+    Near(valid.AssetMetrics[symbols[0]][MarketTrendMetrics.BuyerFlowPriceConfirmation], 0,
+      "Neutral is a valid nonmatch");
+    Near(valid.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare], 25,
+      "Net aggressive buying volume / overall quote volume");
+    AddFlowBars(store, symbols[1], 110, 100, 0.75, false);
+    var missing = MarketTrendAnalyticsEngine.Calculate(trend, symbols, symbols, store, Interval, now);
+    Invalid(missing.AssetMetrics[symbols[1]][MarketTrendMetrics.BuyerFlowPriceConfirmation],
+      "Missing taker data cannot be treated as zero");
+    Invalid(missing.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare],
+      "Global quote volume shares require 100% eligible coverage");
+    Assert(missing.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare]
+      .EligibleSampleCount == 2, "Fixed market denominator must be retained.");
+    _passed++;
+  }
+
+  private static void TestPhase3H72()
+  {
+    var store = NewStore();
+    for (int i = 0; i < 864; i++)
+    {
+      var opened = Start.AddMinutes(i * 5);
+      store.UpsertCandle(new MarketCandle
+      {
+        Symbol = "AAAUSDT", Interval = Interval,
+        OpenTimeUtc = opened, CloseTimeUtc = opened.AddMinutes(5).AddMilliseconds(-1),
+        Open = 100, Close = i == 863 ? 120 : 100,
+        High = 121, Low = 99,
+        QuoteVolume = 10, TakerBuyQuoteVolume = 6,
+        BaseVolume = 1, TradeCount = 1, IsClosed = true
+      });
+    }
+    var trend = new MarketTrend { Name = "H72Flow", TrendMinutes = 4320,
+      Metrics = "BuyerFlowPriceConfirmationVolumeShare" };
+    var a = MarketTrendAnalyticsEngine.Calculate(trend,
+      new[] { "AAAUSDT" }, new[] { "AAAUSDT" }, store, Interval,
+      Start.AddMinutes(4320).AddSeconds(1), configuredStoreDataMaxHours: 96);
+    Near(a.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare], 20,
+      "H72 uses one complete period of already traversed taker data");
+    Assert(a.HistoryRequirements.Single().HasCurrentRaidCapacity == true,
+      "H72 must not acquire unrelated 20-period quote-volume lookback");
     _passed++;
   }
 

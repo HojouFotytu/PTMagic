@@ -1,5 +1,14 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 17 — Phase 3 aligned price / taker-flow conditions (source change)
+
+Eight opt-in metrics: four asset-only directional binary flags and four global net aggressive quote-volume shares. Buyer/seller confirmation or divergence compares positive/negative *open-to-close* price change with the sign of `2*TakerBuyRatio-1`; zeros are neutral, and missing data is UNAVAILABLE. Global value = 100 × sum of absolute net aggressive quote volume for matching symbols / total eligible cohort quote volume. These are dimensionless percentages and require 100% eligible-market source coverage to preserve the denominator. This is neither participation breadth nor a prediction of future price.
+
+Crucial performance contract: the existing `TakerFlowFeatureEngine.CalculateRatio` source candle pass captures the first open, final close and sum of quote volume **only if a Phase 3 metric requests it**. Phase 3 reads these immutable aligned observations without traversing source candles again. The existing rolling `PriceTrend` is not recalculated. Existing global/asset metric selection, per-trend frozen population, cache-v2 repair, source timestamps, validity, three-valued triggers and SOM are preserved. No new Binance endpoint, historic lookback, settings preset or Monitor page is introduced. The existing diagnostic settings fixture remains unchanged.
+
+Focused new fixtures cover four condition directions, quote-volume units, valid zero, missing taker source, global completeness, exclusion of the partially completed next UTC period, and H72 history capacity. New-source build, focused harness execution, and configured TestMode acceptance must be established separately from this source publication.
+
+
 ## November 17, 2026 — Monitor current behavior and acceptance boundary
 
 **Application source anchor:** [`aec54eb`](https://github.com/HojouFotytu/PTMagic/commit/aec54ebfde54b098116fb255c70500da9a458b1f), branch `phase1/market-data-foundation`. Later analytics/Phase 2B commits do not, by themselves, verify these browser features. This section supersedes older contradictory Monitor instructions.
