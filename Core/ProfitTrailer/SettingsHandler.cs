@@ -423,7 +423,6 @@ namespace Core.ProfitTrailer
 
     public static List<KeyValuePair<string, string>> CompileSingleMarketProperties(PTMagic ptmagicInstance, Dictionary<string, List<string>> matchedTriggers)
     {
-      int progressDots = 0;
       try
       {
         List<KeyValuePair<string, string>> smsApplied = new List<KeyValuePair<string, string>>();
@@ -535,22 +534,11 @@ namespace Core.ProfitTrailer
             }
 
             smsApplied.Add(new KeyValuePair<string, string>(marketPair, setting.SettingName));
-            // Console-only progress: one period per processed market/SMS
-            // combination, without a full per-market log record.
-            Console.Write('.');
-            progressDots++;
           }
 
           newPairsLines = SettingsHandler.BuildPropertyLinesForSingleMarketSetting(ptmagicInstance.LastRuntimeSummary.MainMarket, marketPair, ptmagicInstance.TriggeredSingleMarketSettings[marketPair], pairsPropertiesToApply, matchedTriggers, globalPairsProperties, newPairsLines, ptmagicInstance.PTMagicConfiguration, ptmagicInstance.Log);
           newDCALines = SettingsHandler.BuildPropertyLinesForSingleMarketSetting(ptmagicInstance.LastRuntimeSummary.MainMarket, marketPair, ptmagicInstance.TriggeredSingleMarketSettings[marketPair], dcaPropertiesToApply, matchedTriggers, globalDCAProperties, newDCALines, ptmagicInstance.PTMagicConfiguration, ptmagicInstance.Log);
           newIndicatorsLines = SettingsHandler.BuildPropertyLinesForSingleMarketSetting(ptmagicInstance.LastRuntimeSummary.MainMarket, marketPair, ptmagicInstance.TriggeredSingleMarketSettings[marketPair], indicatorsPropertiesToApply, matchedTriggers, globalIndicatorsProperties, newIndicatorsLines, ptmagicInstance.PTMagicConfiguration, ptmagicInstance.Log);
-        }
-
-        // Finish the progress line before the next timestamped log message.
-        if (progressDots > 0)
-        {
-          Console.WriteLine();
-          progressDots = 0;
         }
 
         globalPairsLines.AddRange(newPairsLines);
@@ -565,7 +553,6 @@ namespace Core.ProfitTrailer
       }
       catch (Exception ex)
       {
-        if (progressDots > 0) Console.WriteLine();
         ptmagicInstance.Log.DoLogCritical("Critical error while writing settings!", ex);
         throw;
       }

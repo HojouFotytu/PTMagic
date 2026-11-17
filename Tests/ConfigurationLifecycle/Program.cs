@@ -895,6 +895,30 @@ internal static class Program
           outputLines[0].EndsWith("... done (0 active markets).", StringComparison.Ordinal));
         Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 &&
           fixture.Bot.SingleMarketSettingsCount.Count == 0);
+
+        // Activated SMS also compiles its property overrides. Compilation
+        // must not produce a separate dot line after the one evaluation line.
+        using var active = new Fixture();
+        active.Bot.MarketList = new List<string> { "BTCUSDT" };
+        active.RecentVolume(100);
+        TextWriter beforeActive = Console.Out;
+        using var activeOutput = new StringWriter();
+        try
+        {
+          Console.SetOut(activeOutput);
+          Call(active.Bot, "ApplySingleMarketSettings");
+        }
+        finally
+        {
+          Console.SetOut(beforeActive);
+        }
+        string[] activeLines = activeOutput.ToString().Replace("\r\n", "\n")
+          .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Require(activeLines.Length == 1 &&
+          activeLines[0] == "SMS evaluation (1 markets): . done (1 active markets)." &&
+          active.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
+          active.Bot.SingleMarketSettingsCount.TryGetValue(active.Sms.SettingName, out int activeCount) &&
+          activeCount == 1);
       });
       Check("missing volume remains unknown in AND with a known age condition", () =>
       {

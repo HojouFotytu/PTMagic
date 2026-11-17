@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 17, 2026 — Remove redundant SMS compilation progress dots
+
+After introducing one progress line for the complete SMS evaluation, the separate `SettingsHandler.CompileSingleMarketProperties` routine still printed one dot per activated SMS and a following newline. That produced standalone `.` lines in the configuration lifecycle output even though the evaluation itself passed the first progress-format test. Remove only that compilation-time console output (and its conditional newline in the exception path). The one evaluation progress line stays in `Core/Main/PTMagic.cs`; SMS property compilation, matched setting records, three-valued safety, error logging, persistence and PT delivery are unchanged. Extend the existing `ConfigurationLifecycle` console-capture regression to include an actively triggered SMS and assert that evaluation plus compilation produces exactly one line.
+
+
 ## November 17, 2026 — Monitor 8 live acceptance, Logs updates and quieter acquisition output
 
 **Source/evidence:** Current Monitor continuation is in the [Monitor 8 handoff](https://github.com/HojouFotytu/PTM_2.10_Roadmaps_Handoffs/blob/main/handoffs/2026-11-17-monitor-8.md), separate from ongoing Phase 3 analytics acceptance. Source version for latest related application logging change `fd4aa2e`. No changes to Analyzer/DEFAULT trading strategies.
