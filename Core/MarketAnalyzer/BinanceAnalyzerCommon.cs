@@ -148,12 +148,10 @@ namespace Core.MarketAnalyzer
     internal static async Task<DateTime> GetFirstSeenDateAsync(string exchangeName, string apiBase, string marketName, LogHelper log, CancellationToken cancellationToken = default)
     {
       DateTime result = Constants.confMinDate;
-      log.DoLogDebug(exchangeName + " - Getting first seen date for '" + marketName + "'...");
       JArray jsonArray = await BaseAnalyzer.GetSimpleJsonArrayFromURLAsync(apiBase + "/klines?interval=1d&symbol=" + marketName + "&limit=100", log, cancellationToken).ConfigureAwait(false);
       if (jsonArray.Count > 0)
       {
         result = Constants.Epoch.AddMilliseconds((Int64)jsonArray[0][0]);
-        log.DoLogDebug(exchangeName + " - First seen date for '" + marketName + "' set to " + result.ToString());
       }
 
       return result;
@@ -219,34 +217,45 @@ namespace Core.MarketAnalyzer
     {
       log.DoLogInfo(exchangeName + " - Checking first seen dates for " + markets.Count + " markets. This may take a while...");
       int marketsChecked = 0;
+      object progressLock = new object();
 
-      await Parallel.ForEachAsync(markets.Keys, new ParallelOptions { MaxDegreeOfParallelism = MetadataConcurrency, CancellationToken = cancellationToken }, async (key, ct) =>
+      // A single console period represents each completed market. NLog's file
+      // target retains only the summary record, not hundreds of timestamped
+      // per-market records. Always finish the console line on cancellation.
+      try
       {
-        if (!marketInfos.TryGetValue(key, out MarketInfo marketInfo))
+        await Parallel.ForEachAsync(markets.Keys, new ParallelOptions { MaxDegreeOfParallelism = MetadataConcurrency, CancellationToken = cancellationToken }, async (key, ct) =>
         {
-          MarketInfo newMarketInfo = new MarketInfo
+          if (!marketInfos.TryGetValue(key, out MarketInfo marketInfo))
           {
-            Name = key,
-            FirstSeen = await GetFirstSeenDateAsync(exchangeName, apiBase, key, log, ct).ConfigureAwait(false),
-            LastSeen = DateTime.UtcNow
-          };
-          marketInfos.TryAdd(key, newMarketInfo);
-        }
-        else
-        {
-          if (marketInfo.FirstSeen == Constants.confMinDate)
-          {
-            marketInfo.FirstSeen = await GetFirstSeenDateAsync(exchangeName, apiBase, key, log, ct).ConfigureAwait(false);
+            MarketInfo newMarketInfo = new MarketInfo
+            {
+              Name = key,
+              FirstSeen = await GetFirstSeenDateAsync(exchangeName, apiBase, key, log, ct).ConfigureAwait(false),
+              LastSeen = DateTime.UtcNow
+            };
+            marketInfos.TryAdd(key, newMarketInfo);
           }
-          marketInfo.LastSeen = DateTime.UtcNow;
-        }
+          else
+          {
+            if (marketInfo.FirstSeen == Constants.confMinDate)
+            {
+              marketInfo.FirstSeen = await GetFirstSeenDateAsync(exchangeName, apiBase, key, log, ct).ConfigureAwait(false);
+            }
+            marketInfo.LastSeen = DateTime.UtcNow;
+          }
 
-        int completed = Interlocked.Increment(ref marketsChecked);
-        if ((completed % 20) == 0)
+          Interlocked.Increment(ref marketsChecked);
+          lock (progressLock) Console.Write('.');
+        }).ConfigureAwait(false);
+      }
+      finally
+      {
+        if (Volatile.Read(ref marketsChecked) > 0)
         {
-          log.DoLogInfo(exchangeName + " - Yes, I am still checking first seen dates... " + completed + "/" + markets.Count + " markets done...");
+          lock (progressLock) Console.WriteLine();
         }
-      }).ConfigureAwait(false);
+      }
     }
 
     internal static async Task CheckForMarketDataRecreationAsync(string exchangeName, string apiBase, string mainMarket, Dictionary<string, Market> markets, PTMagicConfiguration systemConfiguration, LogHelper log, bool supportsUsdMainMarket, bool parallelHistoricalBuild, CancellationToken cancellationToken = default)
