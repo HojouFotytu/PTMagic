@@ -73,7 +73,11 @@ namespace Core.MarketAnalyzer.MarketData
           candlesNeeded - candlesFetched);
         string url = apiBase + "/klines?interval=" + intervalName + "&symbol=" + symbol + "&endTime=" + endTimeMilliseconds.ToString() + "&limit=" + requestLimit.ToString();
 
-        log.DoLogDebug(exchangeName + " - Getting " + requestLimit.ToString() + " normalized " + intervalName + " candles for '" + symbol + "'...");
+        // Binance Futures 5m acquisition has one batch-level progress message in
+        // MarketDataService. Retain per-request DEBUG for other exchanges/intervals.
+        if (!String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+          || !String.Equals(intervalName, "5m", StringComparison.OrdinalIgnoreCase))
+          log.DoLogDebug(exchangeName + " - Getting " + requestLimit.ToString() + " normalized " + intervalName + " candles for '" + symbol + "'...");
         JArray jsonArray = await BaseAnalyzer.GetSimpleJsonArrayFromURLAsync(url, log, cancellationToken).ConfigureAwait(false);
         if (jsonArray == null || jsonArray.Count == 0)
         {
