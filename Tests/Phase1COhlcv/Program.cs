@@ -640,9 +640,15 @@ internal static class Program
   private static void TestPhase3H72()
   {
     var store = NewStore();
+    // UTC H72 boundaries are 72-hour multiples of the Unix epoch, not
+    // necessarily midnight on the test's fixed Start date (2026-11-01).
+    const int trendMinutes = 4320;
+    long periodMs = checked((long)TimeSpan.FromMinutes(trendMinutes).TotalMilliseconds);
+    DateTimeOffset alignedStart = DateTimeOffset.FromUnixTimeMilliseconds(
+      Start.ToUnixTimeMilliseconds() / periodMs * periodMs);
     for (int i = 0; i < 864; i++)
     {
-      var opened = Start.AddMinutes(i * 5);
+      var opened = alignedStart.AddMinutes(i * 5);
       store.UpsertCandle(new MarketCandle
       {
         Symbol = "AAAUSDT", Interval = Interval,
@@ -657,7 +663,7 @@ internal static class Program
       Metrics = "BuyerFlowPriceConfirmationVolumeShare" };
     var a = MarketTrendAnalyticsEngine.Calculate(trend,
       new[] { "AAAUSDT" }, new[] { "AAAUSDT" }, store, Interval,
-      Start.AddMinutes(4320).AddSeconds(1), configuredStoreDataMaxHours: 96);
+      alignedStart.AddMinutes(trendMinutes).AddSeconds(1), configuredStoreDataMaxHours: 96);
     Near(a.MarketMetrics[MarketTrendMetrics.BuyerFlowPriceConfirmationVolumeShare], 20,
       "H72 uses one complete period of already traversed taker data");
     Assert(a.HistoryRequirements.Single().HasCurrentRaidCapacity == true,
