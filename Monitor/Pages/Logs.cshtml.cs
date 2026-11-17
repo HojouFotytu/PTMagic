@@ -98,7 +98,14 @@ namespace Monitor.Pages
         }
 
         archiveStream.Position = 0;
-        string fileName = "PTMagic-Logs-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
+        // Use the Analyzer's configured instance name, matching PT Data ZIP naming.
+        string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
+        string safeInstanceName = System.Text.RegularExpressions.Regex
+          .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-")
+          .Trim('-', '_');
+        if (safeInstanceName.Length > 64) safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
+        if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
+        string fileName = "PTMagic-Logs-" + safeInstanceName + "-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
         return File(archiveStream, "application/zip", fileName);
       }
       catch
