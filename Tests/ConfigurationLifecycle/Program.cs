@@ -653,7 +653,7 @@ internal static class Program
         Require(view.Contains("market-wide-group-titles", StringComparison.Ordinal)
           && view.Contains("market-wide-subheadings", StringComparison.Ordinal)
           && view.Contains("rowspan=\"2\"", StringComparison.Ordinal)
-          && view.Contains("Model.GlobalMetricGroups", StringComparison.Ordinal)
+          && view.Contains("Model.DisplayedGlobalMetricGroups", StringComparison.Ordinal)
           && view.Contains("Model.GlobalMetricSubheading(metric)", StringComparison.Ordinal)
           && view.Contains("Heading.ToUpperInvariant()", StringComparison.Ordinal)
           && view.Contains("market-wide-group-line text-muted", StringComparison.Ordinal)
