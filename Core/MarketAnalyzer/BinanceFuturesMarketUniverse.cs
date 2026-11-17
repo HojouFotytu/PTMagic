@@ -149,6 +149,7 @@ namespace Core.MarketAnalyzer
           BinanceFuturesMarketMetadata marketMetadata = new BinanceFuturesMarketMetadata
           {
             Symbol = symbolName,
+            QuoteAsset = symbol.Value<string>("quoteAsset") ?? "",
             ContractType = symbol.Value<string>("contractType") ?? "",
             UnderlyingType = symbol.Value<string>("underlyingType") ?? "",
             UnderlyingSubTypes = symbol["underlyingSubType"] is JArray underlyingSubTypes
@@ -423,6 +424,7 @@ namespace Core.MarketAnalyzer
         return new BinanceFuturesMarketMetadata
         {
           Symbol = metadata.Symbol ?? "",
+          QuoteAsset = metadata.QuoteAsset ?? "",
           ContractType = metadata.ContractType ?? "",
           UnderlyingType = metadata.UnderlyingType ?? "",
           UnderlyingSubTypes = metadata.UnderlyingSubTypes == null
@@ -601,6 +603,7 @@ namespace Core.MarketAnalyzer
   public class BinanceFuturesMarketMetadata
   {
     public string Symbol { get; set; } = "";
+    public string QuoteAsset { get; set; } = "";
     public string ContractType { get; set; } = "";
     public string UnderlyingType { get; set; } = "";
     public List<string> UnderlyingSubTypes { get; set; } = new List<string>();

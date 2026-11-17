@@ -310,6 +310,9 @@ namespace Core.MarketAnalyzer
     {
       Dictionary<string, Market> markets = new Dictionary<string, Market>();
       bool allowZeroVolume = exchangeName.Equals("BinanceFutures", StringComparison.InvariantCultureIgnoreCase);
+      Dictionary<string, int> ignoredByQuote = logIncorrectBaseCurrency
+        ? new Dictionary<string, int>(StringComparer.InvariantCultureIgnoreCase)
+        : null;
 
       foreach (JObject currencyTicker in jsonArray)
       {
@@ -339,7 +342,21 @@ namespace Core.MarketAnalyzer
         }
         else if (logIncorrectBaseCurrency)
         {
-          log.DoLogInfo(exchangeName + " - Incorrect base currency: " + marketName + " ignored");
+          string quoteAsset = BinanceFuturesMarketUniverse.GetMarketMetadataSnapshot(marketName)?.QuoteAsset;
+          string group = String.IsNullOrWhiteSpace(quoteAsset)
+            ? "Unknown quote currency"
+            : quoteAsset.Equals(mainMarket, StringComparison.InvariantCultureIgnoreCase)
+              ? "Quote currency: " + quoteAsset + " (symbol suffix mismatch)"
+              : "Quote currency: " + quoteAsset;
+          ignoredByQuote[group] = ignoredByQuote.TryGetValue(group, out int count) ? count + 1 : 1;
+        }
+      }
+
+      if (ignoredByQuote != null)
+      {
+        foreach (KeyValuePair<string, int> group in ignoredByQuote.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+        {
+          log.DoLogInfo(exchangeName + " - " + group.Key + ". " + group.Value + (group.Value == 1 ? " pair" : " pairs") + " ignored from analysis.");
         }
       }
 
