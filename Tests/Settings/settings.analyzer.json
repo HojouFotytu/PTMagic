@@ -1,11 +1,11 @@
-// TEST-ONLY PTMagic 2.10 comprehensive 35-metric analyzer. Use isolated TestMode only; never live trading.
-// SetIdentity = PTM2.10-35-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.2.0
-// SetDate = 2026-11-15
-// TargetApplicationSource = c6b4f9e-or-later-35-metric-compatible
-// VerifiedBuild = PENDING_FOR_THIS_CONFIGURATION
-// VerifiedFocusedTests = PENDING_FOR_THIS_CONFIGURATION
-// ConfiguredRuntimeAcceptance = NOT VERIFIED
+// TEST-ONLY PTMagic 2.10 comprehensive 43-metric analyzer. Use isolated TestMode only; never live trading.
+// SetIdentity = PTM2.10-43-METRIC-MULTITREND-DIAGNOSTIC
+// SetVersion = 2.3.0
+// SetDate = 2026-11-17
+// TargetApplicationSource = cbe919aa-or-later-43-metric-compatible (33a33f0 H72 test fix)
+// ApplicationBuildEvidence = PASS_16.9s_at_cbe919aa_BEFORE_THIS_FIXTURE_UPDATE
+// ApplicationFocusedEvidence = PASS_20/20_Phase1COhlcv_AND_9/9_Phase2AdaptiveAcquisition_at_33a33f0
+// ConfiguredRuntimeAcceptance = NOT VERIFIED (LONG/SHORT TestMode evidence pending)
 // Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
 // No new presets, installed settings, or PTMagic software modifications are part of this fixture.
 {
@@ -76,7 +76,7 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 60,
-          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion,BuyerFlowPriceConfirmation,SellerFlowPriceConfirmation,BuyerFlowPriceDivergence,SellerFlowPriceDivergence,BuyerFlowPriceConfirmationVolumeShare,SellerFlowPriceConfirmationVolumeShare,BuyerFlowPriceDivergenceVolumeShare,SellerFlowPriceDivergenceVolumeShare",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 1,
@@ -530,6 +530,47 @@
             "MarketTrendRelation": "Absolute",
             "MinChange": 0.65,
             "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G08_PHASE3_FLOW",
+        "TriggerConnection": "OR",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H1",
+            "Metric": "BuyerFlowPriceConfirmationVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1e-9,
+            "MaxChange": 101
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "SellerFlowPriceConfirmationVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1e-9,
+            "MaxChange": 101
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H1",
+            "Metric": "BuyerFlowPriceDivergenceVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1e-9,
+            "MaxChange": 101
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H1",
+            "Metric": "SellerFlowPriceDivergenceVolumeShare",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 1e-9,
+            "MaxChange": 101
           }
         ],
         "PairsProperties": {},
@@ -1081,6 +1122,55 @@
             "MarketTrendRelation": "Absolute",
             "MinChange": 0.02,
             "MaxChange": 1000000000000
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS12_H1_PHASE3_FLOW",
+        "TriggerConnection": "OR",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H1",
+            "Metric": "BuyerFlowPriceConfirmation",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1.01
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "SellerFlowPriceConfirmation",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1.01
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H1",
+            "Metric": "BuyerFlowPriceDivergence",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1.01
+          },
+          {
+            "Tag": "D",
+            "MarketTrendName": "H1",
+            "Metric": "SellerFlowPriceDivergence",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": 0.5,
+            "MaxChange": 1.01
           }
         ],
         "OffTriggers": [],
