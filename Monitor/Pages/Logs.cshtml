@@ -202,13 +202,15 @@
   function handleAnalyzerLines(lines) {
     var fresh = [];
     var resetView = false;
+    var summaryCompleted = false;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (line.indexOf('Starting market trend check with Version ') !== -1) {
         // Keep the first startup's already streamed lines through raid 1.
         // Clear the current raid only when the NEXT raid begins.
         if (analyzerHasSeenRaidStart) {
-          if (completedRaidSummary.length) previousRaidSummary = completedRaidSummary.slice();
+          // A completed raid has already updated the upper panel at its final
+          // summary marker. Never promote a partially streamed summary.
           completedRaidSummary = [];
           collectingSummary = false;
           history.analyzer = [];
@@ -224,8 +226,11 @@
       }
       if (collectingSummary) {
         completedRaidSummary.push(line);
-        if (line.indexOf('DO NOT CLOSE THIS WINDOW! THIS IS THE BOT THAT ANALYZES TRENDS AND CHANGES SETTINGS!') !== -1)
+        if (line.indexOf('DO NOT CLOSE THIS WINDOW! THIS IS THE BOT THAT ANALYZES TRENDS AND CHANGES SETTINGS!') !== -1) {
           collectingSummary = false;
+          previousRaidSummary = completedRaidSummary.slice();
+          summaryCompleted = true;
+        }
       }
       // Nothing before the next raid start is replayed after the initial summary.
       if (analyzerRaidStarted) {
@@ -237,7 +242,10 @@
       pending.length = 0;
       if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
       render();
-    } else if (fresh.length) scheduleRender(fresh);
+    } else {
+      if (summaryCompleted) renderPrevious();
+      if (fresh.length) scheduleRender(fresh);
+    }
   }
 
   function closeStream() {
