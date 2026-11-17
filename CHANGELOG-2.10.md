@@ -1,5 +1,12 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 17, 2026 — More specific taker-volume availability diagnostics
+
+The existing taker-flow calculator now distinguishes (1) missing normalized candles, incomplete/misaligned candles and absent/unverified taker fields, (2) an entirely present but **zero-total-quote-volume** period (undefined 0/0 ratio), and (3) invalid nonfinite/negative/out-of-range taker-buy or total quote-volume values, including invalid accumulated totals. The messages are stable per failure class so raid-warning grouping by reason is preserved. A raw taker field rejected by the Binance kline mapper becomes null in the normalized source and is reported as **unverified**; this implementation cannot recover its raw parse-failure category from the existing cache. Neither calculation, validity/UNAVAILABLE behavior, requests, persistence, scopes nor PT delivery are changed. Existing source-candle collection and store validation remain strict.
+
+Focused `Tests/Phase1COhlcv` cases now check missing candle, null taker field, zero valid-period quote volume, a positive total containing a zero-volume candle, and defensive invalid taker volume. Successful application build and configured LONG/SHORT runtime acceptance at this exact revision remain unverified pending the user's next execution.
+
+
 ## November 17 — Phase 3 aligned price / taker-flow conditions (source change)
 
 Eight opt-in metrics: four asset-only directional binary flags and four global net aggressive quote-volume shares. Buyer/seller confirmation or divergence compares positive/negative *open-to-close* price change with the sign of `2*TakerBuyRatio-1`; zeros are neutral, and missing data is UNAVAILABLE. Global value = 100 × sum of absolute net aggressive quote volume for matching symbols / total eligible cohort quote volume. These are dimensionless percentages and require 100% eligible-market source coverage to preserve the denominator. This is neither participation breadth nor a prediction of future price.

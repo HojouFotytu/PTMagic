@@ -30,6 +30,7 @@ internal static class Program
       TestIncompleteVolumePopulation();
       TestRegistryScopesAndSharedIntegration();
       TestTakerFlowAndMissingHistory();
+      TestTakerFailureReasonCategories();
       TestTakerGlobalAggregates();
       TestTakerGlobalIntegration();
       TestPhase3SharedPass();
@@ -363,6 +364,8 @@ internal static class Program
       store, Interval, 10, now)["BTCUSDT"];
     Invalid(legacy[MarketTrendMetrics.TakerBuyRatio], "Legacy OHLCV cannot imply taker volume");
     Invalid(legacy[MarketTrendMetrics.TakerImbalance], "Legacy OHLCV cannot imply taker imbalance");
+    Assert(legacy[MarketTrendMetrics.TakerBuyRatio].InvalidReason.Contains("missing or unverified"),
+      "Legacy null taker fields must have their own diagnostic reason.");
     store.RemoveSeries("BTCUSDT", Interval);
     store.UpsertCandle(new MarketCandle
     {
@@ -383,6 +386,74 @@ internal static class Program
     var empty = TakerFlowFeatureEngine.Calculate(new[] { "BTCUSDT" }, enabled,
       store, Interval, 10, now)["BTCUSDT"];
     Invalid(empty[MarketTrendMetrics.TakerBuyRatio], "Zero-volume window is unavailable");
+    Assert(empty[MarketTrendMetrics.TakerBuyRatio].InvalidReason.Contains("Zero total quote volume"),
+      "Zero-volume history must not be conflated with invalid taker volume.");
+    _passed++;
+  }
+
+  private static void TestTakerFailureReasonCategories()
+  {
+    var store = NewStore();
+    var now = Start.AddMinutes(10).AddSeconds(1);
+    var enabled = new[] { MarketTrendMetrics.TakerBuyRatio, MarketTrendMetrics.TakerImbalance };
+
+    MarketCandle Bar(int index, double quote, double? buy) => new MarketCandle
+    {
+      Symbol = "DIAGUSDT", Interval = Interval,
+      OpenTimeUtc = Start.AddMinutes(index * 5),
+      CloseTimeUtc = Start.AddMinutes((index + 1) * 5).AddMilliseconds(-1),
+      Open = 100, High = 101, Low = 99, Close = 100,
+      QuoteVolume = quote, TakerBuyQuoteVolume = buy,
+      BaseVolume = 1, TradeCount = 1, IsClosed = true
+    };
+
+    FeatureValueSnapshot Ratio() => TakerFlowFeatureEngine.Calculate(
+      new[] { "DIAGUSDT" }, enabled, store, Interval, 10, now)["DIAGUSDT"][MarketTrendMetrics.TakerBuyRatio];
+
+    store.UpsertCandle(Bar(0, 0, 0));
+    var missing = Ratio();
+    Invalid(missing, "Missing second source candle");
+    Assert(missing.InvalidReason.StartsWith("Missing normalized source candle") &&
+      missing.SampleCount == 1,
+      "A missing source candle must not be labeled zero volume or invalid taker data.");
+
+    store.UpsertCandle(Bar(1, 10, null));
+    var unverified = Ratio();
+    Invalid(unverified, "Unverified taker source field");
+    Assert(unverified.InvalidReason.Contains("missing or unverified") &&
+      unverified.SampleCount == 1,
+      "A null taker field must be distinguished from missing OHLCV or zero total volume.");
+
+    store.UpsertCandle(Bar(1, 0, 0));
+    var zero = Ratio();
+    Invalid(zero, "Fully present zero-total-volume period");
+    Assert(zero.InvalidReason.StartsWith("Zero total quote volume") &&
+      zero.SampleCount == 2,
+      "Zero total quote volume must be diagnosed only after all required candles are verified.");
+
+    store.UpsertCandle(Bar(1, 10, 5));
+    Near(Ratio(), 0.5, "A zero-volume constituent candle is valid if the period total is positive");
+
+    // Defensive numeric guard: the normal store rejects invalid taker volume
+    // before it reaches this point. Construct an unvalidated read boundary only
+    // to test the calculator's independently retained fail-closed diagnostic.
+    var badCandles = new[] { Bar(0, 10, 11), Bar(1, 10, 5) };
+    var constructor = typeof(MarketDataSeriesSnapshot)
+      .GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
+    var snapshot = (MarketDataSeriesSnapshot)constructor.Invoke(new object[]
+    {
+      new MarketSeriesKey("DIAGUSDT", Interval), badCandles, now, TimeSpan.FromMinutes(10)
+    });
+    var calculate = typeof(TakerFlowFeatureEngine).GetMethod(
+      "CalculateRatio", BindingFlags.NonPublic | BindingFlags.Static)
+      ?? throw new InvalidOperationException("Private taker calculation not found.");
+    object[] arguments = { snapshot, 10, now, false, null, null };
+    var invalidBuy = (FeatureValueSnapshot)(calculate.Invoke(null, arguments)
+      ?? throw new InvalidOperationException("No taker result."));
+    Invalid(invalidBuy, "Invalid numeric taker-buy volume");
+    Assert(invalidBuy.InvalidReason.StartsWith("Invalid taker-buy quote-volume value"),
+      "Invalid numeric taker-buy volume needs its own diagnostic.");
+
     _passed++;
   }
 

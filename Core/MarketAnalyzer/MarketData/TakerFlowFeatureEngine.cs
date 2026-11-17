@@ -267,15 +267,20 @@ namespace Core.MarketAnalyzer.MarketData
       int count = 0;
       for (long open = firstOpen; open < firstOpen + trendMs; open += intervalMs)
       {
-        if (!TryFindClosedCandle(candles, open, out MarketCandle candle) ||
-          candle.CloseTimeUtc.ToUnixTimeMilliseconds() != open + intervalMs - 1 ||
-          !candle.IsClosed || !candle.TakerBuyQuoteVolume.HasValue)
-          return Invalid("Incomplete or unverified taker-buy quote-volume history for the latest complete MarketTrend period.", count);
+        if (!TryFindClosedCandle(candles, open, out MarketCandle candle))
+          return Invalid("Missing normalized source candle in the latest complete MarketTrend period.", count);
+        if (candle.CloseTimeUtc.ToUnixTimeMilliseconds() != open + intervalMs - 1 ||
+            !candle.IsClosed)
+          return Invalid("Incomplete or misaligned normalized source candle in the latest complete MarketTrend period.", count);
+        if (!candle.TakerBuyQuoteVolume.HasValue)
+          return Invalid("Taker-buy quote-volume field is missing or unverified (including rejected raw values).", count);
 
         double q = candle.QuoteVolume;
         double b = candle.TakerBuyQuoteVolume.Value;
-        if (!double.IsFinite(q) || q < 0 || !double.IsFinite(b) || b < 0 || b > q)
-          return Invalid("Invalid taker-buy or total quote volume in the requested period.", count);
+        if (!double.IsFinite(q) || q < 0)
+          return Invalid("Invalid total quote-volume value in a source candle (negative or nonfinite).", count);
+        if (!double.IsFinite(b) || b < 0 || b > q)
+          return Invalid("Invalid taker-buy quote-volume value in a source candle (negative, nonfinite or greater than total).", count);
         total += q;
         bought += b;
         if (includeAlignedPrice)
@@ -291,9 +296,12 @@ namespace Core.MarketAnalyzer.MarketData
         }
         count++;
       }
-      if (!double.IsFinite(total) || !double.IsFinite(bought) || total <= 0 ||
-        bought < 0 || bought > total)
-        return Invalid("Taker flow requires finite positive total quote volume and valid taker-buy volume.", count);
+      if (!double.IsFinite(total) || total < 0)
+        return Invalid("Invalid accumulated total quote volume in the latest complete MarketTrend period.", count);
+      if (total == 0)
+        return Invalid("Zero total quote volume in the latest complete MarketTrend period; taker-buy ratio is undefined (0/0).", count);
+      if (!double.IsFinite(bought) || bought < 0 || bought > total)
+        return Invalid("Invalid accumulated taker-buy quote volume in the latest complete MarketTrend period.", count);
 
       double ratio = bought / total;
       if (!double.IsFinite(ratio) || ratio < 0 || ratio > 1)
