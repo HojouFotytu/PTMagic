@@ -1108,10 +1108,6 @@ namespace Core.Main
                 this.Log.DoLogInfo("+ SMS eligibility: all other underlying types excluded.");
               }
               this.Log.DoLogInfo("+ Markets with active single market settings: " + this.TriggeredSingleMarketSettings.Count.ToString());
-              foreach (string activeSMS in this.SingleMarketSettingsCount.Keys)
-              {
-                this.Log.DoLogInfo("+   " + activeSMS + ": " + this.SingleMarketSettingsCount[activeSMS].ToString());
-              }
               // Group metric problems here instead of repeating per-pair trigger warnings.
               if (BinanceFuturesAnalyticsRuntime.IsSupportedExchange(this.PTMagicConfiguration.GeneralSettings.Application.Exchange))
               {
@@ -1780,7 +1776,11 @@ namespace Core.Main
     {
       if (this.PTMagicConfiguration.AnalyzerSettings.SingleMarketSettings.Count > 0)
       {
-        this.Log.DoLogInfo("Checking single market settings triggers for " + this.MarketList.Count.ToString() + " markets...");
+        // One progress line across the entire market/SMS pass.
+        // Actual trigger decisions and grouped warnings are recorded elsewhere.
+        string smsProgressPrefix = "SMS evaluation (" + this.MarketList.Count + " markets): ";
+        Console.Write(smsProgressPrefix);
+        int smsProgressDots = 0;
 
         int marketPairProcess = 1;
         Dictionary<string, List<string>> matchedMarketTriggers = new Dictionary<string, List<string>>();
@@ -1811,7 +1811,6 @@ namespace Core.Main
         // Loop through markets
         foreach (string marketPair in this.MarketList)
         {
-          this.Log.DoLogDebug("'" + marketPair + "' - Checking triggers (" + marketPairProcess.ToString() + "/" + this.MarketList.Count.ToString() + ")...");
           string market = marketPair.Replace(mainMarket, "");
 
           bool stopTriggers = false;
@@ -1825,28 +1824,24 @@ namespace Core.Main
             // Check ignore markets
             if (marketSettingFilter.IgnoredMarkets.Contains(market))
             {
-              this.Log.DoLogDebug("'" + marketPair + "' - Is ignored in '" + marketSetting.SettingName + "'.");
               continue;
             }
 
             // Check allowed markets
             if (marketSettingFilter.AllowedMarkets.Count > 0 && !marketSettingFilter.AllowedMarkets.Contains(market))
             {
-              this.Log.DoLogDebug("'" + marketPair + "' - Is not allowed in '" + marketSetting.SettingName + "'.");
               continue;
             }
 
             // Check ignore global settings
             if (marketSettingFilter.IgnoredGlobalSettings.Contains(this.ActiveSettingName))
             {
-              this.Log.DoLogDebug("'" + marketPair + "' - '" + this.ActiveSettingName + "' - Is ignored in '" + marketSetting.SettingName + "'.");
               continue;
             }
 
             // Check allowed global settings
             if (marketSettingFilter.AllowedGlobalSettings.Count > 0 && !marketSettingFilter.AllowedGlobalSettings.Contains(this.ActiveSettingName))
             {
-              this.Log.DoLogDebug("'" + marketPair + "' - '" + this.ActiveSettingName + "' - Is not allowed in '" + marketSetting.SettingName + "'.");
               continue;
             }
 
@@ -1859,7 +1854,6 @@ namespace Core.Main
                 if (marketSetting.OffTriggers.Count > 0)
                 {
 
-                  this.Log.DoLogDebug("'" + marketPair + "' - Checking off triggers '" + marketSetting.SettingName + "'...");
 
                   List<bool?> offTriggerResults = new List<bool?>();
                   int offTriggerIndex = 0;
@@ -1876,14 +1870,12 @@ namespace Core.Main
                       {
 
                         // Trigger met!
-                        this.Log.DoLogDebug("'" + marketPair + "' - SMS already active for  " + smsActiveHours.ToString() + " hours. Trigger matched!");
 
                         offTriggerResults.Add(true);
                       }
                       else
                       {
                         // Trigger not met!
-                        this.Log.DoLogDebug("'" + marketPair + "' - SMS only active for  " + smsActiveHours.ToString() + " hours. Trigger not matched!");
 
                         offTriggerResults.Add(false);
                       }
@@ -1901,14 +1893,12 @@ namespace Core.Main
                           if (volume24h >= offTrigger.Min24hVolume && volume24h <= offTrigger.Max24hVolume)
                           {
                             // Trigger met!
-                            this.Log.DoLogDebug("'" + marketPair + "' - 24h volume off trigger matched! 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
                             offTriggerResults.Add(true);
                           }
                           else
                           {
                             // Trigger not met!
-                            this.Log.DoLogDebug("'" + marketPair + "' - 24h volume off trigger not matched! 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
                             offTriggerResults.Add(false);
                           }
@@ -1989,18 +1979,15 @@ namespace Core.Main
                   // Setting got off triggered, remove it from the summary
                   if (settingOffTriggered)
                   {
-                    this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' off triggered!");
                     this.SingleMarketSettingSummaries.Remove(smss);
                     smss = null;
                   }
                   else
                   {
-                    this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' not off triggered!");
                   }
                 }
                 else
                 {
-                  this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' has no off triggers; reevaluating activation.");
                 }
               }
             }
@@ -2009,7 +1996,6 @@ namespace Core.Main
             if (marketSetting.Triggers.Count > 0 && !stopTriggers)
             {
               #region Checking Triggers
-              this.Log.DoLogDebug("'" + marketPair + "' - Checking triggers for '" + marketSetting.SettingName + "'...");
 
               List<bool?> triggerResults = new List<bool?>();
               Dictionary<int, double> relevantTriggers = new Dictionary<int, double>();
@@ -2041,7 +2027,6 @@ namespace Core.Main
                       if (volume24h >= trigger.Min24hVolume && volume24h <= trigger.Max24hVolume)
                       {
                         // Trigger met!
-                        this.Log.DoLogDebug("'" + marketPair + "' - 24h volume trigger matched! 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
 
                         relevantTriggers.Add(triggerIndex, volume24h);
 
@@ -2063,7 +2048,6 @@ namespace Core.Main
                       }
                       else
                       {
-                        this.Log.DoLogDebug("'" + marketPair + "' - 24h volume trigger not matched. 24h volume = " + volume24h.ToString(new System.Globalization.CultureInfo("en-US")) + " " + this.LastRuntimeSummary.MainMarket);
                         triggerResults.Add(false);
                       }
                     }
@@ -2096,7 +2080,6 @@ namespace Core.Main
                     if (marketAge < trigger.AgeDaysLowerThan)
                     {
                       matchedSingleMarketTriggers.Add(marketSetting.SettingName + ": '" + marketPair + "' is only " + marketAge.ToString() + " days old on this exchange. Trigger matched!");
-                      this.Log.DoLogDebug("'" + marketPair + "' - Is only " + marketAge.ToString() + " days old on this exchange. Trigger matched!");
 
                       relevantTriggers.Add(triggerIndex, marketAge);
                       triggerResults.Add(true);
@@ -2104,13 +2087,11 @@ namespace Core.Main
                     }
                     else
                     {
-                      this.Log.DoLogDebug("'" + marketPair + "' - Age Trigger not triggered. Is already " + marketAge.ToString() + " days old on this exchange.");
                       triggerResults.Add(false);
                     }
                   }
                   else
                   {
-                    this.Log.DoLogDebug("'" + marketPair + "' - Age unavailable; trigger remains indeterminate.");
                     triggerResults.Add(null);
                     triggerTagsResults[trigger.Tag] = null;
                     this.CaptureDecisionObservation("MarketAgeDays", marketPair, null, "Market age is unavailable.",
@@ -2226,14 +2207,12 @@ namespace Core.Main
               // Setting not triggered -> Check if it is already active as a long term SMS using Off Triggers
               if (!settingTriggered)
               {
-                this.Log.DoLogDebug("'" + marketPair + "' - SMS '" + marketSetting.SettingName + "' not triggered, checking for long term activation.");
                 if (smss != null)
                 {
                   if (marketSetting.OffTriggers != null)
                   {
                     if (marketSetting.OffTriggers.Count > 0)
                     {
-                      this.Log.DoLogDebug("'" + marketPair + "' - SMS '" + marketSetting.SettingName + "' has off triggers, starting special trigger...");
                       // Setting already active and using off triggers -> set as triggered
                       settingTriggered = true;
                       isFreshTrigger = false;
@@ -2253,7 +2232,6 @@ namespace Core.Main
                         matchedSingleMarketTriggers.RemoveRange(0, removalLength);
                       }
 
-                      this.Log.DoLogDebug("'" + marketPair + "' - Activating SMS '" + marketSetting.SettingName + "' as off triggers are not met.");
                     }
                   }
                 }
@@ -2262,7 +2240,6 @@ namespace Core.Main
               // Setting got triggered -> Activate it!
               if (settingTriggered)
               {
-                this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' triggered!");
 
                 // Aggregate comment-line triggers without sharing a mutable
                 // list with this setting's persisted trigger snapshot.
@@ -2291,7 +2268,6 @@ namespace Core.Main
 
                 if (isFreshTrigger)
                 {
-                  this.Log.DoLogDebug("'" + marketPair + "' - SMS '" + marketSetting.SettingName + "' saving summary data...");
 
                   // Check if this setting is already active for this market
                   if (smss == null || marketSetting.RefreshOffTriggers)
@@ -2322,11 +2298,9 @@ namespace Core.Main
 
                     this.SingleMarketSettingSummaries.Add(smss);
 
-                    this.Log.DoLogDebug("'" + marketPair + "' - SMS '" + marketSetting.SettingName + "' summary data saved.");
                   }
                   else
                   {
-                    this.Log.DoLogDebug("'" + marketPair + "' - SMS '" + marketSetting.SettingName + "' already active for this market and no refresh allowed.");
                   }
                 }
 
@@ -2339,18 +2313,26 @@ namespace Core.Main
               else
               {
                 if (smss != null) this.SingleMarketSettingSummaries.Remove(smss);
-                this.Log.DoLogDebug("'" + marketPair + "' - '" + marketSetting.SettingName + "' not triggered!");
               }
             }
           } // End loop single market settings
 
-          if ((marketPairProcess % 10) == 0)
+          // One progress dot for each 25 completed markets and the last partial group.
+          // No per-market or per-SMS logging calls.
+          if ((marketPairProcess % 25) == 0 || marketPairProcess == this.MarketList.Count)
           {
-            this.Log.DoLogInfo("What are you looking at? " + marketPairProcess + "/" + this.MarketList.Count + " markets done...");
+            Console.Write('.');
+            smsProgressDots++;
           }
 
           marketPairProcess++;
         } // End loop through markets
+
+        string smsProgressSuffix = " done (" + this.TriggeredSingleMarketSettings.Count + " active markets).";
+        Console.WriteLine(smsProgressSuffix);
+        // One DEBUG file record for the whole evaluation; standard NLog console
+        // accepts INFO+ only and does not repeat this completion record.
+        this.Log.DoLogDebug(smsProgressPrefix + new string('.', smsProgressDots) + smsProgressSuffix);
 
         // Persist only SMS that are actually part of this raid's desired
         // configuration; filtered/removed settings must not remain latched.

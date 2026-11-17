@@ -1,5 +1,12 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 17, 2026 — Single-line SMS evaluation logging
+
+`ApplySingleMarketSettings()` no longer emits per-market or per-SMS DEBUG events, nor the INFO message every ten markets. Across the complete SMS pass, one incremental console line (`SMS evaluation (N markets): ..... done (M active markets).`) receives one dot per 25 completed markets. At completion one DEBUG file-log record summarizes the entire pass. Default NLog routing sends INFO+ to console and DEBUG+ to file, so it does not duplicate the progress line on normal installations. The per-SMS-name INFO count loop in the raid summary was also removed; the aggregate active-market count and in-memory/JSON SMS results remain unchanged.
+
+All activation/off-trigger evaluation, captured observations, metric-warning grouping, three-valued safeguards, retained SMS summaries, compiled PT properties, stop-processing behavior, TestMode safeguards and actual PT delivery are unchanged. Genuine errors remain logged. Focused `ConfigurationLifecycle` adds a 51-market console-capture test proving one line with three progress dots and no repeated per-market/per-SMS output. Compilation and execution at this revision are pending.
+
+
 ## November 17, 2026 — More specific taker-volume availability diagnostics
 
 The existing taker-flow calculator now distinguishes (1) missing normalized candles, incomplete/misaligned candles and absent/unverified taker fields, (2) an entirely present but **zero-total-quote-volume** period (undefined 0/0 ratio), and (3) invalid nonfinite/negative/out-of-range taker-buy or total quote-volume values, including invalid accumulated totals. The messages are stable per failure class so raid-warning grouping by reason is preserved. A raw taker field rejected by the Binance kline mapper becomes null in the normalized source and is reported as **unverified**; this implementation cannot recover its raw parse-failure category from the existing cache. Neither calculation, validity/UNAVAILABLE behavior, requests, persistence, scopes nor PT delivery are changed. Existing source-candle collection and store validation remain strict.

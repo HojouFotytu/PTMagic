@@ -872,6 +872,30 @@ internal static class Program
         fixture.Configuration.GeneralSettings.Application.TestMode = false; Call(fixture.Bot, "LoadSMSSummaries");
         Require(fixture.Bot.SingleMarketSettingSummaries.Single().Market == "BTCUSDT");
       });
+      Check("SMS evaluation emits one progress line across all markets", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Bot.MarketList = Enumerable.Range(1, 51)
+          .Select(index => "DIAG" + index.ToString("D3") + "USDT").ToList();
+        TextWriter originalOut = Console.Out;
+        using var captured = new StringWriter();
+        try
+        {
+          Console.SetOut(captured);
+          Call(fixture.Bot, "ApplySingleMarketSettings");
+        }
+        finally
+        {
+          Console.SetOut(originalOut);
+        }
+        string[] outputLines = captured.ToString().Replace("\r\n", "\n")
+          .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Require(outputLines.Length == 1 &&
+          outputLines[0].StartsWith("SMS evaluation (51 markets): ", StringComparison.Ordinal) &&
+          outputLines[0].EndsWith("... done (0 active markets).", StringComparison.Ordinal));
+        Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 &&
+          fixture.Bot.SingleMarketSettingsCount.Count == 0);
+      });
       Check("missing volume remains unknown in AND with a known age condition", () =>
       {
         using var fixture = new Fixture(); fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
