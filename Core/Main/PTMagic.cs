@@ -2362,7 +2362,7 @@ namespace Core.Main
         // Did we trigger any SMS?
         if (this.TriggeredSingleMarketSettings.Count > 0)
         {
-          this.Log.DoLogInfo("Building single market settings for '" + this.TriggeredSingleMarketSettings.Count.ToString() + "' markets...");
+          this.Log.DoLogInfo("Building single market settings...");
 
           // Write single market settings
           var newSingleMarketSettings = SettingsHandler.CompileSingleMarketProperties(this, matchedMarketTriggers);
