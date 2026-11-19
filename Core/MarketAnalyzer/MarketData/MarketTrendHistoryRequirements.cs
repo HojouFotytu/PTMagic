@@ -123,7 +123,7 @@ namespace Core.MarketAnalyzer.MarketData
           alignedTrendPeriods = true;
           minimumSourceCount = trendSourceCount;
           basis = (FlowPriceConfirmationEngine.IsGlobalMetric(metric)
-            ? "Complete (100%) frozen eligible cohort required for quote-volume-weighted net aggressive flow share. "
+            ? "At least 90% of the frozen eligible cohort must be observed for quote-volume-weighted net aggressive flow share; verified no-trade markets count as observed with zero volume, while missing markets remain excluded from the volume denominator. "
             : "Binary asset agreement/divergence flag. ") +
             "One exact UTC-completed TrendMinutes period of contiguous verified taker-buy and total quote-volume candles, " +
             "plus the first candle open and final candle close captured in the existing taker-flow pass. " +
