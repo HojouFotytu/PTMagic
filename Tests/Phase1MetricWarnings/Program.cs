@@ -507,6 +507,12 @@ internal static class Program
       "Asset metric unavailable", "SMS activation", "SMS48", "SOXXUSDT", "Absolute", "#1");
     Expect(warnings.BuildLines(analysis, classification).Count == 0,
       "Expected history shortage must not be reported as a Metric Warning.");
+    for (int index = 0; index < 9; index++)
+      warnings.ReportUnavailable("H48", MarketTrendMetrics.ATRP,
+        "Metric 'ATRP' is unavailable; reason=Insufficient complete 2880m candles for ATRP(14): 0/15.",
+        "SMS activation", "SMS_" + index, "SOXXUSDT", "Absolute", "#" + index);
+    Expect(warnings.BuildLines(analysis, classification).Count == 0,
+      "More than five affected SMS callers must still be safely reclassified.");
     var first = warnings.BuildNewMarketInfoLines(classification);
     Expect(first.Count == 2 && first[0] == "+ New markets with insufficient history: 1"
       && first[1].Contains("SOXXUSDT is too new")
