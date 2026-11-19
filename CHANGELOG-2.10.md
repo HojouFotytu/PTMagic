@@ -1,5 +1,79 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 19, 2026 — Trading-need-first metric reassessment (documentation-only design authority)
+
+**Status and scope.** This review supersedes earlier *proposed metric-development sequence/quotas* wherever the roadmap treated Phase 4/5 order, an assumed target metric count, a readily available input, or 96 hours as a reason to build or reject a metric. Earlier factual source/test evidence remains valid for the exact revision cited. **No metric is approved, removed or changed by this review; no source/strategy/settings writes are authorized.**
+
+### Required development hierarchy
+
+1. **Trading need:** State which LONG/SHORT regime, entry, exit or risk decision requires recognition of a particular market behavior.
+2. **Analytical requirement:** State which observable information reliably distinguishes that behavior from an important alternative.
+3. **Existing coverage:** Determine whether present metrics, raw observations, multi-horizon combinations or retained prior values already answer the question.
+4. **New measurement:** Only for a demonstrated gap, specify the smallest justified measurement and explain the incremental decision value.
+5. **Data requirements:** Derive source resolution, time windows, lookback, historical depth, timestamp, freshness and market coverage from the measurement itself.
+6. **Acquisition feasibility:** Validate Binance source/API semantics, both LONG and SHORT instances' shared-IP weight, cold/warm/gap recovery, storage, computation and decision deadlines.
+7. **Implementation:** Only after justification and feasibility: adjust ingestion, retention, calculations, dependency selection, historical evidence, triggers, export/UI and focused/runtime verification.
+
+**No fixed 96-hour constraint.** `StoreDataMaxHours=96` belongs to the current diagnostic fixture, not to analytical requirements. Retain more (or less) history when warranted by trading need and mathematically necessary observations; never develop a metric *merely* because the current store already contains its inputs. PTMagic must be able to obtain and maintain required current/recent observations itself; do not assume any external historical database. The existing 300-second pinned-decision-age guard is separate from retention and must not be relaxed to disguise a slow first acquisition.
+
+### Current catalogue — what exists
+
+At functional source [`561bbc32`](https://github.com/HojouFotytu/PTMagic/commit/561bbc32c73a567c65348bf655328c5e7a1f5853), the [registry](Core/MarketAnalyzer/MarketData/MarketTrendMetrics.cs) contains **43 canonical names (30 global-capable / 13 asset-only)**; `PriceTrend` also supports asset scope (14 asset-capable names). These are **not 43 independent information sources**. D-053-removed open interest, top-trader ratios and inferred positioning remain out of scope.
+
+| Existing family | Count | Registered measurements | What they describe |
+|---|---:|---|---|
+| Price and market structure | 6 | `PriceTrend`, `MedianPriceTrend`, `MeanMedianSpread`, `Breadth`, `Dispersion`, `Concentration` | Return direction, participation, disagreement, volume-ranked return leadership |
+| Relative performance and BTC dependence | 5 | `RelativeStrengthMarket`, `RelativeStrengthBTC`, `CorrelationToBTC`, `MeanCorrelationToBTC`, `MedianCorrelationToBTC` | Asset/benchmark strength and BTC synchronization |
+| Volatility | 3 | `ATRP`, `MedianATRP`, `VolatilityBreadth` | Within-asset range and its market distribution |
+| Volume and turnover leadership | 8 | `VolumeExpansion`, `MedianVolumeExpansion`, `VolumeExpansionBreadth`, `StrongVolumeExpansionBreadth`, `VolumeConcentration`, `TopNVolumeShare`, `BTCVolumeShare`, `BTCETHVolumeShare` | Activity change and distribution of quote turnover |
+| Settled funding | 7 | `FundingRate`, `FundingSum`, `MedianFundingRate`, `PositiveFundingBreadth`, `NegativeFundingBreadth`, `ExtremePositiveFundingBreadth`, `ExtremeNegativeFundingBreadth` | Observed Regular funding settlements and their cross-market distribution, **not** verified positions |
+| Aggressive taker flow | 6 | `TakerBuyRatio`, `TakerImbalance`, `MedianTakerBuyRatio`, `BuyerDominanceBreadth`, `StrongBuyerDominanceBreadth`, `TakerImbalanceDispersion` | Aggressive quote-volume balance and breadth |
+| Price/flow confirmation and divergence | 8 | Four `Buyer/SellerFlowPriceConfirmation/Divergence` asset flags and four corresponding `VolumeShare` global aggregates | Price/taker-flow directional agreement and weighted flow contribution |
+
+**Latest Phase 3 global coverage behavior:** [`4bbe299e`](https://github.com/HojouFotytu/PTMagic/commit/4bbe299e64180ac1aaa9fe2bfccb342def8acad3) lowered the four flow-price `VolumeShare` metrics from 100% to **at least 90% observed coverage of the frozen eligible market cohort**. Verified zero-trade markets count as observed with zero quote volume; missing/invalid markets count against coverage and contribute neither volume nor invented zeros. The denominator contains **observed traded quote turnover**, so 90–99% market-count coverage can still bias the share if missing markets had substantial turnover. Per-asset 0/0 taker ratios stay unavailable; zero combined denominator remains unavailable. This change **does not** relax the 100% completeness required by unrelated volume-concentration metrics. Older 100% text in previous dated sections and in `MarketTrendHistoryRequirements` diagnostic prose is superseded for these four Phase 3 globals, not evidence of source behavior.
+
+### Redundancy and marginal-information audit
+
+| Metric relationship | Actual overlap | Assessment, without automatic removal |
+|---|---|---|
+| `TakerImbalance = 2*TakerBuyRatio - 1` | Exact algebraic transform of the same source | Retain a convenience alias if it helps triggers; **not an independent confirmation**. |
+| `MeanMedianSpread` | Full cross-sectional mean minus median; published `PriceTrend` may use an outlier filter | Derived diagnostic, not a separate market source. Do not substitute filtered `PriceTrend` as the exact full mean. |
+| `VolumeExpansionBreadth` / `StrongVolumeExpansionBreadth` and `BuyerDominanceBreadth` / `StrongBuyerDominanceBreadth` | Nested threshold descriptions of one distribution | Keep both only when the stronger versus ordinary condition changes trading decisions. |
+| Positive/negative and extreme funding breadths | Overlapping distribution tails; zero-rate assets mean positive and negative are not necessarily complements | Evaluate marginal risk information beyond median/sign; do not infer crowding. |
+| `VolumeConcentration` / `TopNVolumeShare` and `BTCVolumeShare` / `BTCETHVolumeShare` | Shared turnover distribution with different concentration/leader definitions | Potentially complementary; test usefulness, not just correlation. |
+| Four Phase 3 asset flags | Four price-sign/flow-sign classifications (with neutral/missing states) | One information classification exposed as four binary trigger conveniences. |
+| Four Phase 3 global flow-price shares | Different net-aggressive-volume-weighted conditional contributions | Distinct aggregates, **not** four independent predictive signals; compare with basic return/flow/breadth. |
+| `ATRP` versus `Dispersion`; market versus BTC-relative strength | Different underlying phenomena despite possible empirical correlation | Keep distinct. ATRP is within-asset price range; dispersion is across-asset return disagreement. |
+
+**Disposition:** Preserve registered interfaces until an evidence-based decision. Prefer shared underlying calculations and explicit derived-label semantics; do not perform arbitrary deletion or proliferation to meet a metric-count objective.
+
+### Trading decisions still not fully supported
+
+| Trading need | Existing inputs | Important unanswered distinction / assessment |
+|---|---|---|
+| Sustained trend versus chop | End-to-end returns, ATRP, breadth, dispersion, multi-horizon analysis | Same endpoint return may hide very different reversals. **Investigate** directional path efficiency/persistence from contiguous closed candles; compare with existing return+volatility before approval. |
+| Regime transition/recovery/deterioration | Current breadth, flow, returns and volatility across horizons | The *history of those values* may distinguish strengthening from weakening without another registered metric. Prioritize provenance-preserving metric histories and comparisons. |
+| Fast adverse directional shock | Short-window returns, ATRP, dispersion, breadth and taker flow | Conditional: demonstrate an important move these already fail to identify before adding a shock metric. |
+| Entry/exit executable liquidity | Quote turnover and expansion | **Genuine missing source information:** fresh bid/ask spread, opposing order-book depth and expected impact for intended order notional. Evaluate native-source cadence, stale data and per-symbol API cost before any broad acquisition. |
+| Carry and reference-price risk | Historical settled funding | Next event timing and mark/index deviation may matter for positions held across funding; conditional on actual decisions, not a license to reconstruct absent leverage/positioning. |
+| Portfolio risk of another position | Market correlation and market regime | Integrate real open positions, leverage/margin/capital and correlated exposures; this is not automatically a market-wide metric. |
+
+**Candidate example, NOT approved:** a directional price-path efficiency measurement such as `abs(ln(Cend/Cstart)) / sum(abs(ln(Ci/C(i-1))))` over an explicitly chosen contiguous closed-candle interval, with direction supplied by the existing return and a specified zero-movement validity rule. It distinguishes direct movement from repeated reversals; incremental value against existing volatility/return combinations is **not yet established**. Also investigate whether rolling *fully closed* windows, rather than only completed UTC H1 blocks for Phase 3, materially improve detection timing without treating incomplete candles as valid.
+
+### Data, acquisition and evidence gates
+
+- **History follows calculation:** a daily ATR(14) needs 15 complete daily trend bars (360h) **plus** alignment/retention slots; the existing all-alignment history report gives 384h. Short-window efficiency needs its selected contiguous candle path; change/persistence comparisons require retained time-stamped derived values. No 96h exclusion or automatic expansion.
+- **Resolution/freshness:** begin with PTMagic's 5m closed normalized candles and validated native funding. Shorter bars or book sampling require a distinct decision justification. Preserve observation-window and source timestamp separately from pinned raid time and delivery time.
+- **Population and completeness:** retain frozen eligible symbols and actual valid subset. Report count and economic/turnover coverage where meaningful; never count missing as zero. Each family keeps its own required completeness; acknowledge subset sensitivity of Phase 3 90% shares.
+- **Acquisition:** calculate aggregate Binance IP/provider demand across both bots, warm/cold/partial-repair scheduling, rate-limit backoff, memory/disk, normalized-store correctness and 300s pin age. Older source `24d70402`: first uncached raid ~5m21s and correctly deferred, warm raids ~19–25s; no performance claim for proposed extra history/endpoints.
+- **Source-history restriction:** no hypothetical external historical datasets. Newly sampled spread/depth cannot be retrospectively reconstructed from OHLCV. Historical comparisons must avoid look-ahead and population-survivorship artifacts.
+- **Evaluation:** test concrete LONG/SHORT regime/entry/exit/risk decisions, compare against current metrics alone, and distinguish correctness, data availability, incremental classification information and measured trading outcomes. TestMode activation and successful calculation are **not** evidence of better trading.
+- **Design approval:** no new registry, retention change, additional API endpoint, risk control, analyzer preset or personal DEFAULT settings until a measurement has demonstrated necessity, source reliability, acquisition capacity and integration tradeoffs.
+
+**Immediate analytical order:** audit existing combinations against representative market behaviors; assess persistence from retained metric histories; evaluate path quality and executable liquidity as leading *candidates*; evaluate risk-shock and mark/funding context only if decisions require them; specify source/history requirements and implement only justified measurements. This replaces metric-family completion quotas, not prior factual implementations.
+
+**Verification boundaries:** This document alone is not a user-run test. Prior 43-metric deployment logs from `24d70402` showed H1 719/719 Phase 3 observations, seven raids/bot and six conclusive post-cold/bot, but predate `4bbe299e`; do **not** attribute newer 90%/no-trade live acceptance to those logs. Current `Tests/Phase1COhlcv/Program.cs` registers **22 focused groups** (historical 20/20 PASS predates later additions); newer 22/22 execution is not established here. Source `561bbc32` adds an isolated G08-first TestMode fixture but not proof of fresh decisive G08 selection. No PT writes, trading settings or application-source changes are part of this documentation-only update.
+
 ## November 17, 2026 — No-trade normalization and 90% Phase 3 global coverage
 
 Verified zero-trade periods are now identified from complete, aligned Binance 5m candles with source-confirmed zero quote volume, base volume, taker-buy quote volume and trade count. These periods remain UNAVAILABLE for per-asset TakerBuyRatio, TakerImbalance and Phase 3 flow flags, without inventing 0/0 values. Source contradictions, absent fields, incomplete candles and stale data remain real warnings. Verified inactivity is recorded as a grouped DEBUG summary rather than repeated WARN entries.
