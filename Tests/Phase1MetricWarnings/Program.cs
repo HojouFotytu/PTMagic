@@ -30,6 +30,8 @@ internal static class Program
       TestPlainLanguageDisabledMetric();
       TestPlainLanguageGroupedCallers();
       TestVerifiedNoTradesWarnSuppression();
+      TestVerifiedNewMarketHistoryClassification();
+      TestNewMarketWarningsAndNoticeLifecycle();
       Console.WriteLine("Phase 1 metric-warning summary tests passed: " + _passed + ".");
       return 0;
     }
@@ -393,6 +395,141 @@ internal static class Program
     warnings.ReportGlobalDecision("selection indeterminate; retained 'DEFAULT'.");
     Expect(warnings.BuildLines(source).Any(line => line.Contains("retained 'DEFAULT'")),
       "NO_TRADES suppression must not suppress unrelated GlobalSetting safety warnings.");
+    _passed++;
+  }
+
+  private static readonly DateTimeOffset Listing =
+    new DateTimeOffset(2026, 11, 18, 9, 30, 0, TimeSpan.Zero);
+  private static readonly DateTimeOffset Raid =
+    new DateTimeOffset(2026, 11, 19, 9, 50, 0, TimeSpan.Zero);
+
+  private static MarketDataStore ListingStore(bool gap = false, int delayedStartMinutes = 0)
+  {
+    var store = new MarketDataStore(2000);
+    for (DateTimeOffset open = Listing.AddMinutes(delayedStartMinutes);
+         open < Raid; open = open.AddMinutes(5))
+    {
+      if (gap && open == Listing.AddHours(6)) continue;
+      store.UpsertCandle(new MarketCandle
+      {
+        Symbol = "SOXXUSDT", Interval = TimeSpan.FromMinutes(5),
+        OpenTimeUtc = open, CloseTimeUtc = open.AddMinutes(5).AddMilliseconds(-1),
+        IsClosed = true, Open = 100, High = 102, Low = 99, Close = 101,
+        BaseVolume = 2, QuoteVolume = 202, TakerBuyQuoteVolume = 120, TradeCount = 15
+      });
+    }
+    return store;
+  }
+
+  private static MarketTrendHistoryRequirement Needed(string name, int count) =>
+    new MarketTrendHistoryRequirement { Metric = name, MinimumClosedSourceCandles = count };
+
+  private static MarketTrendAnalysisSnapshot ListingTrend(bool invalidTaker = false)
+  {
+    var features = new Dictionary<string, FeatureValueSnapshot>
+    {
+      [MarketTrendMetrics.PriceTrend] =
+        Invalid("No exact closed-candle reference exists 2880 minutes before the current normalized endpoint. StoreDataMaxHours may be insufficient or TrendMinutes may not align with the normalized interval."),
+      [MarketTrendMetrics.RelativeStrengthMarket] =
+        Invalid("Asset return or MedianPriceTrend is unavailable for MarketTrend 'H48'."),
+      [MarketTrendMetrics.RelativeStrengthBTC] =
+        Invalid("Asset return or BTC return is unavailable for MarketTrend 'H48'."),
+      [MarketTrendMetrics.ATRP] =
+        Invalid("Insufficient complete 2880m candles for ATRP(14): 0/15. StoreDataMaxHours may be insufficient, or source candles are missing."),
+      [MarketTrendMetrics.VolumeExpansion] =
+        Invalid("Insufficient complete 2880m quote-volume periods for VolumeExpansion(20): 0/21. StoreDataMaxHours may be insufficient, or source candles are missing."),
+      [MarketTrendMetrics.TakerBuyRatio] =
+        Invalid("Missing normalized source candle in the latest complete MarketTrend period."),
+      [MarketTrendMetrics.TakerImbalance] =
+        Invalid(invalidTaker
+          ? "Invalid taker-buy quote-volume value in a source candle (negative, nonfinite or greater than total)."
+          : "Missing normalized source candle in the latest complete MarketTrend period."),
+      [MarketTrendMetrics.CorrelationToBTC] =
+        Invalid("Asset return vector unavailable: Missing or invalid exact closed source candle for 'SOXXUSDT' at 2026-11-18T08:59:59.9990000+00:00. Correlation needs all 16 returns and their reference endpoint.")
+    };
+    return new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = "H48", TrendMinutes = 2880, CalculatedAtUtc = Raid,
+      ExpectedClosedCandleTimeUtc = Raid.AddMilliseconds(-1),
+      AssetSymbols = new[] { "SOXXUSDT" }, EnabledMetrics = features.Keys.ToArray(),
+      HistoryRequirements = new[]
+      {
+        Needed(MarketTrendMetrics.PriceTrend, 577),
+        Needed(MarketTrendMetrics.RelativeStrengthMarket, 577),
+        Needed(MarketTrendMetrics.RelativeStrengthBTC, 577),
+        Needed(MarketTrendMetrics.ATRP, 15 * 576),
+        Needed(MarketTrendMetrics.VolumeExpansion, 21 * 576),
+        Needed(MarketTrendMetrics.TakerBuyRatio, 576),
+        Needed(MarketTrendMetrics.TakerImbalance, 576),
+        Needed(MarketTrendMetrics.CorrelationToBTC, 16 * 576 + 1)
+      },
+      MarketMetrics = new Dictionary<string, FeatureValueSnapshot>
+      { [MarketTrendMetrics.MedianPriceTrend] = Valid(1) },
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      {
+        ["SOXXUSDT"] = features,
+        ["BTCUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        { [MarketTrendMetrics.PriceTrend] = Valid(1.2) }
+      }
+    };
+  }
+
+  private static void TestVerifiedNewMarketHistoryClassification()
+  {
+    var analysis = Analyses(ListingTrend());
+    var result = NewMarketHistoryClassification.Analyze(analysis, ListingStore(),
+      symbol => symbol == "SOXXUSDT" ? Listing : null);
+    Expect(result.MarketCount == 1 && result.Affected["SOXXUSDT"].Count == 8,
+      "All eight pre-listing-only metric shortages must consolidate under one symbol.");
+    Expect(result.IsExpected("SOXXUSDT", "H48", MarketTrendMetrics.CorrelationToBTC)
+      && result.IsExpected("SOXXUSDT", "H48", MarketTrendMetrics.RelativeStrengthBTC),
+      "Correlation and dependent relative-strength shortages must be recognized.");
+
+    Expect(NewMarketHistoryClassification.Analyze(analysis, ListingStore(),
+      _ => null).MarketCount == 0, "Unknown listing must remain a warning.");
+    Expect(NewMarketHistoryClassification.Analyze(analysis, ListingStore(gap: true),
+      _ => Listing).MarketCount == 0, "Post-listing candle gap must remain a warning.");
+    Expect(NewMarketHistoryClassification.Analyze(analysis, ListingStore(delayedStartMinutes: 60),
+      _ => Listing).MarketCount == 0, "Truncated histories must remain warnings.");
+    Expect(NewMarketHistoryClassification.Analyze(analysis, ListingStore(),
+      _ => Listing.AddDays(-100)).MarketCount == 0,
+      "Older listings with retained-window gaps must remain warnings.");
+    _passed++;
+  }
+
+  private static void TestNewMarketWarningsAndNoticeLifecycle()
+  {
+    var analysis = Analyses(ListingTrend());
+    var classification = NewMarketHistoryClassification.Analyze(analysis,
+      ListingStore(), _ => Listing);
+    var warnings = new RaidMetricWarnings();
+    warnings.ReportUnavailable("H48", MarketTrendMetrics.PriceTrend,
+      "Asset metric unavailable", "SMS activation", "SMS48", "SOXXUSDT", "Absolute", "#1");
+    Expect(warnings.BuildLines(analysis, classification).Count == 0,
+      "Expected history shortage must not be reported as a Metric Warning.");
+    var first = warnings.BuildNewMarketInfoLines(classification);
+    Expect(first.Count == 2 && first[0] == "+ New markets with insufficient history: 1"
+      && first[1].Contains("SOXXUSDT is too new")
+      && first[1].Contains("8 metric results"), "One INFO notice per new market.");
+
+    warnings.Reset();
+    var repeated = warnings.BuildNewMarketInfoLines(classification);
+    Expect(repeated.Count == 1 && repeated[0].Contains("history: 1"),
+      "Unchanged shortage must not repeat detailed notices.");
+    var mixed = Analyses(ListingTrend(invalidTaker: true));
+    var filtered = NewMarketHistoryClassification.Analyze(mixed, ListingStore(), _ => Listing);
+    Expect(filtered.Affected["SOXXUSDT"].Count == 7, "Invalid taker value must not be suppressed.");
+    Expect(warnings.BuildLines(mixed, filtered).Any(line =>
+      line.Contains("TakerImbalance")), "A genuine invalid value must remain WARN.");
+
+    warnings.ReportGlobalDecision("selection indeterminate; retained 'DEFAULT'.");
+    Expect(warnings.BuildLines(analysis, classification).Any(line =>
+      line.Contains("retained 'DEFAULT'")), "Global decision failure must remain WARN.");
+    var recovery = warnings.BuildNewMarketInfoLines(new NewMarketHistoryClassification());
+    Expect(recovery.Count == 1 && recovery[0].Contains("no longer has pre-listing"),
+      "Recovery must be noted once.");
+    Expect(warnings.BuildNewMarketInfoLines(new NewMarketHistoryClassification()).Count == 0,
+      "Recovered market must not produce recurring messages.");
     _passed++;
   }
 
