@@ -1113,7 +1113,18 @@ namespace Core.Main
               {
                 IReadOnlyDictionary<string, Core.MarketAnalyzer.MarketData.MarketTrendAnalysisSnapshot> analyses =
                   Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses;
-                IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses);
+                // Only Futures supplies verified onboard dates; do not infer
+                // listing age from a short local cache or suppress Spot/US warnings.
+                Core.MarketAnalyzer.MarketData.NewMarketHistoryClassification newMarketHistory =
+                  this.PTMagicConfiguration.GeneralSettings.Application.Exchange.Equals(
+                    "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+                    ? Core.MarketAnalyzer.MarketData.NewMarketHistoryClassification.Analyze(
+                        analyses, Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.DataService.Store,
+                        Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc)
+                    : null;
+                IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses, newMarketHistory);
+                foreach (string newMarketInfo in this._raidMetricWarnings.BuildNewMarketInfoLines(newMarketHistory))
+                  this.Log.DoLogInfo(newMarketInfo);
                 foreach (string noTradeSummary in this._raidMetricWarnings.BuildNoTradeDebugLines(analyses))
                 {
                   this.Log.DoLogDebug(noTradeSummary);
