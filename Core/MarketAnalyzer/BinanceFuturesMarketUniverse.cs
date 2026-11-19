@@ -146,10 +146,13 @@ namespace Core.MarketAnalyzer
             continue;
           }
 
+          // An absent/malformed onboardDate cannot justify suppressing a metric warning.
+          long? onboardDate = ParseOnboardDateMilliseconds(symbol["onboardDate"]);
           BinanceFuturesMarketMetadata marketMetadata = new BinanceFuturesMarketMetadata
           {
             Symbol = symbolName,
             QuoteAsset = symbol.Value<string>("quoteAsset") ?? "",
+            OnboardDateMilliseconds = onboardDate,
             ContractType = symbol.Value<string>("contractType") ?? "",
             UnderlyingType = symbol.Value<string>("underlyingType") ?? "",
             UnderlyingSubTypes = symbol["underlyingSubType"] is JArray underlyingSubTypes
@@ -425,6 +428,7 @@ namespace Core.MarketAnalyzer
         {
           Symbol = metadata.Symbol ?? "",
           QuoteAsset = metadata.QuoteAsset ?? "",
+          OnboardDateMilliseconds = metadata.OnboardDateMilliseconds,
           ContractType = metadata.ContractType ?? "",
           UnderlyingType = metadata.UnderlyingType ?? "",
           UnderlyingSubTypes = metadata.UnderlyingSubTypes == null
@@ -432,6 +436,23 @@ namespace Core.MarketAnalyzer
             : new List<string>(metadata.UnderlyingSubTypes)
         };
       }
+    }
+
+    /// <summary>Only an exchange-verified onboard date may classify absent pre-listing candles.</summary>
+    public static DateTimeOffset? GetOnboardDateUtc(string symbol)
+    {
+      long? milliseconds = GetMarketMetadataSnapshot(symbol)?.OnboardDateMilliseconds;
+      if (!milliseconds.HasValue || milliseconds.Value <= 0) return null;
+      try { return DateTimeOffset.FromUnixTimeMilliseconds(milliseconds.Value); }
+      catch (ArgumentOutOfRangeException) { return null; }
+    }
+
+    private static long? ParseOnboardDateMilliseconds(JToken token)
+    {
+      if (token == null || !Int64.TryParse(token.ToString(), out long value) || value <= 0)
+        return null;
+      try { DateTimeOffset.FromUnixTimeMilliseconds(value); return value; }
+      catch (ArgumentOutOfRangeException) { return null; }
     }
 
     private static bool HasFreshMetadata()
@@ -604,6 +625,8 @@ namespace Core.MarketAnalyzer
   {
     public string Symbol { get; set; } = "";
     public string QuoteAsset { get; set; } = "";
+    // Native Binance Futures exchangeInfo onboardDate, Unix milliseconds (nullable for old caches).
+    public long? OnboardDateMilliseconds { get; set; }
     public string ContractType { get; set; } = "";
     public string UnderlyingType { get; set; } = "";
     public List<string> UnderlyingSubTypes { get; set; } = new List<string>();
