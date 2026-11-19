@@ -1,0 +1,32 @@
+name: Metric warning and new-listing regression
+on:
+  push:
+    branches: [phase1/market-data-foundation]
+    paths:
+      - 'Core/MarketAnalyzer/BinanceFuturesMarketUniverse.cs'
+      - 'Core/MarketAnalyzer/MarketData/NewMarketHistoryDiagnostics.cs'
+      - 'Core/MarketAnalyzer/MarketData/RaidMetricWarnings.cs'
+      - 'Core/MarketAnalyzer/MarketData/MarketTrendHistoryRequirements.cs'
+      - 'Core/Main/PTMagic.cs'
+      - 'Tests/Phase1MetricWarnings/**'
+      - '.github/workflows/metric-warning-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build full PTMagic solution
+        run: dotnet build PTMagic.sln --configuration Release
+      - name: Run metric-warning regression (including new listings)
+        run: dotnet run --project Tests/Phase1MetricWarnings/Phase1MetricWarnings.csproj --configuration Release --no-build
+      - name: Run Phase 1C source-validity regression
+        run: dotnet run --project Tests/Phase1COhlcv/Phase1COhlcv.csproj --configuration Release --no-build
+      - name: Run configuration decision and delivery lifecycle regression
+        run: dotnet run --project Tests/ConfigurationLifecycle/ConfigurationLifecycle.csproj --configuration Release --no-build
