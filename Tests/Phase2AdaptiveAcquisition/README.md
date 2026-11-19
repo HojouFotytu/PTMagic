@@ -1,5 +1,13 @@
 # Funding-only adaptive acquisition checks
 
+## Current metric/acquisition scope — November 19, 2026
+
+The application still registers **43 metrics (30 globally capable / 13 asset-only)**; this harness's latest documented **9/9 PASS** is source-specific evidence from the earlier Phase 3 catalogue checkpoint, not a new validation of the later `4bbe299e` no-trade/coverage change or any newly proposed metric. The current [trading-need-first development policy](../../CHANGELOG-2.10.md#november-19-2026--trading-need-first-metric-reassessment-documentation-only-design-authority) requires a demonstrated LONG/SHORT trading need before adding acquisition work.
+
+For any candidate, first determine the necessary timeframe, source granularity, retention, refresh cadence, market coverage and freshness *from the measurement*, then assess source reliability, Binance request weight/provider quotas and cumulative load from **both** PTMagic instances. The diagnostic **96-hour** store is not an acquisition constraint or a reason to reject longer history. Conversely, available cached inputs do not justify an unnecessary metric. Preserve current pinned-raid age protection, rate-limit safety, missing-source validity and cold/warm/gap-recovery verification.
+
+The previously removed open-interest and trader-positioning families remain out of scope. No new endpoint, metric, acceptance result or acquisition algorithm is introduced by this documentation-only change.
+
 ## Current 43-metric acquisition verification — November 17, 2026
 
 **User-run `Phase2AdaptiveAcquisition` 9/9 PASS** at the Phase 3 checkpoint following `33a33f0`: **43 canonical names, 30 globally capable, 13 asset-only**. Funding provider quota, shared IP weight, Futures 5m pagination/request-weight invariants, 429/418 cooldowns, recoverable waits, cancellation, freshness/capacity deadlines and absence of the former sixty-page ceiling all PASS. This harness no longer validates removed open-interest/positioning families, and offline checks do not prove configured runtime or PT delivery. Older 26-metric/8-check evidence below is historical.
