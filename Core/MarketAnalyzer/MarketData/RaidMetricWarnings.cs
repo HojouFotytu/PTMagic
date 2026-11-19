@@ -270,7 +270,8 @@ namespace Core.MarketAnalyzer.MarketData
       var lines = new List<string>();
       var affected = classification.Affected;
       if (affected.Count > 0)
-        lines.Add("+ New markets with insufficient history: " + affected.Count);
+        lines.Add("+ New markets with insufficient history: " +
+          String.Join(", ", affected.Keys.OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)));
 
       foreach (var market in affected.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
       {

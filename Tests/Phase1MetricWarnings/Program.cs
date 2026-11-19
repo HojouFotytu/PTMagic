@@ -403,20 +403,24 @@ internal static class Program
   private static readonly DateTimeOffset Raid =
     new DateTimeOffset(2026, 11, 19, 9, 50, 0, TimeSpan.Zero);
 
-  private static MarketDataStore ListingStore(bool gap = false, int delayedStartMinutes = 0)
+  private static MarketDataStore ListingStore(bool gap = false, int delayedStartMinutes = 0,
+    params string[] extraSymbols)
   {
     var store = new MarketDataStore(2000);
-    for (DateTimeOffset open = Listing.AddMinutes(delayedStartMinutes);
-         open < Raid; open = open.AddMinutes(5))
+    foreach (string symbol in new[] { "SOXXUSDT" }.Concat(extraSymbols))
     {
-      if (gap && open == Listing.AddHours(6)) continue;
-      store.UpsertCandle(new MarketCandle
+      for (DateTimeOffset open = Listing.AddMinutes(delayedStartMinutes);
+           open < Raid; open = open.AddMinutes(5))
       {
-        Symbol = "SOXXUSDT", Interval = TimeSpan.FromMinutes(5),
-        OpenTimeUtc = open, CloseTimeUtc = open.AddMinutes(5).AddMilliseconds(-1),
-        IsClosed = true, Open = 100, High = 102, Low = 99, Close = 101,
-        BaseVolume = 2, QuoteVolume = 202, TakerBuyQuoteVolume = 120, TradeCount = 15
-      });
+        if (gap && open == Listing.AddHours(6)) continue;
+        store.UpsertCandle(new MarketCandle
+        {
+          Symbol = symbol, Interval = TimeSpan.FromMinutes(5),
+          OpenTimeUtc = open, CloseTimeUtc = open.AddMinutes(5).AddMilliseconds(-1),
+          IsClosed = true, Open = 100, High = 102, Low = 99, Close = 101,
+          BaseVolume = 2, QuoteVolume = 202, TakerBuyQuoteVolume = 120, TradeCount = 15
+        });
+      }
     }
     return store;
   }
@@ -531,14 +535,48 @@ internal static class Program
     Expect(warnings.BuildLines(analysis, classification).Count == 0,
       "More than five affected SMS callers must still be safely reclassified.");
     var first = warnings.BuildNewMarketInfoLines(classification);
-    Expect(first.Count == 2 && first[0] == "+ New markets with insufficient history: 1"
+    Expect(first.Count == 2 && first[0] == "+ New markets with insufficient history: SOXXUSDT"
       && first[1].Contains("SOXXUSDT is too new")
       && first[1].Contains("8 metric results"), "One INFO notice per new market.");
 
     warnings.Reset();
     var repeated = warnings.BuildNewMarketInfoLines(classification);
-    Expect(repeated.Count == 1 && repeated[0].Contains("history: 1"),
+    Expect(repeated.Count == 1 && repeated[0] == "+ New markets with insufficient history: SOXXUSDT",
       "Unchanged shortage must not repeat detailed notices.");
+    // A summary must name every affected market, even when there are more
+    // than five. Existing per-market details remain suppressed on later raids.
+    var extraSymbols = new[] { "IGVUSDT", "ARTYUSDT", "IBITUSDT", "CCJUSDT", "ETNUSDT" };
+    var baseTrend = ListingTrend();
+    var multiAssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
+      baseTrend.AssetMetrics, StringComparer.OrdinalIgnoreCase);
+    foreach (string symbol in extraSymbols)
+      multiAssetMetrics[symbol] = new Dictionary<string, FeatureValueSnapshot>
+      { [MarketTrendMetrics.PriceTrend] = baseTrend.AssetMetrics["SOXXUSDT"][MarketTrendMetrics.PriceTrend] };
+    var multiTrend = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = baseTrend.MarketTrendName, TrendMinutes = baseTrend.TrendMinutes,
+      CalculatedAtUtc = baseTrend.CalculatedAtUtc,
+      ExpectedClosedCandleTimeUtc = baseTrend.ExpectedClosedCandleTimeUtc,
+      AssetSymbols = new[] { "SOXXUSDT" }.Concat(extraSymbols).ToArray(),
+      EnabledMetrics = baseTrend.EnabledMetrics,
+      HistoryRequirements = baseTrend.HistoryRequirements,
+      MarketMetrics = baseTrend.MarketMetrics,
+      AssetMetrics = multiAssetMetrics
+    };
+    var multiClassification = NewMarketHistoryClassification.Analyze(
+      Analyses(multiTrend), ListingStore(extraSymbols: extraSymbols), _ => Listing);
+    Expect(multiClassification.MarketCount == 6,
+      "All six verified new listings must be classified.");
+    string expectedSummary = "+ New markets with insufficient history: ARTYUSDT, CCJUSDT, ETNUSDT, IBITUSDT, IGVUSDT, SOXXUSDT";
+    var multiWarnings = new RaidMetricWarnings();
+    var multiLines = multiWarnings.BuildNewMarketInfoLines(multiClassification);
+    Expect(multiLines.Count == 7 && multiLines[0] == expectedSummary,
+      "First raid summary must list all six symbols followed by six individual notices.");
+    multiWarnings.Reset();
+    var multiRepeated = multiWarnings.BuildNewMarketInfoLines(multiClassification);
+    Expect(multiRepeated.Count == 1 && multiRepeated[0] == expectedSummary,
+      "Later raid summaries must still name all markets without repeating detail notices.");
+
     var mixed = Analyses(ListingTrend(invalidTaker: true));
     var filtered = NewMarketHistoryClassification.Analyze(mixed, ListingStore(), _ => Listing);
     Expect(filtered.Affected["SOXXUSDT"].Count == 7, "Invalid taker value must not be suppressed.");
