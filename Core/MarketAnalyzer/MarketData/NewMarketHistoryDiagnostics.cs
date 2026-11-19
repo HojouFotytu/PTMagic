@@ -79,7 +79,7 @@ namespace Core.MarketAnalyzer.MarketData
           // This must be a continuous, current series whose first traded candle
           // matches the native onboard date. A retained cache starting later
           // than listing is NOT evidence that exchange history did not exist.
-          string cacheKey = symbol + "|" + analysis.CalculatedAtUtc.UtcTicks;
+          string cacheKey = symbol + "|" + analysis.CalculatedAtUtc.UtcDateTime.Ticks;
           if (!snapshots.TryGetValue(cacheKey, out MarketDataSeriesSnapshot series))
           {
             series = store.GetSnapshot(symbol, interval, analysis.CalculatedAtUtc);
