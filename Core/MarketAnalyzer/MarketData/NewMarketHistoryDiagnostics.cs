@@ -58,6 +58,10 @@ namespace Core.MarketAnalyzer.MarketData
       TimeSpan interval = sourceInterval ?? TimeSpan.FromMinutes(5);
       if (interval <= TimeSpan.Zero) return output;
 
+      // Only markets with a current invalid asset measurement need source
+      // inspection. Reuse one immutable store snapshot across trend horizons
+      // to avoid sorting and allocating 5m histories thousands of times.
+      var snapshots = new Dictionary<string, MarketDataSeriesSnapshot>(StringComparer.OrdinalIgnoreCase);
       foreach (MarketTrendAnalysisSnapshot analysis in analyses.Values.Where(a => a != null))
       {
         if (analysis.TrendMinutes <= 0 || analysis.CalculatedAtUtc == default ||
@@ -65,6 +69,9 @@ namespace Core.MarketAnalyzer.MarketData
           continue;
         foreach (string symbol in analysis.AssetSymbols.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+          if (!analysis.AssetMetrics.TryGetValue(symbol, out var values) || values == null ||
+              !values.Values.Any(v => v != null && !v.IsValid && !v.IsStale && !v.IsNoTrades))
+            continue;
           DateTimeOffset? listed = onboardDate(symbol);
           if (!listed.HasValue || listed.Value <= DateTimeOffset.UnixEpoch ||
               listed.Value >= analysis.CalculatedAtUtc) continue;
@@ -72,10 +79,13 @@ namespace Core.MarketAnalyzer.MarketData
           // This must be a continuous, current series whose first traded candle
           // matches the native onboard date. A retained cache starting later
           // than listing is NOT evidence that exchange history did not exist.
-          MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, analysis.CalculatedAtUtc);
+          string cacheKey = symbol + "|" + analysis.CalculatedAtUtc.UtcTicks;
+          if (!snapshots.TryGetValue(cacheKey, out MarketDataSeriesSnapshot series))
+          {
+            series = store.GetSnapshot(symbol, interval, analysis.CalculatedAtUtc);
+            snapshots[cacheKey] = series;
+          }
           if (!IsVerifiedFromListing(series, listed.Value, analysis.ExpectedClosedCandleTimeUtc, interval))
-            continue;
-          if (!analysis.AssetMetrics.TryGetValue(symbol, out var values) || values == null)
             continue;
           foreach (var pair in values)
           {
