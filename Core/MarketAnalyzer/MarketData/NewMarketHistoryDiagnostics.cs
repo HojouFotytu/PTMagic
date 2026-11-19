@@ -160,10 +160,15 @@ namespace Core.MarketAnalyzer.MarketData
                 out var median) || median == null || !median.IsValid || median.IsStale)
             return false;
         }
-        else if (analysis.AssetMetrics.TryGetValue("BTCUSDT", out var btc) &&
-                 btc != null && btc.TryGetValue(MarketTrendMetrics.PriceTrend, out var btcReturn) &&
-                 (btcReturn == null || !btcReturn.IsValid || btcReturn.IsStale))
-          return false;
+        else
+        {
+          // Suppress dependent RelativeStrengthBTC only when the benchmark
+          // return is independently known valid, never when it is absent.
+          if (!analysis.AssetMetrics.TryGetValue("BTCUSDT", out var btc) || btc == null ||
+              !btc.TryGetValue(MarketTrendMetrics.PriceTrend, out var btcReturn) ||
+              btcReturn == null || !btcReturn.IsValid || btcReturn.IsStale)
+            return false;
+        }
         return reason.StartsWith("Asset return or ", StringComparison.OrdinalIgnoreCase)
           && reason.Contains(" is unavailable for MarketTrend ", StringComparison.OrdinalIgnoreCase);
       }
