@@ -1,5 +1,13 @@
 # Phase 1C OHLCV metrics deterministic tests
 
+## Current source/test boundary — November 19, 2026
+
+The current `Tests/Phase1COhlcv/Program.cs` calls **22 focused test groups**, including the newer verified-no-trade/90%-coverage Phase 3 group and the taker failure-category diagnostics. The previously reported **20/20 PASS** belongs to the earlier `33a33f0` checkpoint; no newer **22/22 PASS** is established by this documentation update. Running or publishing a new test result requires separate evidence.
+
+Current `4bbe299e` semantics for the four **Phase 3 global flow-price volume-share** metrics: at least **90%** of the frozen eligible market population observed, including source-verified no-trade assets as observed zero-volume periods. Other missing/invalid assets count against coverage and are excluded from numerator/denominator. The denominator consists of valid traded quote turnover and must be positive; a 90–99% observed subset can differ from the full cohort. The older 100% Phase 3 rule in the previous 20/20 test description is historical. Existing strict 100% quote-volume concentration requirements remain separate and unchanged.
+
+The [trading-need-first assessment](../../CHANGELOG-2.10.md#november-19-2026--trading-need-first-metric-reassessment-documentation-only-design-authority) is analytical guidance, not an implemented extra metric or change to the test contract. Current `StoreDataMaxHours=96` diagnostic retention is not a permanent analytical limit; source history must follow justified metric needs.
+
 ## Current Phase 3 / taker diagnostics status — November 17, 2026
 
 The user ran `Phase1COhlcv` **20/20 PASS** after `33a33f0` corrected an H72 epoch-aligned *test fixture* for the Phase 3 implementation `cbe919aa`. The eight Phase 3 metrics were tested for all four confirmation/divergence conditions, quote-volume shares, neutral/invalid values, 100% global coverage, the excluded partial UTC bar and H72 duration.
