@@ -494,6 +494,23 @@ internal static class Program
     Expect(NewMarketHistoryClassification.Analyze(analysis, ListingStore(),
       _ => Listing.AddDays(-100)).MarketCount == 0,
       "Older listings with retained-window gaps must remain warnings.");
+    var current = ListingTrend();
+    var missingBenchmark = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = current.MarketTrendName, TrendMinutes = current.TrendMinutes,
+      CalculatedAtUtc = current.CalculatedAtUtc,
+      ExpectedClosedCandleTimeUtc = current.ExpectedClosedCandleTimeUtc,
+      AssetSymbols = current.AssetSymbols, EnabledMetrics = current.EnabledMetrics,
+      HistoryRequirements = current.HistoryRequirements,
+      MarketMetrics = current.MarketMetrics,
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      { ["SOXXUSDT"] = current.AssetMetrics["SOXXUSDT"] }
+    };
+    var partial = NewMarketHistoryClassification.Analyze(Analyses(missingBenchmark),
+      ListingStore(), _ => Listing);
+    Expect(partial.MarketCount == 1 && partial.Affected["SOXXUSDT"].Count == 7 &&
+      !partial.IsExpected("SOXXUSDT", "H48", MarketTrendMetrics.RelativeStrengthBTC),
+      "Unverified BTC benchmark must not hide a dependent relative-strength warning.");
     _passed++;
   }
 
