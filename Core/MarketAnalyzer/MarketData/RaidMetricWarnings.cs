@@ -26,6 +26,12 @@ namespace Core.MarketAnalyzer.MarketData
       public bool ImplicitPriceTrend;
     }
 
+    private sealed class ReportedCause
+    {
+      public string Market;
+      public string Reason;
+    }
+
     private sealed class AssetFailure
     {
       public string Reason;
@@ -40,6 +46,9 @@ namespace Core.MarketAnalyzer.MarketData
       public int FailedRequests;
       public readonly HashSet<string> Markets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       public readonly List<Caller> Callers = new List<Caller>();
+      // Full reason/market facts are needed to safely classify >5 repeated
+      // SMS trigger requests; Callers remain bounded only for display.
+      public readonly List<ReportedCause> ReportedCauses = new List<ReportedCause>();
       public readonly List<string> FailureReasons = new List<string>();
       public FeatureValueSnapshot GlobalFeature;
       public bool UnknownMetric;
@@ -73,6 +82,8 @@ namespace Core.MarketAnalyzer.MarketData
       Issue issue = GetIssue(Name(trendName, "(unknown trend)"), MarketTrendMetrics.Normalize(metricName));
       issue.FailedRequests++;
       string cleaned = Clean(reason);
+      issue.ReportedCauses.Add(new ReportedCause
+        { Market = marketSymbol?.Trim() ?? "", Reason = cleaned });
       if (!issue.FailureReasons.Contains(cleaned, StringComparer.OrdinalIgnoreCase)
         && issue.FailureReasons.Count < MaxAssetReasonExamples)
       {
@@ -207,9 +218,10 @@ namespace Core.MarketAnalyzer.MarketData
       Issue[] reportable = _issues.Values.Where(issue =>
         !(newMarkets != null && issue.UnavailableAssets == 0 &&
           issue.GlobalFeature == null && !issue.UnknownMetric &&
-          issue.FailedRequests > 0 && issue.FailedRequests == issue.Callers.Count &&
-          issue.Callers.All(caller => !String.IsNullOrWhiteSpace(caller.Market) &&
-            newMarkets.IsExpected(caller.Market, issue.Trend, issue.Metric))))
+          issue.FailedRequests > 0 && issue.ReportedCauses.Count == issue.FailedRequests &&
+          issue.ReportedCauses.All(cause => !String.IsNullOrWhiteSpace(cause.Market) &&
+            newMarkets.IsExpected(cause.Market, issue.Trend, issue.Metric) &&
+            IsExpectedHistoryReport(cause.Reason))))
         .OrderBy(i => i.Trend, StringComparer.OrdinalIgnoreCase)
         .ThenBy(i => i.Metric, StringComparer.OrdinalIgnoreCase).ToArray();
       if (reportable.Length == 0 && String.IsNullOrWhiteSpace(_globalDecision))
@@ -228,6 +240,23 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       return lines;
+    }
+
+    // Only an unavailable-source result may be reclassified. Misconfigured
+    // triggers, population/scope errors and other failures stay WARN even
+    // when another metric for the same market lacks pre-listing history.
+    private static bool IsExpectedHistoryReport(string reason)
+    {
+      if (String.IsNullOrWhiteSpace(reason)) return false;
+      if (Contains(reason, "outside the selected asset population") ||
+          Contains(reason, "does not enable metric") ||
+          Contains(reason, "asset-only metric used globally") ||
+          Contains(reason, "requires a market-specific context") ||
+          Contains(reason, "unknown metric")) return false;
+      return Contains(reason, "unavailable") || Contains(reason, "Insufficient complete") ||
+        Contains(reason, "No exact closed-candle reference") ||
+        Contains(reason, "Missing normalized source candle") ||
+        Contains(reason, "Missing or invalid exact closed source candle");
     }
 
     /// <summary>
