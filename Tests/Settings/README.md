@@ -1,5 +1,7 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
+**New standalone focused fixture:** [Path Efficiency test analyzer](Path%20Efficiency/README.md) — isolated `settings.analyzer.json` testing `PricePathEfficiency` (SMS) and `MedianPricePathEfficiency` (GlobalSettings) across three **example** configured durations. Version 1.0.0, data-validity triggers only; the comprehensive analyzer below is unchanged. **Runtime acceptance pending**.
+
 ## November 21, 2026 — Path-efficiency metric fixture
 
 The TestMode-only analyzer fixture advances to **v2.4.0** and selects **PricePathEfficiency** (asset) and **MedianPricePathEfficiency** (global) on its existing M30 trend. The 43 prior metrics remain unchanged; the new 45-name catalogue comprises 31 global-capable and 14 asset-only names. Existing diagnostic trigger rules are unchanged. These metrics use only pre-existing closed normalized source candles. No live settings or trading presets are modified.
