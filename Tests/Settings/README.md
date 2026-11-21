@@ -1,12 +1,12 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
-**New standalone focused fixture:** [Path Efficiency test analyzer](Path%20Efficiency/README.md) — isolated `settings.analyzer.json` testing `PricePathEfficiency` (SMS) and `MedianPricePathEfficiency` (GlobalSettings) across three **example** configured durations. Version 1.0.0, data-validity triggers only; the comprehensive analyzer below is unchanged. **Runtime acceptance pending**.
+**Canonical testing analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), version **2.5.0**. This is the **only testing analyzer**. The prior additional fixtures were removed; no new directories or analyzers are created. G09 and SMS13 validate the newly introduced asset and global price-path efficiency across M30/H1/H4 without regime thresholds. Application build and focused tests have passed (25/9/84); deployment TestMode raid acceptance remains pending.
 
 ## November 21, 2026 — Path-efficiency metric fixture
 
-The TestMode-only analyzer fixture advances to **v2.4.0** and selects **PricePathEfficiency** (asset) and **MedianPricePathEfficiency** (global) on its existing M30 trend. The 43 prior metrics remain unchanged; the new 45-name catalogue comprises 31 global-capable and 14 asset-only names. Existing diagnostic trigger rules are unchanged. These metrics use only pre-existing closed normalized source candles. No live settings or trading presets are modified.
+The TestMode-only analyzer fixture advances to **v2.5.0** and selects **PricePathEfficiency** (asset) and **MedianPricePathEfficiency** (global) on its existing M30, H1 and H4 trends, with G09 and SMS13 validity triggers. The 43 prior metrics remain unchanged; the new 45-name catalogue comprises 31 global-capable and 14 asset-only names. All earlier diagnostic trigger rules are unchanged; only G09 and SMS13 were added. These metrics use only pre-existing closed normalized source candles. No live settings or trading presets are modified.
 
-**Build and runtime verification are still pending**; prior 43-metric PASS evidence does not certify the new code. Validate on a machine with .NET: build PTMagic.sln, then run Tests/Phase1COhlcv and Tests/Phase2AdaptiveAcquisition, followed by isolated TestMode raids.
+**Build and focused verification PASSED** (25 OHLCV groups, 9 adaptive-acquisition groups, 84 lifecycle checks); configured TestMode runtime verification is still pending. Validate on a machine with .NET: build PTMagic.sln, then run Tests/Phase1COhlcv and Tests/Phase2AdaptiveAcquisition, followed by isolated TestMode raids.
 
 ## Current analytical-development authority — November 19, 2026
 

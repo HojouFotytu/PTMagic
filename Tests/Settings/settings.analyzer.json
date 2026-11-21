@@ -1,12 +1,14 @@
 // TEST-ONLY PTMagic 2.10 comprehensive 45-metric analyzer. Use isolated TestMode only; never live trading.
 // SetIdentity = PTM2.10-45-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.4.0
+// SetVersion = 2.5.0
 // SetDate = 2026-11-21
-// TargetApplicationSource = post-146f56f-price-path-efficiency-source (build verification pending)
-// ApplicationBuildEvidence = NOT_RUN_FOR_45_METRIC_SOURCE
-// ApplicationFocusedEvidence = NOT_RUN_FOR_45_METRIC_SOURCE
+// TargetApplicationSource = 49dd01f-or-later (45-metric code)
+// ApplicationBuildEvidence = PASS_15.0s_at_f75f229_user_run_2026-11-21
+// ApplicationFocusedEvidence = PASS_25_Phase1COhlcv_9_Phase2AdaptiveAcquisition_84_ConfigurationLifecycle_at_f75f229
 // ConfiguredRuntimeAcceptance = NOT VERIFIED (LONG/SHORT TestMode evidence pending)
 // Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
+// Sole testing analyzer in Tests/Settings; G09 and SMS13 test new path metrics across M30/H1/H4.
+// New diagnostic bounds -0.000001..1.000001 cover the mathematically valid 0..1 range, not regimes.
 // No new presets, installed settings, or PTMagic software modifications are part of this fixture.
 {
   "AnalyzerSettings": {
@@ -76,7 +78,7 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 60,
-          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion,BuyerFlowPriceConfirmation,SellerFlowPriceConfirmation,BuyerFlowPriceDivergence,SellerFlowPriceDivergence,BuyerFlowPriceConfirmationVolumeShare,SellerFlowPriceConfirmationVolumeShare,BuyerFlowPriceDivergenceVolumeShare,SellerFlowPriceDivergenceVolumeShare",
+          "Metrics": "PriceTrend,MedianPriceTrend,MedianPricePathEfficiency,PricePathEfficiency,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion,BuyerFlowPriceConfirmation,SellerFlowPriceConfirmation,BuyerFlowPriceDivergence,SellerFlowPriceDivergence,BuyerFlowPriceConfirmationVolumeShare,SellerFlowPriceConfirmationVolumeShare,BuyerFlowPriceDivergenceVolumeShare,SellerFlowPriceDivergenceVolumeShare",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 1,
@@ -124,7 +126,7 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 240,
-          "Metrics": "PriceTrend,MedianPriceTrend,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
+          "Metrics": "PriceTrend,MedianPriceTrend,MedianPricePathEfficiency,PricePathEfficiency,MeanMedianSpread,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,Concentration,VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance,MedianTakerBuyRatio,BuyerDominanceBreadth,StrongBuyerDominanceBreadth,TakerImbalanceDispersion",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 1.6,
@@ -571,6 +573,39 @@
             "MarketTrendRelation": "Absolute",
             "MinChange": 1e-9,
             "MaxChange": 101
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_G09_PATH_EFFICIENCY",
+        "TriggerConnection": "AND",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M30",
+            "Metric": "MedianPricePathEfficiency",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -0.000001,
+            "MaxChange": 1.000001
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "MedianPricePathEfficiency",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -0.000001,
+            "MaxChange": 1.000001
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H4",
+            "Metric": "MedianPricePathEfficiency",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -0.000001,
+            "MaxChange": 1.000001
           }
         ],
         "PairsProperties": {},
@@ -1171,6 +1206,47 @@
             "MarketTrendRelation": "Absolute",
             "MinChange": 0.5,
             "MaxChange": 1.01
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS13_PATH_EFFICIENCY",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M30",
+            "Metric": "PricePathEfficiency",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -0.000001,
+            "MaxChange": 1.000001
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "PricePathEfficiency",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -0.000001,
+            "MaxChange": 1.000001
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H4",
+            "Metric": "PricePathEfficiency",
+            "MarketTrendRelation": "Absolute",
+            "MinChange": -0.000001,
+            "MaxChange": 1.000001
           }
         ],
         "OffTriggers": [],
