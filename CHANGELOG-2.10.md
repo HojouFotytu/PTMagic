@@ -1,5 +1,13 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 21, 2026 — PricePathEfficiency and MedianPricePathEfficiency source development
+
+Two **regime-descriptive** metrics are added as one source-candle path family: asset **PricePathEfficiency** and global **MedianPricePathEfficiency**. Registration increases the published names from 43 to 45. The global median is equal-market and uses the frozen eligible cohort with existing 90% coverage semantics. Asset dependencies computed for the median are published for Monitor display without being activated as SMS triggers.
+
+The calculation uses consecutive, fully closed normalized candle closes spanning any configured TrendMinutes and the same pinned rolling endpoint as PriceTrend. Price changes are accumulated as logarithmic steps; the ratio of absolute net movement to total absolute movement is in 0–1. One-step, flat, stale, missing, misaligned or incomplete paths are UNAVAILABLE. Fiat-enabled trends require contiguous same-timestamp quote-to-USDT conversion closes. There are no new Binance endpoints, fixed horizons, retention changes, strategy modifications, or edits to the existing 43 formulas.
+
+Market Analyzer now recognizes the global metric in Path Quality and presents both outputs as nondirectional, dimensionless values. Focused tests cover the new registry scopes, mathematical properties, missing and stale observations, 90% global coverage, Fiat conversion and opt-in publication. The isolated test fixture is versioned v2.4.0 with both metrics enabled on M30. **Build, focused .NET tests and configured runtime TestMode acceptance remain unverified**, because the editing environment did not have the .NET SDK.
+
 ## November 19, 2026 — Separate verified newly listed market history from Metric Warnings
 
 **Source implementation (not yet .NET-built or runtime-accepted):** Binance Futures existing `/exchangeInfo` ingest retains source `onboardDate` in cached market metadata and exposes a nullable verified listing timestamp. New `NewMarketHistoryClassification` evaluates already-computed per-asset invalid snapshots strictly for required history **predating that listing**, with available, current, contiguous 5m source candles beginning at the listing boundary. A missing, invalid or unverified onboard date, a later cache start, post-listing gaps, stale/invalid observations, insufficient configured retention or an unrelated failure **never** authorizes suppression.

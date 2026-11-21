@@ -21,6 +21,8 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public const string PriceTrend = "PriceTrend";
     public const string MedianPriceTrend = "MedianPriceTrend";
+    public const string PricePathEfficiency = "PricePathEfficiency";
+    public const string MedianPricePathEfficiency = "MedianPricePathEfficiency";
     public const string MeanMedianSpread = "MeanMedianSpread";
     public const string Breadth = "Breadth";
     public const string Dispersion = "Dispersion";
@@ -70,6 +72,8 @@ namespace Core.MarketAnalyzer.MarketData
       {
         [PriceTrend] = MarketTrendMetricScope.Both,
         [MedianPriceTrend] = MarketTrendMetricScope.Global,
+        [PricePathEfficiency] = MarketTrendMetricScope.Asset,
+        [MedianPricePathEfficiency] = MarketTrendMetricScope.Global,
         [MeanMedianSpread] = MarketTrendMetricScope.Global,
         [Breadth] = MarketTrendMetricScope.Global,
         [Dispersion] = MarketTrendMetricScope.Global,

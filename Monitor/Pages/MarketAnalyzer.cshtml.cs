@@ -143,6 +143,8 @@ namespace Monitor.Pages
       new GlobalMetricGroup("Price Direction",
         MarketTrendMetrics.PriceTrend, MarketTrendMetrics.MedianPriceTrend,
         MarketTrendMetrics.MeanMedianSpread),
+      new GlobalMetricGroup("Path Quality",
+        MarketTrendMetrics.MedianPricePathEfficiency),
       new GlobalMetricGroup("Market Structure",
         MarketTrendMetrics.Breadth, MarketTrendMetrics.Dispersion,
         MarketTrendMetrics.Concentration),
@@ -333,6 +335,8 @@ namespace Monitor.Pages
         return "text-muted";
       }
 
+      // Price-path directness is nondirectional; do not color it as a buy/sell signal.
+      if (metric == MarketTrendMetrics.PricePathEfficiency) return "";
       // Volume-expansion multiples are neutral at 1.0; signed metrics at zero.
       double neutralValue = metric == MarketTrendMetrics.VolumeExpansion ? 1.0
         : metric == MarketTrendMetrics.TakerBuyRatio ? 0.5 : 0.0;
@@ -349,7 +353,8 @@ namespace Monitor.Pages
       }
 
       double value = feature.Value.Value;
-      if (metric == MarketTrendMetrics.CorrelationToBTC || TakerFlowFeatureEngine.IsMetric(metric))
+      if (metric == MarketTrendMetrics.PricePathEfficiency ||
+          metric == MarketTrendMetrics.CorrelationToBTC || TakerFlowFeatureEngine.IsMetric(metric))
       {
         return value.ToString("0.0000", CultureInfo.InvariantCulture);
       }
@@ -362,6 +367,7 @@ namespace Monitor.Pages
 
     public string GlobalMetricColorClass(string metric, FeatureValueSnapshot feature)
     {
+      if (metric == MarketTrendMetrics.MedianPricePathEfficiency) return "";
       if (metric == MarketTrendMetrics.MedianTakerBuyRatio)
       {
         if (feature == null || !feature.IsValid || feature.IsStale ||
@@ -415,6 +421,7 @@ namespace Monitor.Pages
           CultureInfo.InvariantCulture) + "%";
       }
       if (metric == MarketTrendMetrics.MedianTakerBuyRatio ||
+          metric == MarketTrendMetrics.MedianPricePathEfficiency ||
           metric == MarketTrendMetrics.TakerImbalanceDispersion)
       {
         return feature.Value.Value.ToString("0.0000", CultureInfo.InvariantCulture);
@@ -465,6 +472,8 @@ namespace Monitor.Pages
       {
         MarketTrendMetrics.PriceTrend => "Price Trend",
         MarketTrendMetrics.MedianPriceTrend => "Median Price Trend",
+        MarketTrendMetrics.PricePathEfficiency => "Price Path Efficiency",
+        MarketTrendMetrics.MedianPricePathEfficiency => "Median Price Path Efficiency",
         MarketTrendMetrics.MeanMedianSpread => "Mean-Median Spread",
         MarketTrendMetrics.Breadth => "Positive Breadth",
         MarketTrendMetrics.Dispersion => "Dispersion",
@@ -523,6 +532,8 @@ namespace Monitor.Pages
       {
         MarketTrendMetrics.PriceTrend => "Arithmetic mean percentage price change of valid markets over this MarketTrend timeframe, calculated from normalized closed-candle data. Blank Metrics uses normalized PriceTrend. TrendThreshold excludes price outliers from this mean only, not from the other metrics. Fiat mode converts quote-denominated returns using synchronized quote/USDT prices.",
         MarketTrendMetrics.MedianPriceTrend => "Median percentage price change of valid markets over this MarketTrend timeframe. The median is resistant to a small number of extreme movers.",
+        MarketTrendMetrics.PricePathEfficiency => "Dimensionless 0–1 directness of an asset\'s closed-candle price path over the configured rolling MarketTrend duration; direction comes from PriceTrend. Fully closed, contiguous sources are required; a flat or too-short path is unavailable. Fiat mode uses aligned converted prices.",
+        MarketTrendMetrics.MedianPricePathEfficiency => "Equal-market median of valid asset PricePathEfficiency for the exact eligible global cohort; requires at least 90% source coverage. Nondirectional and not comparable across different durations without separate context.",
         MarketTrendMetrics.MeanMedianSpread => "Unfiltered arithmetic mean return minus MedianPriceTrend for the same market population and timeframe. Positive values mean upside outliers are pulling the mean above the median; negative values mean downside outliers are pulling it below the median. Displayed as a signed % for readability; mathematically this is an absolute difference between percentage returns.",
         MarketTrendMetrics.Breadth => "Percentage of valid markets with a price change greater than 0 over this MarketTrend timeframe.",
         MarketTrendMetrics.Dispersion => "Population standard deviation of valid market price changes over this MarketTrend timeframe. Displayed as a percentage magnitude.",

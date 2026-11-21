@@ -45,12 +45,17 @@ internal static class Program
   private static void MetricRegistry()
   {
     string[] names = MarketTrendMetrics.Names.ToArray();
-    Check(names.Length == 43 && names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 43, "Registry must have 35 distinct metrics.");
+    Check(names.Length == 45 && names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 45, "Registry must have 45 distinct metrics.");
     int global = names.Count(name => MarketTrendMetrics.TryGetScope(name, out var scope) &&
       (scope == MarketTrendMetricScope.Both || scope == MarketTrendMetricScope.Global));
     int assetOnly = names.Count(name => MarketTrendMetrics.TryGetScope(name, out var scope) &&
       scope == MarketTrendMetricScope.Asset);
-    Check(global == 30 && assetOnly == 13 && names.Contains(MarketTrendMetrics.TakerBuyRatio) &&
+    Check(global == 31 && assetOnly == 14 &&
+      MarketTrendMetrics.TryGetScope(MarketTrendMetrics.PricePathEfficiency, out var pathScope) &&
+      pathScope == MarketTrendMetricScope.Asset &&
+      MarketTrendMetrics.TryGetScope(MarketTrendMetrics.MedianPricePathEfficiency, out var medianPathScope) &&
+      medianPathScope == MarketTrendMetricScope.Global &&
+      names.Contains(MarketTrendMetrics.TakerBuyRatio) &&
       names.Contains(MarketTrendMetrics.TakerImbalance) && names.Contains(MarketTrendMetrics.FundingRate) &&
       names.Contains(MarketTrendMetrics.FundingSum) &&
       names.Contains(MarketTrendMetrics.MedianFundingRate) &&
@@ -70,7 +75,7 @@ internal static class Program
       names.Contains(MarketTrendMetrics.SellerFlowPriceConfirmationVolumeShare) &&
       names.Contains(MarketTrendMetrics.BuyerFlowPriceDivergenceVolumeShare) &&
       names.Contains(MarketTrendMetrics.SellerFlowPriceDivergenceVolumeShare), "Wrong retained metric scope.");
-    Passed("43-metric catalogue: 30 global-capable and 13 asset-only");
+    Passed("45-metric catalogue: 31 global-capable and 14 asset-only");
   }
 
   private static void FundingQuota()

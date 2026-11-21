@@ -141,6 +141,8 @@ namespace Core.MarketAnalyzer.MarketData
       if (TakerFlowFeatureEngine.IsMetric(metricName) ||
           metricName == MarketTrendMetrics.MedianTakerBuyRatio ||
           metricName == MarketTrendMetrics.TakerImbalanceDispersion) return "";
+      if (metricName == MarketTrendMetrics.PricePathEfficiency ||
+          metricName == MarketTrendMetrics.MedianPricePathEfficiency) return "";
       if (metricName == MarketTrendMetrics.CorrelationToBTC ||
         metricName == MarketTrendMetrics.MeanCorrelationToBTC ||
         metricName == MarketTrendMetrics.MedianCorrelationToBTC)

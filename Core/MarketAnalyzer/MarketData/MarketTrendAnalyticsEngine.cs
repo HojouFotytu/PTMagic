@@ -225,6 +225,30 @@ namespace Core.MarketAnalyzer.MarketData
             assetUniverse.Length, calculatedAtUtc)
         : null;
 
+      // Path directness uses the same pinned rolling endpoint as PriceTrend.
+      // One per-asset calculation serves both the asset and global-median outputs.
+      if (PricePathEfficiencyEngine.HasMetrics(enabledMetrics))
+      {
+        string pathQuote = benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase)
+          ? benchmarkSymbol.Substring(3) : "USDT";
+        PricePathEfficiencyResult path = PricePathEfficiencyEngine.Calculate(
+          marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval,
+          calculatedAtUtc, pathQuote);
+        foreach (var metric in path.GlobalMetrics)
+          marketMetrics[metric.Key] = metric.Value;
+        foreach (var asset in path.AssetMetrics)
+        {
+          var merged = assetMetrics.TryGetValue(asset.Key,
+              out IReadOnlyDictionary<string, FeatureValueSnapshot> previous)
+            ? new Dictionary<string, FeatureValueSnapshot>(previous, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (var metric in asset.Value)
+            merged[metric.Key] = metric.Value;
+          assetMetrics[asset.Key] =
+            new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+      }
+
       // Phase 1C runs only for explicitly enabled metrics, sharing the exact
       // frozen MarketTrend populations and the existing normalized OHLCV store.
       if (MarketTrendPhase1CEngine.HasMetrics(enabledMetrics))

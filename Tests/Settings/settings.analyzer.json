@@ -1,10 +1,10 @@
-// TEST-ONLY PTMagic 2.10 comprehensive 43-metric analyzer. Use isolated TestMode only; never live trading.
-// SetIdentity = PTM2.10-43-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.3.0
-// SetDate = 2026-11-17
-// TargetApplicationSource = cbe919aa-or-later-43-metric-compatible (33a33f0 H72 test fix)
-// ApplicationBuildEvidence = PASS_16.9s_at_cbe919aa_BEFORE_THIS_FIXTURE_UPDATE
-// ApplicationFocusedEvidence = PASS_20/20_Phase1COhlcv_AND_9/9_Phase2AdaptiveAcquisition_at_33a33f0
+// TEST-ONLY PTMagic 2.10 comprehensive 45-metric analyzer. Use isolated TestMode only; never live trading.
+// SetIdentity = PTM2.10-45-METRIC-MULTITREND-DIAGNOSTIC
+// SetVersion = 2.4.0
+// SetDate = 2026-11-21
+// TargetApplicationSource = post-146f56f-price-path-efficiency-source (build verification pending)
+// ApplicationBuildEvidence = NOT_RUN_FOR_45_METRIC_SOURCE
+// ApplicationFocusedEvidence = NOT_RUN_FOR_45_METRIC_SOURCE
 // ConfiguredRuntimeAcceptance = NOT VERIFIED (LONG/SHORT TestMode evidence pending)
 // Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
 // No new presets, installed settings, or PTMagic software modifications are part of this fixture.
@@ -52,7 +52,7 @@
           "TrendCurrency": "Market",
           "MaxMarkets": 0,
           "TrendMinutes": 30,
-          "Metrics": "PriceTrend,MedianPriceTrend,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance",
+          "Metrics": "PriceTrend,MedianPriceTrend,PricePathEfficiency,MedianPricePathEfficiency,Breadth,Dispersion,RelativeStrengthMarket,RelativeStrengthBTC,ATRP,MedianATRP,VolatilityBreadth,VolumeExpansion,MedianVolumeExpansion,VolumeExpansionBreadth,StrongVolumeExpansionBreadth,CorrelationToBTC,MeanCorrelationToBTC,MedianCorrelationToBTC,TakerBuyRatio,TakerImbalance",
           "ATRPeriod": 14,
           "VolumeExpansionLookback": 20,
           "ATRPBreadthThreshold": 0.9,

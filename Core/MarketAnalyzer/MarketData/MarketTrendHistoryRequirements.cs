@@ -76,7 +76,16 @@ namespace Core.MarketAnalyzer.MarketData
         long minimumSourceCount = trendSourceCount + 1;
         string basis = "One TrendMinutes return and its exact reference close.";
 
-        if (metric == MarketTrendMetrics.ATRP || metric == MarketTrendMetrics.MedianATRP ||
+        if (metric == MarketTrendMetrics.PricePathEfficiency ||
+          metric == MarketTrendMetrics.MedianPricePathEfficiency)
+        {
+          basis = "One pinned rolling TrendMinutes interval with N+1 exactly aligned, " +
+            "fully closed normalized source prices, N=TrendMinutes/source interval. " +
+            "Requires at least two close-to-close movements. A Fiat trend also " +
+            "requires synchronized quote/USDT conversion closes; global median " +
+            "requires at least 90% valid source-verified eligible assets.";
+        }
+        else if (metric == MarketTrendMetrics.ATRP || metric == MarketTrendMetrics.MedianATRP ||
           metric == MarketTrendMetrics.VolatilityBreadth)
         {
           alignedTrendPeriods = true;

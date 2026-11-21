@@ -38,6 +38,9 @@ internal static class Program
       TestPhase3VerifiedNoTradesAndCoverage();
       TestPhase3H72();
       TestTakerKlineMapper();
+      TestPathEfficiencyMath();
+      TestPathEfficiencyCoverage();
+      TestPathEfficiencyFiatAndValidity();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
       return 0;
     }
@@ -870,6 +873,137 @@ internal static class Program
     Assert(candles[1].QuoteVolume == 100 && !candles[1].TakerBuyQuoteVolume.HasValue &&
       candles[2].QuoteVolume == 100 && !candles[2].TakerBuyQuoteVolume.HasValue,
       "Malformed or absent taker fields must not fabricate zero or destroy valid OHLCV.");
+    _passed++;
+  }
+
+
+  private static void AddPathCandles(MarketDataStore store, string symbol,
+    IReadOnlyList<double> closes, int skip = -1)
+  {
+    for (int i = 0; i < closes.Count; i++)
+    {
+      if (i == skip) continue;
+      double close = closes[i];
+      store.UpsertCandle(new MarketCandle
+      {
+        Symbol = symbol, Interval = Interval,
+        OpenTimeUtc = Start.AddMinutes(i * 5),
+        CloseTimeUtc = Start.AddMinutes((i + 1) * 5).AddMilliseconds(-1),
+        Open = close, High = close, Low = close, Close = close,
+        BaseVolume = 1, QuoteVolume = 1, TradeCount = 1, IsClosed = true
+      });
+    }
+  }
+
+  private static FeatureValueSnapshot PathValue(MarketDataStore store, string symbol,
+    int minutes, DateTimeOffset at, string currency = "Market", string quote = "USDT")
+  {
+    var trend = new MarketTrend { Name = "PathTest", TrendMinutes = minutes,
+      TrendCurrency = currency, Metrics = "PricePathEfficiency" };
+    return PricePathEfficiencyEngine.Calculate(
+      trend, MarketTrendMetrics.ParseEnabled(trend), Array.Empty<string>(),
+      new[] { symbol }, store, Interval, at, quote)
+      .AssetMetrics[symbol][MarketTrendMetrics.PricePathEfficiency];
+  }
+
+  private static void TestPathEfficiencyMath()
+  {
+    var store = NewStore();
+    AddPathCandles(store, "MONOUSDT", new[] { 100d, 101d, 102d, 103d, 104d });
+    AddPathCandles(store, "BACKUSDT", new[] { 100d, 102d, 99d, 103d, 100d });
+    AddPathCandles(store, "FLATUSDT", new[] { 100d, 100d, 100d, 100d, 100d });
+    var now = Start.AddMinutes(25).AddSeconds(1);
+    Near(PathValue(store, "MONOUSDT", 20, now), 1,
+      "Monotone directness is 1");
+    Near(PathValue(store, "BACKUSDT", 20, now), 0,
+      "Return-to-origin path directness is zero");
+    Invalid(PathValue(store, "FLATUSDT", 20, now),
+      "All-flat paths have an undefined denominator");
+    Invalid(PathValue(store, "MONOUSDT", 5, now),
+      "One price step cannot describe a path");
+    Near(PathValue(store, "MONOUSDT", 15, now), 1,
+      "Arbitrary configured valid 15m duration");
+    _passed++;
+  }
+
+  private static void TestPathEfficiencyCoverage()
+  {
+    var now = Start.AddMinutes(25).AddSeconds(1);
+    var trend = new MarketTrend { Name = "PathGlobal", TrendMinutes = 20,
+      Metrics = "MedianPricePathEfficiency" };
+    var symbols = Enumerable.Range(0, 10)
+      .Select(i => "PATH" + i.ToString("D2") + "USDT").ToArray();
+    MarketDataStore Build(int missing)
+    {
+      var store = NewStore();
+      foreach (string symbol in symbols)
+        AddPathCandles(store, symbol,
+          new[] { 100d, 102d, 101d, 103d, 104d },
+          skip: Array.IndexOf(symbols, symbol) >= 10 - missing ? 2 : -1);
+      return store;
+    }
+    var full = MarketTrendAnalyticsEngine.Calculate(
+      trend, symbols, symbols, Build(0), Interval, now);
+    double expected = Math.Abs(Math.Log(104d / 100d)) /
+      (Math.Abs(Math.Log(102d / 100d)) + Math.Abs(Math.Log(101d / 102d)) +
+       Math.Abs(Math.Log(103d / 101d)) + Math.Abs(Math.Log(104d / 103d)));
+    Near(full.MarketMetrics[MarketTrendMetrics.MedianPricePathEfficiency], expected,
+      "Median across eligible asset path values");
+    Assert(full.AssetMetrics.Count == 10 &&
+      full.AssetMetrics.Values.All(m => m.ContainsKey(MarketTrendMetrics.PricePathEfficiency)),
+      "Global-only mode publishes already-calculated per-asset values");
+    Assert(!full.EnabledMetrics.Contains(MarketTrendMetrics.PricePathEfficiency),
+      "Display-only dependency does not enable an asset trigger.");
+    var ninety = MarketTrendAnalyticsEngine.Calculate(trend,
+      symbols, symbols, Build(1), Interval, now)
+      .MarketMetrics[MarketTrendMetrics.MedianPricePathEfficiency];
+    Near(ninety, expected, "90% global coverage passes");
+    Assert(ninety.SampleCount == 9 && ninety.EligibleSampleCount == 10,
+      "Global 90% coverage preserves fixed cohort");
+    var eighty = MarketTrendAnalyticsEngine.Calculate(trend,
+      symbols, symbols, Build(2), Interval, now)
+      .MarketMetrics[MarketTrendMetrics.MedianPricePathEfficiency];
+    Invalid(eighty, "80% global coverage fails");
+    Assert(eighty.EligibleSampleCount == 10,
+      "Invalid observations cannot shrink global denominator");
+    var assetOnly = new MarketTrend { Name = "AssetOnly", TrendMinutes = 20,
+      Metrics = "PricePathEfficiency" };
+    var asset = MarketTrendAnalyticsEngine.Calculate(assetOnly,
+      symbols, symbols, Build(0), Interval, now);
+    Assert(!asset.MarketMetrics.ContainsKey(MarketTrendMetrics.MedianPricePathEfficiency)
+      && asset.AssetMetrics.Count == 10, "Asset-only selection stays independent");
+    _passed++;
+  }
+
+  private static void TestPathEfficiencyFiatAndValidity()
+  {
+    var store = NewStore();
+    AddPathCandles(store, "BTCETH", new[] { 100d, 105d, 100d, 105d, 100d });
+    AddPathCandles(store, "ETHUSDT", new[] { 1d, 1.1d, 1.2d, 1.3d, 1.4d });
+    var now = Start.AddMinutes(25).AddSeconds(1);
+    Near(PathValue(store, "BTCETH", 20, now, "Fiat", "ETH"), 1,
+      "Synchronized Fiat conversion must use every intermediate close");
+    Invalid(PathValue(store, "BTCETH", 20, now, "Fiat", "UNKNOWN"),
+      "Missing quote conversion is unavailable");
+    var gap = NewStore();
+    AddPathCandles(gap, "BTCETH", new[] { 100d, 105d, 100d, 105d, 100d });
+    AddPathCandles(gap, "ETHUSDT", new[] { 1d, 1.1d, 1.2d, 1.3d, 1.4d }, skip: 2);
+    Invalid(PathValue(gap, "BTCETH", 20, now, "Fiat", "ETH"),
+      "Gap in conversion path fails closed");
+    Invalid(PathValue(store, "BTCETH", 20, now.AddMinutes(30), "Fiat", "ETH"),
+      "Stale source/conversion fails closed");
+    Invalid(PathValue(store, "BTCETH", 30, now),
+      "Missing earliest history is unavailable");
+    store.UpsertCandle(new MarketCandle
+    {
+      Symbol = "BTCETH", Interval = Interval,
+      OpenTimeUtc = Start.AddMinutes(25),
+      CloseTimeUtc = Start.AddMinutes(30).AddMilliseconds(-1),
+      Open = 100, High = 1000, Low = 1, Close = 1000,
+      BaseVolume = 1, QuoteVolume = 1, TradeCount = 1, IsClosed = false
+    });
+    Near(PathValue(store, "BTCETH", 20, now, "Fiat", "ETH"), 1,
+      "Currently forming candle must be excluded");
     _passed++;
   }
 
