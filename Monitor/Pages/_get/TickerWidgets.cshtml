@@ -59,7 +59,7 @@
 }
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined @globalIconColor" data-ticker-role="global-card">
-  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Selected global setting; see details for confirmed delivery">Selected: @Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-global-setting text-left'></div></div>"></i></a></span>
+  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Selected global setting; see details for confirmed delivery">@Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-global-setting text-left'></div></div>"></i></a></span>
 </div>
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined" data-ticker-role="sms-card">
