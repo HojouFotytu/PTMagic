@@ -424,7 +424,7 @@ namespace Core.ProfitTrailer
             {
               if (strategy.Name.Contains("STATS-TSL") && (!strategy.Name.Contains("TSL-STRAT")))
               {
-                strategyText += "<span class=\"label label-warn\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategy.Name + "\" >" + StrategyHelper.GetStrategyShortcut(strategy.Name, false) + "<i class=\"fa fa-line-chart text-success\"></i></span> ";
+                strategyText += " <i class=\"fa fa-line-chart text-success\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + strategy.Name + "\"></i> ";
               }
               else if (strategy.Name.Contains("STATS-TPS"))
               {
