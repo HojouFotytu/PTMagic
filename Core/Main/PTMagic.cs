@@ -1150,6 +1150,12 @@ namespace Core.Main
                         Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc)
                     : null;
                 IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses, newMarketHistory);
+                // Expected flat 0/0 efficiency is informative, not a broken
+                // source. Preserve all market/caller evidence in file DEBUG.
+                foreach (string flatPathInfo in this._raidMetricWarnings.BuildFlatPathInfoLines())
+                  this.Log.DoLogInfo(flatPathInfo);
+                foreach (string flatPathDetail in this._raidMetricWarnings.BuildFlatPathDebugLines())
+                  this.Log.DoLogDebug(flatPathDetail);
                 foreach (string newMarketInfo in this._raidMetricWarnings.BuildNewMarketInfoLines(newMarketHistory))
                   this.Log.DoLogInfo(newMarketInfo);
                 foreach (string noTradeSummary in this._raidMetricWarnings.BuildNoTradeDebugLines(analyses))

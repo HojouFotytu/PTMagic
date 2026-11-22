@@ -37,6 +37,7 @@ namespace Core.MarketAnalyzer.MarketData
       public string Reason;
       public string ExampleMarket;
       public int Count;
+      public bool Stale;
     }
 
     private sealed class Issue
@@ -46,6 +47,11 @@ namespace Core.MarketAnalyzer.MarketData
       public int FailedRequests;
       public readonly HashSet<string> Markets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       public readonly List<Caller> Callers = new List<Caller>();
+      // Preserve all distinct caller identities for DEBUG; the WARN UI keeps
+      // only its prior five bounded examples.
+      public readonly List<Caller> AllCallers = new List<Caller>();
+      public readonly HashSet<string> UnavailableAssetMarkets =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       // Full reason/market facts are needed to safely classify >5 repeated
       // SMS trigger requests; Callers remain bounded only for display.
       public readonly List<ReportedCause> ReportedCauses = new List<ReportedCause>();
@@ -104,6 +110,10 @@ namespace Core.MarketAnalyzer.MarketData
         Trigger = trigger?.Trim() ?? "",
         ImplicitPriceTrend = String.IsNullOrWhiteSpace(metricName)
       };
+      if (!issue.AllCallers.Any(existing => SameCaller(existing, caller)))
+      {
+        issue.AllCallers.Add(caller);
+      }
       if (issue.Callers.Count < MaxCallerExamples &&
         !issue.Callers.Any(existing => SameCaller(existing, caller)))
       {
@@ -126,6 +136,7 @@ namespace Core.MarketAnalyzer.MarketData
         issue.UnavailableAssets = 0;
         issue.EligibleAssets = 0;
         issue.AssetFailures.Clear();
+        issue.UnavailableAssetMarkets.Clear();
         issue.OtherAssetFailures = 0;
       }
 
@@ -180,11 +191,13 @@ namespace Core.MarketAnalyzer.MarketData
               }
 
               unavailable++;
+              GetIssue(trend, metric).UnavailableAssetMarkets.Add(symbol);
               string reason = feature == null ? "No metric snapshot was published."
                 : !String.IsNullOrWhiteSpace(feature.InvalidReason) ? feature.InvalidReason
                 : feature.IsStale ? "The market data is stale." : "No valid metric value was available.";
 
               AssetFailure existing = reasons.FirstOrDefault(item =>
+                item.Stale == (feature?.IsStale == true) &&
                 String.Equals(item.Reason, reason, StringComparison.OrdinalIgnoreCase));
               if (existing != null)
               {
@@ -192,7 +205,9 @@ namespace Core.MarketAnalyzer.MarketData
               }
               else if (reasons.Count < MaxAssetReasonExamples)
               {
-                reasons.Add(new AssetFailure { Reason = reason, Count = 1, ExampleMarket = symbol });
+                reasons.Add(new AssetFailure {
+                  Reason = reason, Count = 1, ExampleMarket = symbol, Stale = feature?.IsStale == true
+                });
               }
               else
               {
@@ -216,6 +231,7 @@ namespace Core.MarketAnalyzer.MarketData
       // EVERY reported caller is a verified, market-specific pre-listing gap.
       // Global and mixed causes stay WARN, as do unknown/indeterminate decisions.
       Issue[] reportable = _issues.Values.Where(issue =>
+        !IsVerifiedFlatPath(issue) &&
         !(newMarkets != null && issue.UnavailableAssets == 0 &&
           issue.GlobalFeature == null && !issue.UnknownMetric &&
           issue.FailedRequests > 0 && issue.ReportedCauses.Count == issue.FailedRequests &&
@@ -239,6 +255,67 @@ namespace Core.MarketAnalyzer.MarketData
         lines.Add("+   " + ExplainGlobalDecision(_globalDecision));
       }
 
+      return lines;
+    }
+
+    // This is intentionally narrow: only the *exact* mathematical 0/0
+    // result from valid, nonstale asset price candles can become informational.
+    // Any other unavailable reason, mixed cause, missing snapshot, global
+    // failure or stale metric remains a normal WARN.
+    private static bool IsVerifiedFlatPath(Issue issue)
+    {
+      if (issue == null ||
+          !String.Equals(issue.Metric, MarketTrendMetrics.PricePathEfficiency, StringComparison.OrdinalIgnoreCase) ||
+          issue.UnknownMetric || issue.GlobalFeature != null ||
+          issue.UnavailableAssets <= 0 || issue.EligibleAssets <= 0 ||
+          issue.OtherAssetFailures != 0 || issue.AssetFailures.Count == 0 ||
+          issue.AssetFailures.Sum(failure => failure.Count) != issue.UnavailableAssets ||
+          issue.AssetFailures.Any(failure => failure.Stale ||
+            !String.Equals(Clean(failure.Reason).TrimEnd('.'),
+              PricePathEfficiencyEngine.FlatPathUnavailableReason.TrimEnd('.'),
+              StringComparison.OrdinalIgnoreCase)) ||
+          issue.FailedRequests != issue.ReportedCauses.Count ||
+          issue.ReportedCauses.Any(cause => String.IsNullOrWhiteSpace(cause.Market) ||
+            !Contains(cause.Reason, PricePathEfficiencyEngine.FlatPathUnavailableReason)) ||
+          issue.AllCallers.Any(caller => !caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) &&
+            !caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase)))
+        return false;
+      return true;
+    }
+
+    // Call after BuildLines(analyses), which joins exact runtime snapshots
+    // with recorded trigger requests. This changes only log classification.
+    public IReadOnlyList<string> BuildFlatPathInfoLines()
+    {
+      return _issues.Values
+        .Where(IsVerifiedFlatPath)
+        .OrderBy(issue => issue.Trend, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(issue => issue.Metric, StringComparer.OrdinalIgnoreCase)
+        .Select(issue => "+ " + issue.Trend + " " + issue.Metric + ": " +
+          issue.UnavailableAssets + "/" + issue.EligibleAssets +
+          " unavailable (flat price paths" +
+          (issue.FailedRequests > 0 ? "; " + issue.FailedRequests + " SMS trigger evaluations" : "") + ").")
+        .ToArray();
+    }
+
+    // DEBUG retains every invalid market and every distinct SMS caller, even
+    // after the previous bounded five-example WARN rendering has been retired
+    // for verified flat paths.
+    public IReadOnlyList<string> BuildFlatPathDebugLines()
+    {
+      var lines = new List<string>();
+      foreach (Issue issue in _issues.Values.Where(IsVerifiedFlatPath)
+        .OrderBy(issue => issue.Trend, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(issue => issue.Metric, StringComparer.OrdinalIgnoreCase))
+      {
+        lines.Add("Verified flat-path detail: " + issue.Trend + " " + issue.Metric +
+          "; invalid markets=" + String.Join(", ", issue.UnavailableAssetMarkets
+            .OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)) +
+          "; trigger evaluations=" + issue.FailedRequests +
+          "; reason=" + PricePathEfficiencyEngine.FlatPathUnavailableReason);
+        foreach (Caller caller in issue.AllCallers)
+          lines.Add("Verified flat-path affected trigger: " + DescribeCaller(caller));
+      }
       return lines;
     }
 

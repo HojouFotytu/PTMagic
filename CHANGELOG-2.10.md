@@ -1,5 +1,12 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Expected flat-price-path efficiency is INFO, full trigger provenance in DEBUG (validation pending)
+
+The raid's prior WARN included a full multi-SMS caller dump for source-verified `H1 PricePathEfficiency` flat 0/0 paths, even though this is a mathematically correct UNAVAILABLE result. Change **reporting only**: all-flat, nonstale source-valid asset-path groups emit a short INFO line such as `+ H1 PricePathEfficiency: 4/729 unavailable (flat price paths; 10 SMS trigger evaluations).`, while DEBUG retains all affected markets and distinct SMS trigger callers with context. The prior five-example WARN cap no longer discards caller identity from the DEBUG record. The canonical source reason is now a shared constant.
+
+A group with stale/missing candles, mixed causes, a global error or unsupported metric stays WARN. Per-market trading-protection warnings remain WARN, as do delivery deferrals, without changing source validity, SMS decisions, PT settings, or acknowledgements. Added focused cases for 4/729, ten callers, reset and mixed/stale evidence. **Source published; .NET build, focused tests and live configured-log acceptance pending.** No Analyzer JSON or strategy settings were changed.
+
+
 ## November 23, 2026 — Per-market SMS protection unblocks conclusive global PT delivery (validation pending)
 
 Previously, a few flat price paths produced mathematically unavailable asset-SMS `PricePathEfficiency` values. This made the first PT configuration permanently Deferred even though global selection and other markets were valid. PTMagic now preserves missing-data UNAVAILABLE while restricting only affected symbols with `PAIR_sell_only_mode_enabled = true` and `PAIR_DCA_enabled = false` in the compiled PAIRS SMS overlay. The temporary restrictions override conflicting known SMS pair permissions, preserve previously active SMS and unknown OffTrigger latches, and expire when the market returns to conclusive data. Unknown stop-process SMS also prevent lower-priority SMS evaluation on that market. A grouped warning identifies protected symbols.

@@ -21,6 +21,10 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public static class PricePathEfficiencyEngine
   {
+    // Exact, source-proven mathematical absence: distinct from missing,
+    // invalid, incomplete or stale price candles.
+    public const string FlatPathUnavailableReason = "A completely flat price path has an undefined efficiency denominator.";
+
     public static bool HasMetrics(IReadOnlyCollection<string> enabled) =>
       enabled != null && (enabled.Contains(MarketTrendMetrics.PricePathEfficiency, StringComparer.OrdinalIgnoreCase) ||
         enabled.Contains(MarketTrendMetrics.MedianPricePathEfficiency, StringComparer.OrdinalIgnoreCase));
@@ -167,7 +171,7 @@ namespace Core.MarketAnalyzer.MarketData
       if (!Double.IsFinite(travel) || !Double.IsFinite(net))
         return Invalid(asOfUtc, "Price-path movement accumulated to a nonfinite value.", (int)(steps + 1));
       if (travel == 0)
-        return Invalid(asOfUtc, "A completely flat price path has an undefined efficiency denominator.", (int)(steps + 1));
+        return Invalid(asOfUtc, FlatPathUnavailableReason, (int)(steps + 1));
 
       double efficiency = Math.Abs(net) / travel;
       if (!Double.IsFinite(efficiency))

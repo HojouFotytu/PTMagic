@@ -1,5 +1,14 @@
 # Raid metric-warning natural-language regression tests
 
+## November 23 — Flat-path price-efficiency INFO and complete DEBUG provenance (new tests pending)
+
+Exact source-verified `PricePathEfficiency` 0/0 results from fully flat, nonstale closed-candle paths are expected mathematical unavailability and are no longer counted as Metric WARN groups. The raid INFO summary now uses one line per eligible trend/metric, e.g. `+ H1 PricePathEfficiency: 4/729 unavailable (flat price paths; 10 SMS trigger evaluations).`. A separate file DEBUG detail names **all** affected markets and **all distinct SMS caller identities** (setting/trigger/market/relation), not only the former five bounded WARN examples. The underlying unavailable metric value, three-valued trigger truth, per-market SMS protective WARN and configuration-delivery safeguards are unchanged.
+
+The downgrade is deliberately narrow: missing/invalid/stale candles, mixed flat-path-plus-source faults, incomplete snapshots, unknown metrics and global-selection issues remain WARN. The exact flat source reason is shared as `PricePathEfficiencyEngine.FlatPathUnavailableReason` to avoid diverging string classifications. Existing NO_TRADES and verified-new-listing diagnostics are unaffected.
+
+Two new focused regression groups check 4/729 flat cases, 10 complete DEBUG caller records, raid reset, mixed flat/stale faults and an explicitly stale observation carrying a flat-path reason. **Authored but not executed in this environment; owner-run solution build, Phase1MetricWarnings suite and deployed logs still require verification.**
+
+
 ## November 19 — Verified new-listing history diagnostics (source added; execution pending)
 
 The warning pipeline now distinguishes exchange-verified **pre-listing historical shortages** from genuine missing or bad data. It uses native Binance Futures `exchangeInfo.onboardDate` and current contiguous 5m series beginning at the listing boundary, without changing metric availability or trade decisions. Only the particular metric/timeframe outputs whose required history predates listing become one INFO notice per market rather than repeated Metric Warnings. The raid still reports the number of affected new markets; unchanged detail is not repeated every raid.

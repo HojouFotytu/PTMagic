@@ -30,6 +30,8 @@ internal static class Program
       TestPlainLanguageDisabledMetric();
       TestPlainLanguageGroupedCallers();
       TestVerifiedNoTradesWarnSuppression();
+      TestVerifiedFlatPricePathInfoAndCompleteDebug();
+      TestMixedFlatPathAndSourceFaultRemainWarnings();
       TestVerifiedNewMarketHistoryClassification();
       TestNewMarketWarningsAndNoticeLifecycle();
       Console.WriteLine("Phase 1 metric-warning summary tests passed: " + _passed + ".");
@@ -515,6 +517,124 @@ internal static class Program
     Expect(partial.MarketCount == 1 && partial.Affected["SOXXUSDT"].Count == 7 &&
       !partial.IsExpected("SOXXUSDT", "H48", MarketTrendMetrics.RelativeStrengthBTC),
       "Unverified BTC benchmark must not hide a dependent relative-strength warning.");
+    _passed++;
+  }
+
+  private static void TestVerifiedFlatPricePathInfoAndCompleteDebug()
+  {
+    var warnings = new RaidMetricWarnings();
+    string[] invalidMarkets = { "FRHCUSDT", "VKTXUSDT", "GAPUSDT", "IDLEUSDT" };
+    string[] universe = invalidMarkets.Concat(Enumerable.Range(0, 725)
+      .Select(index => "ACTIVE" + index.ToString("D3") + "USDT")).ToArray();
+    var marketMetrics = universe.ToDictionary(symbol => symbol,
+      symbol => (IReadOnlyDictionary<string, FeatureValueSnapshot>)
+        new Dictionary<string, FeatureValueSnapshot>
+        {
+          [MarketTrendMetrics.PricePathEfficiency] = invalidMarkets.Contains(symbol)
+            ? Invalid(PricePathEfficiencyEngine.FlatPathUnavailableReason) : Valid(0.4)
+        }, StringComparer.OrdinalIgnoreCase);
+    var analysis = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = "H1",
+      EnabledMetrics = new[] { MarketTrendMetrics.PricePathEfficiency },
+      AssetSymbols = universe,
+      AssetMetrics = marketMetrics
+    };
+    for (int index = 0; index < 10; index++)
+    {
+      string symbol = invalidMarkets[index % invalidMarkets.Length];
+      warnings.ReportUnavailable("H1", MarketTrendMetrics.PricePathEfficiency,
+        "Metric 'PricePathEfficiency' is unavailable for MarketTrend 'H1' market='" + symbol +
+        "'; reason=" + PricePathEfficiencyEngine.FlatPathUnavailableReason,
+        "SMS activation", "SMS_" + index, symbol, "Absolute", "tag=E" + index);
+    }
+
+    var source = Analyses(analysis);
+    Expect(warnings.BuildLines(source).Count == 0,
+      "Verified flat 0/0 paths alone must not be Metric Warnings.");
+    var info = warnings.BuildFlatPathInfoLines();
+    Expect(info.Count == 1 &&
+      info[0] == "+ H1 PricePathEfficiency: 4/729 unavailable (flat price paths; 10 SMS trigger evaluations).",
+      "One compact INFO line must preserve counts and not repeat caller lists.");
+    var debug = warnings.BuildFlatPathDebugLines();
+    Expect(debug.Count == 11 && debug[0].Contains("invalid markets=") &&
+      invalidMarkets.All(symbol => debug[0].Contains(symbol)) &&
+      Enumerable.Range(0, 10).All(index => debug.Any(line =>
+        line.Contains("SMS_" + index + "'") && line.Contains("E" + index))),
+      "All four markets and all ten trigger callers must remain in file DEBUG, not just five.");
+
+    warnings.Reset();
+    Expect(warnings.BuildLines(null!).Count == 0 &&
+      warnings.BuildFlatPathInfoLines().Count == 0 &&
+      warnings.BuildFlatPathDebugLines().Count == 0,
+      "A new raid cannot inherit old flat-path reporting.");
+    _passed++;
+  }
+
+  private static void TestMixedFlatPathAndSourceFaultRemainWarnings()
+  {
+    var warnings = new RaidMetricWarnings();
+    var markets = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+    {
+      ["FLATUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+      {
+        [MarketTrendMetrics.PricePathEfficiency] = Invalid(PricePathEfficiencyEngine.FlatPathUnavailableReason)
+      },
+      ["STALEUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+      {
+        [MarketTrendMetrics.PricePathEfficiency] = Invalid("Normalized price-path source candles are stale.")
+      },
+      ["GOODUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+      {
+        [MarketTrendMetrics.PricePathEfficiency] = Valid(0.4)
+      }
+    };
+    var analysis = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = "H1",
+      EnabledMetrics = new[] { MarketTrendMetrics.PricePathEfficiency },
+      AssetSymbols = markets.Keys.ToArray(),
+      AssetMetrics = markets
+    };
+    warnings.ReportUnavailable("H1", MarketTrendMetrics.PricePathEfficiency,
+      PricePathEfficiencyEngine.FlatPathUnavailableReason,
+      "SMS activation", "SMS_FLAT", "FLATUSDT", "Absolute", "tag=A");
+    warnings.ReportUnavailable("H1", MarketTrendMetrics.PricePathEfficiency,
+      "Normalized price-path source candles are stale.",
+      "SMS activation", "SMS_STALE", "STALEUSDT", "Absolute", "tag=B");
+    var lines = warnings.BuildLines(Analyses(analysis));
+    Expect(lines.Count == 2 && lines[0] == "+ Metric warnings: 1" &&
+      lines[1].Contains("STALEUSDT") &&
+      warnings.BuildFlatPathInfoLines().Count == 0 &&
+      warnings.BuildFlatPathDebugLines().Count == 0,
+      "Mixed flat paths and stale/missing sources must remain WARN.");
+
+    // The same flat reason must not conceal a stale snapshot even if its
+    // InvalidReason string was preserved from a prior source observation.
+    warnings.Reset();
+    var staleFlat = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = "H1",
+      EnabledMetrics = new[] { MarketTrendMetrics.PricePathEfficiency },
+      AssetSymbols = new[] { "STALEUSDT" },
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      {
+        ["STALEUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        {
+          [MarketTrendMetrics.PricePathEfficiency] = new FeatureValueSnapshot
+          {
+            InvalidReason = PricePathEfficiencyEngine.FlatPathUnavailableReason,
+            IsValid = false, IsStale = true
+          }
+        }
+      }
+    };
+    warnings.ReportUnavailable("H1", MarketTrendMetrics.PricePathEfficiency,
+      PricePathEfficiencyEngine.FlatPathUnavailableReason,
+      "SMS activation", "SMS_STALE", "STALEUSDT", "Absolute", "tag=S");
+    Expect(warnings.BuildLines(Analyses(staleFlat)).Count == 2 &&
+      warnings.BuildFlatPathInfoLines().Count == 0,
+      "Stale assets must remain WARN even if they carry the flat-path reason.");
     _passed++;
   }
 
