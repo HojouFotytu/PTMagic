@@ -19,6 +19,15 @@ namespace Core.Main
 {
   public class PTMagic
   {
+    // Exact "RAID SUMMARY" marker is required by the existing Monitor logs readers.
+    public static string FormatRaidSummaryTitle(string descriptiveName, int raidNumber)
+    {
+      string label = String.IsNullOrWhiteSpace(descriptiveName) ? "" :
+        String.Join(" ", descriptiveName.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+      return " " + (label.Length == 0 ? "" : label + " ") +
+        "RAID SUMMARY #" + raidNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) + " ";
+    }
+
     public PTMagic(LogHelper log, Func<ConfigurationPayload, ConfigurationDeliveryResult> configurationSender = null,
       Func<bool, ConfigurationDeliveryResult> globalSellOnlyModeSender = null)
     {
@@ -1072,14 +1081,17 @@ namespace Core.Main
               this.SaveRuntimeSummary(elapsedSeconds);
               this.RecordDecisionHistory();
 
-              // Summarise raid              
-              this.Log.DoLogInfo("##########################################################");
-              // Keep the existing 58-character summary border while displaying
-              // the same per-process raid counter previously used below.
-              string raidSummaryTitle = " RAID SUMMARY #" + this.RunCount.ToString() + " ";
+              // Keep the exact RAID SUMMARY marker for existing Monitor log parsing.
+              // Widen only for descriptive names that exceed the original 58-character banner.
+              string raidSummaryTitle = FormatRaidSummaryTitle(
+                this.PTMagicConfiguration.AnalyzerSettings?.MarketAnalyzer?.DescriptiveName,
+                this.RunCount);
+              int raidSummaryInnerWidth = Math.Max(56, raidSummaryTitle.Length);
+              string raidSummaryBorder = new string('#', raidSummaryInnerWidth + 2);
+              this.Log.DoLogInfo(raidSummaryBorder);
               this.Log.DoLogInfo("#" +
-                raidSummaryTitle.PadLeft((56 + raidSummaryTitle.Length) / 2, '*')
-                  .PadRight(56, '*') + "#");
+                raidSummaryTitle.PadLeft((raidSummaryInnerWidth + raidSummaryTitle.Length) / 2, '*')
+                  .PadRight(raidSummaryInnerWidth, '*') + "#");
               this.Log.DoLogInfo("+ PT Magic Version: " + this.LastRuntimeSummary.Version +
                 " (Build " + BuildIdentity.CommitBuildNumber + ")");
               if (!SystemHelper.IsRecentVersion(this.LastRuntimeSummary.Version, this.LatestVersion))
@@ -1145,8 +1157,8 @@ namespace Core.Main
               this.Log.DoLogInfo("");
               this.Log.DoLogInfo("DO NOT CLOSE THIS WINDOW! THIS IS THE BOT THAT ANALYZES TRENDS AND CHANGES SETTINGS!");
               this.Log.DoLogInfo("");
-              this.Log.DoLogInfo("#********************************************************#");
-              this.Log.DoLogInfo("##########################################################");
+              this.Log.DoLogInfo("#" + new string('*', raidSummaryInnerWidth) + "#");
+              this.Log.DoLogInfo(raidSummaryBorder);
               this.Log.DoLogInfo("");
             }
             else

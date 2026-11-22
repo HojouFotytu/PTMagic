@@ -1,8 +1,15 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
+## November 22 — Optional descriptive name and versioned raid identification
+
+**Only testing analyzer:** `Tests/Settings/settings.analyzer.json` **v2.6.2**, named **`PTM 2.10 Delta v2.6.2`** via optional `MarketAnalyzer.DescriptiveName`. Its runtime banner must display `PTM 2.10 Delta v2.6.2 RAID SUMMARY #N`, while legacy configurations with a missing/blank name display `RAID SUMMARY #N`. The exact `RAID SUMMARY` marker is deliberately retained for both Monitor Logs page readers; **no changes to log parsing or archival format are necessary**.
+
+The new field affects only analyzer identification and is edited at the top of Market Analyzer settings. G10 stays first; SMS14, its diagnostic OffTrigger, other diagnostics, MarketTrends, metrics, and presets are unchanged. TestMode remains mandatory. **Build, focused tests, and new-version runtime acceptance remain unverified**; previously passing tests refer to earlier source.
+
+---
 ## Current Delta runtime fixture — November 22, 2026
 
-**Single canonical analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), **v2.6.1**. No other analyzer files or folders. This revision updates only the existing G10 and SMS14 diagnostics, retaining all 45 registered metrics, all previous GlobalSettings/SMS, configured MarketTrends, 96-hour diagnostic source retention, and inherited DEFAULT preset references.
+**Single canonical analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), **v2.6.2**. No other analyzer files or folders. This revision updates only the existing G10 and SMS14 diagnostics, retaining all 45 registered metrics, all previous GlobalSettings/SMS, configured MarketTrends, 96-hour diagnostic source retention, and inherited DEFAULT preset references.
 
 **G10 first priority (GlobalSettings):** Three AND conditions exercise `Delta(M30 Breadth)` (rolling), `Delta(H1 MedianPricePathEfficiency)` (rolling), and `Delta(H1 MedianTakerBuyRatio)` (**completed-period source**). Each uses broad mathematical-validity bounds, not regime criteria. G10 must be **selected** in a fresh and conclusive TestMode raid, not merely evaluated.
 
@@ -14,7 +21,7 @@
 
 ## November 22 — Delta relation TestMode coverage
 
-**Canonical single test analyzer:** `Tests/Settings/settings.analyzer.json`, updated to **v2.6.1** with **G10 Delta first**, previous G09 second, and a new property-free `DIAG_SMS14_DELTA` with a diagnostic Delta OffTrigger. G10 compares M30 `Breadth` and H1 `MedianPricePathEfficiency` against the same metrics one MarketTrend duration earlier. SMS14 compares M30 `PriceTrend` and H1 `PricePathEfficiency`. Bounds of ±1e12 cover all realistic finite outcomes and are **diagnostics**, not regime thresholds; acceptance requires actual valid historical values and matching source timestamps. The test analyzer retains all 45 metrics, all existing settings, retention, and the previous relative order of G01–G09 and DEFAULT. Only one test analyzer exists.
+**Canonical single test analyzer:** `Tests/Settings/settings.analyzer.json`, updated to **v2.6.2** with **G10 Delta first**, previous G09 second, and a new property-free `DIAG_SMS14_DELTA` with a diagnostic Delta OffTrigger. G10 compares M30 `Breadth` and H1 `MedianPricePathEfficiency` against the same metrics one MarketTrend duration earlier. SMS14 compares M30 `PriceTrend` and H1 `PricePathEfficiency`. Bounds of ±1e12 cover all realistic finite outcomes and are **diagnostics**, not regime thresholds; acceptance requires actual valid historical values and matching source timestamps. The test analyzer retains all 45 metrics, all existing settings, retention, and the previous relative order of G01–G09 and DEFAULT. Only one test analyzer exists.
 
 **New offline acceptance not yet executed:** build `PTMagic.sln`, and run `Tests/Phase1COhlcv`, `Tests/TriggerConfigurationValidation`, `Tests/MonitorSettingsRoundTrip`, `Tests/ConfigurationLifecycle`, then conduct isolated LONG/SHORT TestMode raids to verify G10 and SMS14. Historical PASS results predating the Delta source revision do not verify this change.
 

@@ -39,7 +39,7 @@ namespace Monitor.Configuration
       AnalyzerSettings updated = Clone(original);
       SetFields(updated.MarketAnalyzer, form, "MarketAnalyzer_", new[]
       {
-        "StoreDataMaxHours", "IntervalMinutes", "ExcludeMainCurrency",
+        "DescriptiveName", "StoreDataMaxHours", "IntervalMinutes", "ExcludeMainCurrency",
         "UseProfitTrailerEnabledPairs", "UseProfitTrailerAllowedUnderlyingTypes"
       });
       if (form.ContainsKey("MarketAnalyzer_IncludedUnderlyingTypes") &&

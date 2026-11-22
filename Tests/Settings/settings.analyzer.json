@@ -1,8 +1,9 @@
 // TEST-ONLY PTMagic 2.10 comprehensive 45-metric analyzer. Use isolated TestMode only; never live trading.
 // SetIdentity = PTM2.10-45-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.6.1
+// SetVersion = 2.6.2
 // SetDate = 2026-11-22
-// TargetApplicationSource = b1674bb-or-later (Delta relation code)
+// DescriptiveName = PTM 2.10 Delta v2.6.2; raid banner = NAME RAID SUMMARY #N
+// TargetApplicationSource = optional-analyzer-descriptive-name implementation and Delta relation
 // ApplicationBuildEvidence = DELTA_UNVERIFIED; previous_45_metric_build_PASS_15.0s_at_f75f229
 // ApplicationFocusedEvidence = DELTA_UNVERIFIED; previous_25_OHLCV_9_Adaptive_84_Lifecycle_at_f75f229
 // ConfiguredRuntimeAcceptance = DELTA NOT VERIFIED (LONG/SHORT TestMode evidence pending)
@@ -17,6 +18,7 @@
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
+      "DescriptiveName": "PTM 2.10 Delta v2.6.2",
       "StoreDataMaxHours": 96,
       "IntervalMinutes": 5,
       "ExcludeMainCurrency": true,

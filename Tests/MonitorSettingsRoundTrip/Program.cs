@@ -17,6 +17,25 @@ internal static class Program
   {
     try
     {
+      Check("DescriptiveName editor form persists and can clear the analyzer identity", () =>
+      {
+        var original = Baseline(); var form = Form(original);
+        Set(form, "MarketAnalyzer_DescriptiveName", "PTM 2.10 Delta v2.6.2");
+        var saved = AnalyzerSettingsForm.Apply(original, form);
+        Require(saved.MarketAnalyzer.DescriptiveName == "PTM 2.10 Delta v2.6.2");
+        Equal(saved, AnalyzerSettingsForm.Apply(saved, Form(saved)));
+        var cleared = Form(saved);
+        Set(cleared, "MarketAnalyzer_DescriptiveName", "");
+        Require(AnalyzerSettingsForm.Apply(saved, cleared).MarketAnalyzer.DescriptiveName == "");
+      });
+      Check("Raid summary heading preserves legacy parsing marker and optional name", () =>
+      {
+        Require(Core.Main.PTMagic.FormatRaidSummaryTitle(null, 4) == " RAID SUMMARY #4 ");
+        Require(Core.Main.PTMagic.FormatRaidSummaryTitle("", 4) == " RAID SUMMARY #4 ");
+        Require(Core.Main.PTMagic.FormatRaidSummaryTitle("  PTM 2.10\nDelta\tv2.6.2  ", 4) ==
+          " PTM 2.10 Delta v2.6.2 RAID SUMMARY #4 ");
+        Require(Core.Main.PTMagic.FormatRaidSummaryTitle("A", 123).Contains("RAID SUMMARY #123"));
+      });
       Check("Delta relation roundtrip for GlobalSetting, SMS and OffTrigger", () =>
       {
         var source = Baseline(); var form = Form(source);
@@ -207,7 +226,7 @@ internal static class Program
   {
     MarketAnalyzer = new MarketAnalyzer
     {
-      StoreDataMaxHours = 240, IntervalMinutes = 5,
+      DescriptiveName = "Roundtrip v1.0", StoreDataMaxHours = 240, IntervalMinutes = 5,
       IncludedUnderlyingTypes = new List<string> { "COIN", "equity" },
       MarketTrends = new List<MarketTrend> { new MarketTrend
       {
@@ -273,7 +292,7 @@ internal static class Program
     Set(form, "AnalyzerSettingsFormVersion", AnalyzerSettingsForm.Version);
     Set(form, "AnalyzerSettingsRevision", AnalyzerSettingsForm.Revision(source));
     Set(form, "AnalyzerSettingsReady", "true");
-    Fields(form, source.MarketAnalyzer, "MarketAnalyzer_", "StoreDataMaxHours", "IntervalMinutes", "ExcludeMainCurrency", "UseProfitTrailerEnabledPairs", "UseProfitTrailerAllowedUnderlyingTypes");
+    Fields(form, source.MarketAnalyzer, "MarketAnalyzer_", "DescriptiveName", "StoreDataMaxHours", "IntervalMinutes", "ExcludeMainCurrency", "UseProfitTrailerEnabledPairs", "UseProfitTrailerAllowedUnderlyingTypes");
     Set(form, "MarketAnalyzer_IncludedUnderlyingTypes", String.Join(", ", source.MarketAnalyzer.IncludedUnderlyingTypes));
     foreach (var trend in source.MarketAnalyzer.MarketTrends)
       Fields(form, trend, "MarketAnalyzer_MarketTrend_" + Identity(trend.Name) + "|", "Name", "Platform", "TrendMinutes", "MaxMarkets", "TrendCurrency", "Metrics", "IgnoredMarkets", "AllowedMarkets", "TrendThreshold", "DisplayGraph", "DisplayOnMarketAnalyzerList", "ExcludeMainCurrency", "ATRPeriod", "VolumeExpansionLookback", "CorrelationLookback", "ATRPBreadthThreshold", "VolumeExpansionBreadthThreshold", "StrongVolumeExpansionThreshold", "TopNVolumeCount");

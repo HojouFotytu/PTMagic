@@ -1,5 +1,11 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 22, 2026 — Versioned descriptive name in raid summary banner (build/runtime pending)
+
+Added an optional `MarketAnalyzer.DescriptiveName` field at the top of Monitor Analyzer settings, persisted by the existing analyzer JSON/form model. The log banner is `NAME RAID SUMMARY #N` when populated, or `RAID SUMMARY #N` when blank/missing. Existing live and historical Logs page readers rely on the exact `RAID SUMMARY` marker, **which is unchanged**. Long names widen the banner without truncation. No log reader, stream, export, summary file, decision-history schema, metric calculation, trading settings, or order-execution behavior changed.
+
+The **single** testing analyzer `Tests/Settings/settings.analyzer.json` is now v2.6.2 with `DescriptiveName: PTM 2.10 Delta v2.6.2`. All Delta and prior diagnostic triggers, MarketTrends, preset references and earlier priority remain unchanged. Monitor settings roundtrip and banner formatting checks added. New source build and LONG/SHORT TestMode runtime acceptance are pending.
+
 ## November 22, 2026 — Generic Delta MarketTrendRelation (development; runtime acceptance pending)
 
 **Source implementation:** Adds `Delta` to existing GlobalSetting Trigger, SingleMarketSetting Trigger, and SMS OffTrigger `MarketTrendRelation` values. A Delta compares **the same registered numeric metric** for the selected MarketTrend at the current pinned observation and **one configured `TrendMinutes` earlier**. For completed-period metrics, the prior evaluation is the prior completed source period; for rolling metrics, the two aligned rolling endpoints are separated by exactly `TrendMinutes`. No new user field, separate comparison period, indicator, metric-registry name, exchange endpoint, trading preset, or live settings are introduced. The catalogue remains 45 names.

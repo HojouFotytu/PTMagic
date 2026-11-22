@@ -125,6 +125,8 @@ namespace Core.Main.DataObjects.PTMagicData
 
   public class MarketAnalyzer
   {
+    // Optional identity for the analyzer and its version. Not used for trading decisions.
+    public string DescriptiveName { get; set; } = "";
     public int StoreDataMaxHours { get; set; }
     public int IntervalMinutes { get; set; } = 5;
     public bool ExcludeMainCurrency { get; set; } = true;
