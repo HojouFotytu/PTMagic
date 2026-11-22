@@ -20,9 +20,9 @@ internal static class Program
       Check("DescriptiveName editor form persists and can clear the analyzer identity", () =>
       {
         var original = Baseline(); var form = Form(original);
-        Set(form, "MarketAnalyzer_DescriptiveName", "PTM 2.10 Delta v2.6.2");
+        Set(form, "MarketAnalyzer_DescriptiveName", "2.6.3");
         var saved = AnalyzerSettingsForm.Apply(original, form);
-        Require(saved.MarketAnalyzer.DescriptiveName == "PTM 2.10 Delta v2.6.2");
+        Require(saved.MarketAnalyzer.DescriptiveName == "2.6.3");
         Equal(saved, AnalyzerSettingsForm.Apply(saved, Form(saved)));
         var cleared = Form(saved);
         Set(cleared, "MarketAnalyzer_DescriptiveName", "");
@@ -32,8 +32,8 @@ internal static class Program
       {
         Require(Core.Main.PTMagic.FormatRaidSummaryTitle(null, 4) == " RAID SUMMARY #4 ");
         Require(Core.Main.PTMagic.FormatRaidSummaryTitle("", 4) == " RAID SUMMARY #4 ");
-        Require(Core.Main.PTMagic.FormatRaidSummaryTitle("  PTM 2.10\nDelta\tv2.6.2  ", 4) ==
-          " PTM 2.10 Delta v2.6.2 RAID SUMMARY #4 ");
+        Require(Core.Main.PTMagic.FormatRaidSummaryTitle("  2.6.3  ", 4) ==
+          " 2.6.3 RAID SUMMARY #4 ");
         Require(Core.Main.PTMagic.FormatRaidSummaryTitle("A", 123).Contains("RAID SUMMARY #123"));
       });
       Check("Delta relation roundtrip for GlobalSetting, SMS and OffTrigger", () =>
@@ -226,7 +226,7 @@ internal static class Program
   {
     MarketAnalyzer = new MarketAnalyzer
     {
-      DescriptiveName = "Roundtrip v1.0", StoreDataMaxHours = 240, IntervalMinutes = 5,
+      DescriptiveName = "2.6.3", StoreDataMaxHours = 240, IntervalMinutes = 5,
       IncludedUnderlyingTypes = new List<string> { "COIN", "equity" },
       MarketTrends = new List<MarketTrend> { new MarketTrend
       {

@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 22, 2026 — Analyzer identity simplified to version-only (v2.6.3 fixture)
+
+The single TestMode analyzer now specifies `MarketAnalyzer.DescriptiveName: "2.6.3"`, matching its separately maintained `SetVersion = 2.6.3` header. The raid heading is `2.6.3 RAID SUMMARY #N`, or `RAID SUMMARY #N` when blank. This correction removes the unnecessary `PTM 2.10 Delta` prefix; **no runtime heading, parser, source-calculation, trigger or trading behavior is changed**. Monitor's optional field example and focused editor/banner tests now use version-only labels. Build and live TestMode evidence for the updated revision remain pending.
+
 ## November 22, 2026 — Versioned descriptive name in raid summary banner (build/runtime pending)
 
 Added an optional `MarketAnalyzer.DescriptiveName` field at the top of Monitor Analyzer settings, persisted by the existing analyzer JSON/form model. The log banner is `NAME RAID SUMMARY #N` when populated, or `RAID SUMMARY #N` when blank/missing. Existing live and historical Logs page readers rely on the exact `RAID SUMMARY` marker, **which is unchanged**. Long names widen the banner without truncation. No log reader, stream, export, summary file, decision-history schema, metric calculation, trading settings, or order-execution behavior changed.

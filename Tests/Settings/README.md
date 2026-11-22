@@ -1,5 +1,13 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
+## Current analyzer identity — November 22, 2026
+
+**Single test analyzer:** `Tests/Settings/settings.analyzer.json`, **version 2.6.3**. The optional `MarketAnalyzer.DescriptiveName` is **`2.6.3`**—the analyzer version only, with **no PTMagic version prefix or English description**. The resulting banner is `2.6.3 RAID SUMMARY #N`; a blank field remains `RAID SUMMARY #N`. The existing Monitor Logs readers still rely on the unchanged `RAID SUMMARY` marker.
+
+This is a naming correction after the v2.6.2 implementation. G10 remains first; all MarketTrends, global/SMS triggers, OffTriggers, data retention, metric catalogue, properties and presets are unchanged. The current application revision's build and runtime tests still require execution.
+
+---
+
 ## November 22 — Optional descriptive name and versioned raid identification
 
 **Only testing analyzer:** `Tests/Settings/settings.analyzer.json` **v2.6.2**, named **`PTM 2.10 Delta v2.6.2`** via optional `MarketAnalyzer.DescriptiveName`. Its runtime banner must display `PTM 2.10 Delta v2.6.2 RAID SUMMARY #N`, while legacy configurations with a missing/blank name display `RAID SUMMARY #N`. The exact `RAID SUMMARY` marker is deliberately retained for both Monitor Logs page readers; **no changes to log parsing or archival format are necessary**.
