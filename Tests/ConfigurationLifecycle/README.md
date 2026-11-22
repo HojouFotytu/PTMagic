@@ -1,5 +1,14 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 23 — AnalyzerState Linux startup and first-seen progress corrections (new checks pending)
+
+The PTMagic constructor no longer creates the named `analyzerStateMutex`. `WriteStateToFile` now opens a persistent `_data/AnalyzerState.lock` file exclusively, with bounded retries under contention. The lock file remains on disk to avoid competing inode/recreation races. Existing `_data/AnalyzerState` name and integer contents are unchanged, while independent instances with different `_data` directories no longer share one global mutex. Linux processes without `/run/user/<UID>` can construct the analyzer without attempting named-mutex creation. Mixed old/new binaries sharing the same `_data` are not mutually synchronized: stop the old instance before deploying.
+
+The first-seen-date check now writes a single live console progress line from prefix through periods and completion; the file DEBUG channel receives one summary, rather than an INFO prefix that ends the line before the dots. Interrupted progress also ends its line. The existing SMS progress behavior is unchanged.
+
+**New development tests (authored, not executed in this environment):** production `WriteStateToFile` creates the state and persistent lock, waits while an independent file stream owns the lock, and succeeds after release; independent instance-directory behavior. Production `BinanceFutures.CheckFirstSeenDatesAsync` with entirely cached MarketInfo exercises the exact one-line console output with zero network; a pre-canceled token tests interrupted line closure. **User-local verification is pending**: build, ConfigurationLifecycle suite, Linux PM2 startup/restart without `/run/user/<UID>`, and visual progress. Do not record PASS until these are run.
+
+
 ## November 22 — Unexecuted GlobalSetting Delta selection regression
 
 One additional focused acceptance case executes the production `CheckGlobalSettingsTriggers()` path against synthetic current Breadth=55 and previous Breadth=40. It verifies Delta=15 selection, unchanged explicit Absolute=55, Delta mismatch under absolute-only bounds, and missing historical Delta causing indeterminate selection instead of absolute fallback. Static runtime snapshots are restored after the test. The known older 84/84 PASS does not cover this case; run the current suite before claiming a new PASS.

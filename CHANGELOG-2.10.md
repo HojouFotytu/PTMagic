@@ -1,5 +1,14 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Linux state-lock startup and inline first-seen progress corrections (validation pending)
+
+**Startup fault:** PTMagic could terminate in its constructor on Linux before its first raid when creating named `analyzerStateMutex` required missing `/run/user/1000`. Replace the sole state-write mutex with an exclusive, persistent file lock at `_data/AnalyzerState.lock`, held while writing the unchanged `_data/AnalyzerState` integer. FileShare.None preserves cross-process exclusion among instances running the new code over the same directory; bounded retries replace unbounded named-mutex wait. Do not delete the lock sentinel. The old and new lock protocols are different, so concurrent mixed-version writers sharing an `_data` directory are **not** coordinated; stop the old process before upgrading. No other PT settings, SOM, metric or trading logic is altered.
+
+**First-seen display:** `BinanceAnalyzerCommon.CheckFirstSeenDatesAsync` now outputs its prefix, one period per checked market, and its completion on **one console line**. The old NLog INFO prefix was inserting a newline ahead of `Console.Write('.')`. One DEBUG file-log summary is retained, and cancellation/failure closes the progress line with an interrupted result.
+
+**Focused tests added:** `ConfigurationLifecycle` covers state writing, exclusive-lock contention/release, separate data directories, zero-network first-seen progress, and canceled progress. Source committed, **.NET build, focused regression and deployed Linux PM2 runtime acceptance pending**. No existing diagnostic Analyzer or SMS fixture changes.
+
+
 ## November 22, 2026 — GlobalSetting Delta relation call-site fix; runtime acceptance pending
 
 **Observed problem in v2.6.3 LONG/SHORT TestMode:** G10 \`DIAG_G10_DELTA\` selected yet its recorded values were equal to absolute current Breadth, MedianPricePathEfficiency and MedianTakerBuyRatio rather than historical differences. Cause verified in \`Core/Main/PTMagic.cs\`: \`CheckGlobalSettingsTriggers()\` called the legacy no-relation \`TryResolveGlobal\` overload, defaulting to Absolute despite \`trigger.MarketTrendRelation="Delta"\`. SMS14 relation-aware Delta and OffTrigger were independently functional. **Fix:** pass \`trigger.MarketTrendRelation\` into the already existing relation-aware global resolver. No Delta engine algorithm/metric registry/market data change. Existing Absolute and other relation handling retained.

@@ -21,6 +21,87 @@ internal static class Program
   {
     try
     {
+      Check("AnalyzerState writes use a persistent file lock rather than a named OS mutex", () =>
+      {
+        using var fixture = new Fixture();
+        string dataDir = Path.Combine(fixture.Root, "_data");
+        string statePath = Path.Combine(dataDir, "AnalyzerState");
+        string lockPath = Path.Combine(dataDir, "AnalyzerState.lock");
+        fixture.Bot.State = 3;
+        fixture.Bot.WriteStateToFile();
+        Require(File.Exists(lockPath) && File.ReadAllText(statePath) == "3");
+
+        // Hold the same file independently: the production writer must wait,
+        // keep the previous state intact, and then finish after release.
+        using var started = new ManualResetEventSlim(false);
+        Task secondWrite;
+        using (var held = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+          secondWrite = Task.Run(() =>
+          {
+            started.Set();
+            fixture.Bot.State = 7;
+            fixture.Bot.WriteStateToFile();
+          });
+          Require(started.Wait(TimeSpan.FromSeconds(2)));
+          Require(!secondWrite.Wait(TimeSpan.FromMilliseconds(150)));
+          Require(File.ReadAllText(statePath) == "3");
+        }
+        Require(secondWrite.Wait(TimeSpan.FromSeconds(5)));
+        Require(File.ReadAllText(statePath) == "7" && File.Exists(lockPath));
+
+        // Different fixture directories must not contend on one old global lock.
+        using var independent = new Fixture();
+        independent.Bot.State = 11;
+        independent.Bot.WriteStateToFile();
+        Require(File.ReadAllText(Path.Combine(independent.Root, "_data", "AnalyzerState")) == "11");
+        Require(File.ReadAllText(statePath) == "7");
+      });
+      Check("Futures first-seen progress keeps prefix dots and completion on one console line", () =>
+      {
+        using var fixture = new Fixture();
+        string[] symbols = { "AAAUSDT", "BBBUSDT", "CCCUSDT" };
+        var markets = symbols.ToDictionary(symbol => symbol, symbol =>
+          new Market { Name = symbol, Symbol = symbol });
+        var infos = new System.Collections.Concurrent.ConcurrentDictionary<string, MarketInfo>(
+          StringComparer.OrdinalIgnoreCase);
+        foreach (string symbol in symbols)
+          infos[symbol] = new MarketInfo { Name = symbol, FirstSeen = DateTime.UtcNow.AddDays(-1) };
+        TextWriter original = Console.Out;
+        using var captured = new StringWriter();
+        try
+        {
+          Console.SetOut(captured);
+          // All first-seen observations are already cached; this production
+          // path must perform zero HTTP requests.
+          Core.MarketAnalyzer.BinanceFutures.CheckFirstSeenDatesAsync(
+            markets, infos, fixture.Configuration, Log).GetAwaiter().GetResult();
+        }
+        finally
+        {
+          Console.SetOut(original);
+        }
+        string actual = captured.ToString().Replace("\r\n", "\n");
+        Require(actual ==
+          "BinanceFutures - Checking first seen dates for 3 markets: ... done (3/3 markets).\n");
+        Require(symbols.All(symbol => infos[symbol].FirstSeen > Constants.confMinDate));
+
+        using var interrupted = new StringWriter();
+        try
+        {
+          Console.SetOut(interrupted);
+          ExpectException<OperationCanceledException>(() =>
+            Core.MarketAnalyzer.BinanceFutures.CheckFirstSeenDatesAsync(
+              markets, infos, fixture.Configuration, Log, new CancellationToken(true))
+              .GetAwaiter().GetResult());
+        }
+        finally
+        {
+          Console.SetOut(original);
+        }
+        Require(interrupted.ToString().Replace("\r\n", "\n") ==
+          "BinanceFutures - Checking first seen dates for 3 markets:  interrupted (0/3 markets).\n");
+      });
       Check("Futures analyzer underlying types filter historical and SMS populations", () =>
       {
         using var fixture = new Fixture();

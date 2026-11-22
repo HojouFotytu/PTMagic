@@ -111,7 +111,6 @@ namespace Core.Main
     private string _selectedGlobalTriggerConnection = "";
     private string _selectedGlobalSelectionBasis = "";
     public ConfigurationDeliveryCoordinator ConfigurationDelivery => _configurationDelivery;
-    private Mutex mutex = new Mutex(false, "analyzerStateMutex");
 
     public LogHelper Log
     {
@@ -173,22 +172,33 @@ namespace Core.Main
     }
    public void WriteStateToFile()
 {
-    try
+    // A named OS mutex can depend on /run/user/<uid> on Linux and fail while
+    // constructing PTMagic when the PM2 process has no login-session runtime dir.
+    // A persistent lock file preserves inter-process exclusion for the same
+    // _data directory on Windows and Linux. Do not delete it after releasing:
+    // another process may already be waiting on the same file.
+    string dirPath = "_data";
+    Directory.CreateDirectory(dirPath);
+    string statePath = Path.Combine(dirPath, "AnalyzerState");
+    string lockPath = Path.Combine(dirPath, "AnalyzerState.lock");
+
+    FileStream stateLock = null;
+    var wait = System.Diagnostics.Stopwatch.StartNew();
+    while (stateLock == null)
     {
-        mutex.WaitOne(); // Acquire the mutex
-
-        string dirPath = "_data";
-        string filePath = Path.Combine(dirPath, "AnalyzerState");
-
-        // Ensure the directory exists
-        Directory.CreateDirectory(dirPath);
-
-        File.WriteAllText(filePath, this.State.ToString());
-
+        try
+        {
+            stateLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException) when (wait.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            Thread.Sleep(50);
+        }
     }
-    finally
+
+    using (stateLock)
     {
-        mutex.ReleaseMutex(); // Release the mutex even if exceptions occur
+        File.WriteAllText(statePath, this.State.ToString());
     }
 }
 

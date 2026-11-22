@@ -215,13 +215,15 @@ namespace Core.MarketAnalyzer
 
     internal static async Task CheckFirstSeenDatesAsync(string exchangeName, string apiBase, Dictionary<string, Market> markets, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
-      log.DoLogInfo(exchangeName + " - Checking first seen dates for " + markets.Count + " markets. This may take a while...");
       int marketsChecked = 0;
       object progressLock = new object();
+      bool completed = false;
+      string prefix = exchangeName + " - Checking first seen dates for " + markets.Count + " markets: ";
 
-      // A single console period represents each completed market. NLog's file
-      // target retains only the summary record, not hundreds of timestamped
-      // per-market records. Always finish the console line on cancellation.
+      // Keep the prefix, live periods and completion on ONE console line.
+      // An NLog INFO prefix would insert a newline before Console.Write('.').
+      // Preserve a single structured DEBUG record in the file log afterward.
+      lock (progressLock) Console.Write(prefix);
       try
       {
         await Parallel.ForEachAsync(markets.Keys, new ParallelOptions { MaxDegreeOfParallelism = MetadataConcurrency, CancellationToken = cancellationToken }, async (key, ct) =>
@@ -248,13 +250,16 @@ namespace Core.MarketAnalyzer
           Interlocked.Increment(ref marketsChecked);
           lock (progressLock) Console.Write('.');
         }).ConfigureAwait(false);
+        completed = true;
       }
       finally
       {
-        if (Volatile.Read(ref marketsChecked) > 0)
-        {
-          lock (progressLock) Console.WriteLine();
-        }
+        int checkedCount = Volatile.Read(ref marketsChecked);
+        string suffix = (completed ? " done (" : " interrupted (") +
+          checkedCount + "/" + markets.Count + " markets).";
+        lock (progressLock) Console.WriteLine(suffix);
+        log.DoLogDebug(prefix + checkedCount + "/" + markets.Count +
+          (completed ? " checked." : " checked; interrupted."));
       }
     }
 
