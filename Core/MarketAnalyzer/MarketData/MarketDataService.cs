@@ -78,11 +78,6 @@ namespace Core.MarketAnalyzer.MarketData
       // five-minute candle boundary during cold startup.
       DateTimeOffset refreshStartedUtc = (refreshAsOfUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
       MarketDataRefreshStatus[] statuses = new MarketDataRefreshStatus[distinctSymbols.Length];
-      bool showFuturesFiveMinuteProgress = interval == TimeSpan.FromMinutes(5)
-        && String.Equals(cacheExchange, "BinanceFutures", StringComparison.OrdinalIgnoreCase);
-      object progressLock = new object();
-      bool progressStarted = false;
-
       // The cache is only an optional seed. All restored series still pass the
       // normal pinned-window completeness and freshness checks below.
       HashSet<string> diskRestoredSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -107,9 +102,7 @@ namespace Core.MarketAnalyzer.MarketData
             " markets. Refreshing only missing, stale or incomplete windows.");
       }
 
-      try
-      {
-        await Parallel.ForEachAsync(Enumerable.Range(0, distinctSymbols.Length), new ParallelOptions
+      await Parallel.ForEachAsync(Enumerable.Range(0, distinctSymbols.Length), new ParallelOptions
       {
         MaxDegreeOfParallelism = maxConcurrency,
         CancellationToken = cancellationToken
@@ -138,25 +131,6 @@ namespace Core.MarketAnalyzer.MarketData
             Skipped = true
           };
           return;
-        }
-
-        if (showFuturesFiveMinuteProgress)
-        {
-          lock (progressLock)
-          {
-            if (!progressStarted)
-            {
-              progressStarted = true;
-              int maximumPerRequest = BinanceKlineClient.PlanKlineRequestLimit(
-                "BinanceFutures", "5m", targetHistoryCandles);
-              string message = "BinanceFutures - Getting up to " + maximumPerRequest
-                + " normalized 5m candles per request...";
-              log.DoLogDebug(message);
-              // File DEBUG is not echoed by the INFO-only console NLog target.
-              // Label the console dots without emitting per-symbol log events.
-              Console.WriteLine(message);
-            }
-          }
         }
 
         try
@@ -215,27 +189,7 @@ namespace Core.MarketAnalyzer.MarketData
 
           log.DoLogWarn("MarketDataService - Unable to refresh normalized candles for '" + symbol + "': " + ex.Message);
         }
-        finally
-        {
-          // One period per attempted market, regardless of pagination or success.
-          if (showFuturesFiveMinuteProgress)
-          {
-            lock (progressLock) Console.Write('.');
-          }
-        }
       }).ConfigureAwait(false);
-      }
-      finally
-      {
-        // Do not leave a partial console line if the refresh is cancelled.
-        if (showFuturesFiveMinuteProgress)
-        {
-          lock (progressLock)
-          {
-            if (progressStarted) Console.WriteLine();
-          }
-        }
-      }
 
       return Array.AsReadOnly(statuses);
     }

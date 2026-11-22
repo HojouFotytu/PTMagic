@@ -1,7 +1,12 @@
 # Normalized OHLCV warm-start cache regression harness
 
-The ten case groups exercise the production `MarketDataWarmStartCache` and `MarketDataService` using offline synthetic five-minute candles and temporary cache directories. No Binance/ProfitTrailer requests or live setting writes occur.
+## November 23 — Remove remaining normalized 5m market-refresh periods (execution pending)
 
+The previously removed first-seen/SMS dots did not cover `MarketDataService.RefreshAtAsync`, which still used independent `Console.Write('.')` calls for attempted Binance Futures 5m refresh requests. Remove this final progress prefix and all per-market period output, while preserving the existing normalized-refresh INFO status from the analytics runtime. Normal, no-refresh, failures, and cancellations retain their original request/status logic. A new production-path regression calls `RefreshAtAsync` with `cacheExchange="BinanceFutures"`, captures the console, asserts zero output and confirms both requested symbols refresh successfully. **New .NET build/tests pending.**
+
+The eleven case groups exercise the production `MarketDataWarmStartCache` and `MarketDataService` using offline synthetic five-minute candles and temporary cache directories. No Binance/ProfitTrailer requests or live setting writes occur.
+
+- Futures normalized 5m refresh completes without direct console progress output.
 - Closed-only compressed snapshot round-trip, including exact OHLCV fields.
 - Exchange and market identity isolation.
 - Restart from a persisted window with only a three-candle incremental overlap request, versus a full cold-load request.
@@ -23,7 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "Normalized warm-start cache validation failed"
 Expected successful final line:
 
 ```text
-Normalized warm-start cache tests passed: 10.
+Normalized warm-start cache tests passed: 11.
 ```
 
 **Acceptance status:** Verified in user-local .NET SDK 10.0.403 at exact application source `925db7c153ee4d53cfe3b7bf736318e7a30bccf1` on November 9, 2026. `dotnet build .\PTMagic.sln` succeeded in 18.3 seconds (Core, PTMagic and Monitor). This harness passed 8/8. `Phase1AnalyticsReliability` passed 16/16 and `Phase1COhlcv` passed 13/13, totaling 37/37 focused checks. **Configured runtime acceptance still needs two startups:** cold cache creation, then a short restart with restored candle count, kline request count and unchanged analytics availability/values. The 272 previously passing regression groups were executed at earlier revisions, not as a full suite at `925db7c`.

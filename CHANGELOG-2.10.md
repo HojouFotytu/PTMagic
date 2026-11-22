@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Remove residual normalized candle-refresh progress dots (validation pending)
+
+Build 112320260217 still printed market-progress periods after prior dot removal because `MarketDataService.RefreshAtAsync` retained a third, independent per-market `Console.Write('.')` path for Binance Futures 5m normalized candle refresh. Removed that whole console-only prefix/dot/newline lifecycle, including its progress lock and surrounding completion-only try/finally. Existing `RAID TIMING - normalized 5m refresh` and `BinanceFutures analytics - normalized 5m data refreshed` INFO status remain, with unchanged request, cancellation, caching, status, source-quality and trading logic. The new real-path NormalizedWarmStartCache test asserts no stdout and successful 2-market refresh. **Code committed, .NET build and regression execution pending.**
+
 ## November 23, 2026 — Remove progress dots completely (validation pending)
 
 Per owner direction, delete incremental period output from first-seen-date scans and SMS evaluation. Do not print per-market console fragments or attempt PM2/Monitor incremental-line rendering. Each operation emits a single normal INFO completion message (or interrupted first-seen status) containing the actual processed and active counts. This INFO record now appears in regular PTMagic file logs as well as the console, rather than producing dot-only PM2 lines. Remove redundant completion DEBUG records. Update ConfigurationLifecycle normal/cancelled and active/inactive regression expectations accordingly. **No trading decisions, market acquisition logic, Analyzer settings, Monitor reader, or PT API behavior changed. .NET build/runtime validation pending.**

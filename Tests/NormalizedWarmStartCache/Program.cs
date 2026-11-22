@@ -26,6 +26,7 @@ internal static class Program
       TestClosedOnlyRoundTrip(root);
       TestExchangeAndSymbolIsolation(root);
       await TestIncrementalRestart(root);
+      await TestFuturesNormalizedRefreshDoesNotPrintDots();
       await TestIncompleteCacheBackfills(root);
       await TestIncompleteMemoryBackfills();
       TestCorruptionFailOpen(root);
@@ -110,6 +111,32 @@ internal static class Program
       "Warm restart must fetch only the overlap and current window, not all 10 candles.");
     Assert(warm.Store.GetSnapshot("BTCUSDT", Interval, Boundary).SampleCount == 10,
       "Incremental refill must retain the requested window.");
+    _passed++;
+  }
+
+  private static async Task TestFuturesNormalizedRefreshDoesNotPrintDots()
+  {
+    MarketDataService service = new MarketDataService(new MarketDataStore(5));
+    TextWriter previous = Console.Out;
+    using var captured = new StringWriter();
+    IReadOnlyList<MarketDataRefreshStatus> results;
+    try
+    {
+      Console.SetOut(captured);
+      results = await service.RefreshAtAsync(
+        new[] { "BTCUSDT", "ETHUSDT" }, Interval, 5,
+        (symbol, count, logger, ct, asOf) => Task.FromResult(Candles(symbol, count)),
+        Log, maxConcurrency: 1, refreshAsOfUtc: Boundary, cacheExchange: "BinanceFutures");
+    }
+    finally
+    {
+      Console.SetOut(previous);
+    }
+    Assert(captured.ToString().Length == 0,
+      "Binance Futures 5m refresh must not write console progress dots or a progress prefix.");
+    Assert(results.Count == 2 && results.All(status =>
+      status != null && status.Succeeded && !status.Skipped && status.ReceivedCandleCount == 5),
+      "Removing progress output must not change successful market refresh status counts.");
     _passed++;
   }
 
