@@ -1,5 +1,12 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 23 — Remove market-scan and SMS progress dots
+
+Removed all dot-by-dot progress printing from the first-seen date check and the SMS evaluation loop. Both stages now emit **one concise INFO completion** through the normal application logger, visible in the regular Analyzer log and Monitor; interrupted first-seen scans similarly emit one INFO status. Removed the redundant progress-only DEBUG copy. Neither stage writes console fragments. Market counts, SMS matches, cancellation handling and acquisition/concurrency policies are unchanged.
+
+Updated production-path ConfigurationLifecycle tests for both normal and interrupted first-seen checks and both active/nonactive SMS scans, asserting no console progress output and preserving functional outcomes. **Tests authored but .NET build/execution pending.**
+
+
 ## November 23 — Per-market unavailable SMS safeguards, delivery and recovery tests (unverified)
 
 The prior live LONG/SHORT first-configuration deadlock was caused by otherwise conclusive market analysis combined with a few asset-only SMS `PricePathEfficiency` source-unavailable cases. Rather than treating the missing metric as FALSE, retain UNAVAILABLE and track the affected market whenever the SMS changes properties or has StopProcessWhenTriggered. An unresolved stop-process condition suppresses later SMS activation for that market.

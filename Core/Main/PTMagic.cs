@@ -1888,13 +1888,8 @@ namespace Core.Main
       _smsUnavailableMarkets.Clear();
       if (this.PTMagicConfiguration.AnalyzerSettings.SingleMarketSettings.Count > 0)
       {
-        // One progress line across the entire market/SMS pass.
-        // Actual trigger decisions and grouped warnings are recorded elsewhere.
-        string smsProgressPrefix = "SMS evaluation (" + this.MarketList.Count + " markets): ";
-        Console.Write(smsProgressPrefix);
-        int smsProgressDots = 0;
-
-        int marketPairProcess = 1;
+        // SMS status is logged once when evaluation finishes. No per-market
+        // progress dots or console fragments.
         Dictionary<string, List<string>> matchedMarketTriggers = new Dictionary<string, List<string>>();
         // Metric warnings are aggregated in the raid summary.
         string mainMarket = this.LastRuntimeSummary.MainMarket;
@@ -2433,22 +2428,11 @@ namespace Core.Main
             }
           } // End loop single market settings
 
-          // One progress dot for each 25 completed markets and the last partial group.
-          // No per-market or per-SMS logging calls.
-          if ((marketPairProcess % 25) == 0 || marketPairProcess == this.MarketList.Count)
-          {
-            Console.Write('.');
-            smsProgressDots++;
-          }
-
-          marketPairProcess++;
         } // End loop through markets
 
-        string smsProgressSuffix = " done (" + this.TriggeredSingleMarketSettings.Count + " active markets).";
-        Console.WriteLine(smsProgressSuffix);
-        // One DEBUG file record for the whole evaluation; standard NLog console
-        // accepts INFO+ only and does not repeat this completion record.
-        this.Log.DoLogDebug(smsProgressPrefix + new string('.', smsProgressDots) + smsProgressSuffix);
+        // Ordinary INFO line in both the Analyzer log file and console.
+        this.Log.DoLogInfo("SMS evaluation (" + this.MarketList.Count + " markets): done (" +
+          this.TriggeredSingleMarketSettings.Count + " active markets).");
 
         // Persist only SMS that are actually part of this raid's desired
         // configuration; filtered/removed settings must not remain latched.

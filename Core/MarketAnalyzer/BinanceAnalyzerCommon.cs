@@ -216,14 +216,8 @@ namespace Core.MarketAnalyzer
     internal static async Task CheckFirstSeenDatesAsync(string exchangeName, string apiBase, Dictionary<string, Market> markets, ConcurrentDictionary<string, MarketInfo> marketInfos, PTMagicConfiguration systemConfiguration, LogHelper log, CancellationToken cancellationToken = default)
     {
       int marketsChecked = 0;
-      object progressLock = new object();
       bool completed = false;
       string prefix = exchangeName + " - Checking first seen dates for " + markets.Count + " markets: ";
-
-      // Keep the prefix, live periods and completion on ONE console line.
-      // An NLog INFO prefix would insert a newline before Console.Write('.').
-      // Preserve a single structured DEBUG record in the file log afterward.
-      lock (progressLock) Console.Write(prefix);
       try
       {
         await Parallel.ForEachAsync(markets.Keys, new ParallelOptions { MaxDegreeOfParallelism = MetadataConcurrency, CancellationToken = cancellationToken }, async (key, ct) =>
@@ -248,7 +242,6 @@ namespace Core.MarketAnalyzer
           }
 
           Interlocked.Increment(ref marketsChecked);
-          lock (progressLock) Console.Write('.');
         }).ConfigureAwait(false);
         completed = true;
       }
@@ -257,9 +250,9 @@ namespace Core.MarketAnalyzer
         int checkedCount = Volatile.Read(ref marketsChecked);
         string suffix = (completed ? " done (" : " interrupted (") +
           checkedCount + "/" + markets.Count + " markets).";
-        lock (progressLock) Console.WriteLine(suffix);
-        log.DoLogDebug(prefix + checkedCount + "/" + markets.Count +
-          (completed ? " checked." : " checked; interrupted."));
+        // One ordinary INFO entry after the check, visible in PTMagic's
+        // regular log and Monitor. No console fragments or progress dots.
+        log.DoLogInfo(prefix + suffix.TrimStart());
       }
     }
 

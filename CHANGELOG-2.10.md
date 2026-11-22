@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Remove progress dots completely (validation pending)
+
+Per owner direction, delete incremental period output from first-seen-date scans and SMS evaluation. Do not print per-market console fragments or attempt PM2/Monitor incremental-line rendering. Each operation emits a single normal INFO completion message (or interrupted first-seen status) containing the actual processed and active counts. This INFO record now appears in regular PTMagic file logs as well as the console, rather than producing dot-only PM2 lines. Remove redundant completion DEBUG records. Update ConfigurationLifecycle normal/cancelled and active/inactive regression expectations accordingly. **No trading decisions, market acquisition logic, Analyzer settings, Monitor reader, or PT API behavior changed. .NET build/runtime validation pending.**
+
+
 ## November 23, 2026 — Inline metric DEBUG and Monitor Logs SSE response completion (validation pending)
 
 Removed end-of-raid flat-path DEBUG replay and emitted exact `PricePathEfficiency` source DEBUG with its MarketTrend calculation, and affected SMS caller DEBUG during the corresponding trigger evaluation. Only the compact INFO aggregate remains at RAID SUMMARY. Existing NO_TRADES DEBUG moves to the MarketTrend evaluation stage. The live first-seen-market and SMS Console.Write dot streams are **unchanged**; no buffered-at-completion substitution was made.

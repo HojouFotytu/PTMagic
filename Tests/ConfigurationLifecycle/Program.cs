@@ -81,9 +81,8 @@ internal static class Program
         {
           Console.SetOut(original);
         }
-        string actual = captured.ToString().Replace("\r\n", "\n");
-        Require(actual ==
-          "BinanceFutures - Checking first seen dates for 3 markets: ... done (3/3 markets).\n");
+        Require(captured.ToString().Length == 0,
+          "First-seen checks must not write console progress dots.");
         Require(symbols.All(symbol => infos[symbol].FirstSeen > Constants.confMinDate));
 
         using var interrupted = new StringWriter();
@@ -99,8 +98,8 @@ internal static class Program
         {
           Console.SetOut(original);
         }
-        Require(interrupted.ToString().Replace("\r\n", "\n") ==
-          "BinanceFutures - Checking first seen dates for 3 markets:  interrupted (0/3 markets).\n");
+        Require(interrupted.ToString().Length == 0,
+          "Cancelled first-seen checks must not write console progress dots.");
       });
       Check("Futures analyzer underlying types filter historical and SMS populations", () =>
       {
@@ -1105,7 +1104,7 @@ internal static class Program
         fixture.Configuration.GeneralSettings.Application.TestMode = false; Call(fixture.Bot, "LoadSMSSummaries");
         Require(fixture.Bot.SingleMarketSettingSummaries.Single().Market == "BTCUSDT");
       });
-      Check("SMS evaluation emits one progress line across all markets", () =>
+      Check("SMS evaluation emits no progress dots while preserving active-market results", () =>
       {
         using var fixture = new Fixture();
         fixture.Bot.MarketList = Enumerable.Range(1, 51)
@@ -1123,14 +1122,13 @@ internal static class Program
         }
         string[] outputLines = captured.ToString().Replace("\r\n", "\n")
           .Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Require(outputLines.Length == 1 &&
-          outputLines[0].StartsWith("SMS evaluation (51 markets): ", StringComparison.Ordinal) &&
-          outputLines[0].EndsWith("... done (0 active markets).", StringComparison.Ordinal));
+        Require(outputLines.Length == 0,
+          "SMS evaluations must not write console progress dots.");
         Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 &&
           fixture.Bot.SingleMarketSettingsCount.Count == 0);
 
-        // Activated SMS also compiles its property overrides. Compilation
-        // must not produce a separate dot line after the one evaluation line.
+        // Activated SMS still compiles its property overrides, without
+        // producing any console progress output.
         using var active = new Fixture();
         active.Bot.MarketList = new List<string> { "BTCUSDT" };
         active.RecentVolume(100);
@@ -1147,8 +1145,7 @@ internal static class Program
         }
         string[] activeLines = activeOutput.ToString().Replace("\r\n", "\n")
           .Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Require(activeLines.Length == 1 &&
-          activeLines[0] == "SMS evaluation (1 markets): . done (1 active markets)." &&
+        Require(activeLines.Length == 0 &&
           active.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
           active.Bot.SingleMarketSettingsCount.TryGetValue(active.Sms.SettingName, out int activeCount) &&
           activeCount == 1);
