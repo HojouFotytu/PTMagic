@@ -1,5 +1,14 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 23 — Per-market unavailable SMS safeguards, delivery and recovery tests (unverified)
+
+The prior live LONG/SHORT first-configuration deadlock was caused by otherwise conclusive market analysis combined with a few asset-only SMS `PricePathEfficiency` source-unavailable cases. Rather than treating the missing metric as FALSE, retain UNAVAILABLE and track the affected market whenever the SMS changes properties or has StopProcessWhenTriggered. An unresolved stop-process condition suppresses later SMS activation for that market.
+
+Those symbols receive explicit `PAIR_sell_only_mode_enabled = true` and `PAIR_DCA_enabled = false` in their PAIRS SMS overlay, superseding conflicting per-pair overrides. Unaffected markets retain their ordinary compiled SMS properties. Earlier active SMS with unavailable activation/OffTriggers remain latched. The overlay is rebuilt each raid; when data becomes valid its temporary restriction disappears. The existing pinned-freshness, global-selection uncertainty, startup SOM, full-target acknowledgement and TestMode no-write safeguards remain intact. The previously unknown confirmed PT setting is not invented; it advances only after actual successful delivery.
+
+Added lifecycle tests for protected first delivery, market isolation, recovery on the next raid, conflicting known overrides and previously active SMS. Source-only publication; **new .NET build/tests and Linux configured runtime verification pending.** No Analyzer JSON or trading strategy files modified.
+
+
 ## November 23 — AnalyzerState Linux startup and first-seen progress corrections (new checks pending)
 
 The PTMagic constructor no longer creates the named `analyzerStateMutex`. `WriteStateToFile` now opens a persistent `_data/AnalyzerState.lock` file exclusively, with bounded retries under contention. The lock file remains on disk to avoid competing inode/recreation races. Existing `_data/AnalyzerState` name and integer contents are unchanged, while independent instances with different `_data` directories no longer share one global mutex. Linux processes without `/run/user/<UID>` can construct the analyzer without attempting named-mutex creation. Mixed old/new binaries sharing the same `_data` are not mutually synchronized: stop the old instance before deploying.

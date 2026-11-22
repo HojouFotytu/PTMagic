@@ -985,7 +985,7 @@ internal static class Program
         Require(fixture.Sent.Count == 1 &&
           fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default");
       });
-      Check("property-changing and stop-process SMS unknown still defers initial configuration", () =>
+      Check("unknown actionable SMS protects its market while allowing first PT delivery", () =>
       {
         foreach (bool stop in new[] { false, true })
         {
@@ -1000,11 +1000,63 @@ internal static class Program
             fixture.Sms.StopProcessWhenTriggered = true;
           }
           Call(fixture.Bot, "ApplySingleMarketSettings");
-          Require(Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+          Require(!Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+            fixture.Bot.PairsLines.Count(line => line == "BTC_sell_only_mode_enabled = true") == 1 &&
+            fixture.Bot.PairsLines.Count(line => line == "BTC_DCA_enabled = false") == 1);
           Call(fixture.Bot, "SaveProfitTrailerProperties");
-          Require(fixture.Sent.Count == 0 &&
-            fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
+          Require(fixture.Sent.Count == 1 &&
+            fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Applied" &&
+            fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default");
         }
+      });
+      Check("SMS unknown on one market does not block another market and clears when recovered", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Bot.MarketList = new List<string> { "BTCUSDT", "ETHUSDT" };
+        fixture.RecentVolume(100);
+        Call(fixture.Bot, "ApplySingleMarketSettings");
+        Require(!Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+          fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
+          !fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("ETHUSDT") &&
+          fixture.Bot.PairsLines.Contains("ETH_sell_only_mode_enabled = true") &&
+          fixture.Bot.PairsLines.Contains("ETH_DCA_enabled = false") &&
+          !fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default");
+
+        fixture.BeforeRaid(); fixture.CompileClean();
+        Set(fixture.Bot, "_recentMarketSnapshots", new Dictionary<string, Market>(StringComparer.OrdinalIgnoreCase)
+        {
+          ["BTCUSDT"] = new Market { Name = "BTCUSDT", Symbol = "BTCUSDT", Price = 100, Volume24h = 100 },
+          ["ETHUSDT"] = new Market { Name = "ETHUSDT", Symbol = "ETHUSDT", Price = 100, Volume24h = 100 }
+        });
+        Call(fixture.Bot, "ApplySingleMarketSettings");
+        Require(!fixture.Bot.PairsLines.Contains("ETH_DCA_enabled = false") &&
+          fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("ETHUSDT"));
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 2 && !fixture.Sent[1].Pairs.Contains("ETH_DCA_enabled = false"));
+      });
+      Check("unavailable stop-process SMS overrides conflicting known pair permissions", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
+        fixture.Sms.PairsProperties["sell_only_mode_enabled"] = false;
+        fixture.Sms.PairsProperties["DCA_enabled"] = true;
+        fixture.Sms.Triggers = new List<Trigger> { new Trigger { Tag = "V", Min24hVolume = 10 } };
+        fixture.Configuration.AnalyzerSettings.SingleMarketSettings.Add(new SingleMarketSetting
+        {
+          SettingName = "UnknownStop", StopProcessWhenTriggered = true,
+          Triggers = new List<Trigger> { new Trigger { Tag = "X", MarketTrendName = "MissingTrend",
+            Metric = "ATRP", MarketTrendRelation = "Absolute", MinChange = 1.0 } }
+        });
+        fixture.RecentVolume(100);
+        Call(fixture.Bot, "ApplySingleMarketSettings");
+        Require(fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
+          fixture.Bot.PairsLines.Count(line => line == "BTC_sell_only_mode_enabled = true") == 1 &&
+          fixture.Bot.PairsLines.Count(line => line == "BTC_DCA_enabled = false") == 1 &&
+          !fixture.Bot.PairsLines.Contains("BTC_sell_only_mode_enabled = false") &&
+          !fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = true"));
       });
       Check("last SMS removal on clean rebuilt properties still sends removal", () =>
       {
@@ -1107,14 +1159,19 @@ internal static class Program
         fixture.Sms.Triggers.Add(new Trigger { Tag = "Age", AgeDaysLowerThan = 7 });
         fixture.Bot.MarketInfos["BTCUSDT"] = new MarketInfo { Name = "BTCUSDT", FirstSeen = DateTime.UtcNow.AddDays(-1) };
         Call(fixture.Bot, "ApplySingleMarketSettings");
-        Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 &&
+          !Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+          fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
       });
       Check("unknown activation retains existing SMS without off-triggers", () =>
       {
         using var fixture = new Fixture(); fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
         var original = fixture.SmsSummary("BTCUSDT"); fixture.Bot.SingleMarketSettingSummaries.Add(original);
         Call(fixture.Bot, "ApplySingleMarketSettings");
-        Require(fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") && ReferenceEquals(original, fixture.Bot.SingleMarketSettingSummaries.Single()) && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Require(fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
+          ReferenceEquals(original, fixture.Bot.SingleMarketSettingSummaries.Single()) &&
+          !Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+          fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
       });
       Check("sentinel first-seen time keeps age unavailable", () => AgeUnavailable(Constants.confMinDate));
       Check("future first-seen time keeps age unavailable", () => AgeUnavailable(DateTime.UtcNow.AddDays(1)));
@@ -1122,12 +1179,17 @@ internal static class Program
       {
         using var fixture = new Fixture(); fixture.Bot.MarketList = new List<string> { "BTCUSDT" }; fixture.RecentVolume(Double.NaN);
         Call(fixture.Bot, "ApplySingleMarketSettings");
-        Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 &&
+          !Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+          fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
       });
       Check("missing off-trigger AND known true cannot remove active SMS", () =>
       {
         using var fixture = OffFixture("AND"); Call(fixture.Bot, "ApplySingleMarketSettings");
-        Require(fixture.Bot.SingleMarketSettingSummaries.Count == 1 && fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        Require(fixture.Bot.SingleMarketSettingSummaries.Count == 1 &&
+          fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
+          !Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+          fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
       });
       Check("missing off-trigger OR known true can conclusively remove SMS", () =>
       {
@@ -1161,7 +1223,9 @@ internal static class Program
     fixture.Sms.Triggers = new List<Trigger> { new Trigger { Tag = "Age", AgeDaysLowerThan = 7 } };
     fixture.Bot.MarketInfos["BTCUSDT"] = new MarketInfo { Name = "BTCUSDT", FirstSeen = firstSeen };
     Call(fixture.Bot, "ApplySingleMarketSettings");
-    Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 && Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+    Require(fixture.Bot.TriggeredSingleMarketSettings.Count == 0 &&
+      !Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+      fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
   }
 
   private static ConfigurationPayload Payload(string setting) => new ConfigurationPayload(setting,

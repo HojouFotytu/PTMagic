@@ -1,5 +1,12 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Per-market SMS protection unblocks conclusive global PT delivery (validation pending)
+
+Previously, a few flat price paths produced mathematically unavailable asset-SMS `PricePathEfficiency` values. This made the first PT configuration permanently Deferred even though global selection and other markets were valid. PTMagic now preserves missing-data UNAVAILABLE while restricting only affected symbols with `PAIR_sell_only_mode_enabled = true` and `PAIR_DCA_enabled = false` in the compiled PAIRS SMS overlay. The temporary restrictions override conflicting known SMS pair permissions, preserve previously active SMS and unknown OffTrigger latches, and expire when the market returns to conclusive data. Unknown stop-process SMS also prevent lower-priority SMS evaluation on that market. A grouped warning identifies protected symbols.
+
+Conclusive GlobalSettings and unaffected SMS may now proceed through unchanged full-payload PT acknowledgements. Global uncertainty, startup SOM uncertainty, stale source pins, TestMode and transport failures remain fail-closed. Added focused lifecycle regressions. **Source committed, but new .NET build, focused tests and deployed PT runtime verification remain pending.** No analyzer or preset settings modified.
+
+
 ## November 23, 2026 — Concentration available-market ranking with 90% coverage (validation pending)
 
 The owner approved replacing Concentration's 100% complete ranked-population restriction with the standard **≥90% of the frozen eligible markets**. Markets without source-valid, aligned return or full quote-volume windows are excluded. Rank only valid markets by actual quote volume, take the highest-volume ten and subtract the remaining valid markets' mean return. Require at least eleven usable ranked markets, retain the original eligible denominator and do not invent ranks/values for missing markets. A 726/729 valid population is sufficient. The separate HHI/volume-share metrics retain their own coverage requirements. A new source-level regression verifies 11/12 valid and rejects 11/13 (<90%), including a high-volume symbol with missing return reference. **Build and owner-run test execution pending.** No Analyzer JSON or trading preset changed.

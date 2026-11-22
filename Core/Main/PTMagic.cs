@@ -92,6 +92,10 @@ namespace Core.Main
     private ConfigurationDeliveryResult _startupGuardDelivery = ConfigurationDeliveryResult.Deferred("No startup global SOM command attempted.");
     private string _startupGuardStatus = "Inactive";
     private bool _selectionIndeterminate;
+    // A single unavailable asset-SMS condition cannot make a conclusive
+    // market-wide setting unknown. Protect its own market instead.
+    private readonly Dictionary<string, HashSet<string>> _smsUnavailableMarkets =
+      new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
     private bool _decisionFresh;
     private bool _raidAnalysisBuilt;
     private bool _normalDecisionCommittedThisRaid;
@@ -942,6 +946,7 @@ namespace Core.Main
             _raidAnalysisBuilt = false;
             _normalDecisionCommittedThisRaid = false;
             _selectionIndeterminate = false;
+            _smsUnavailableMarkets.Clear();
             _decisionFresh = false;
             _decisionInputs.Clear();
             _desiredPayloadHash = "";
@@ -1810,8 +1815,74 @@ namespace Core.Main
          (setting.IndicatorsProperties?.Count ?? 0) > 0);
     }
 
+    // Preserve UNAVAILABLE and the previously active SMS state. Restrict
+    // additional exposure on just the market whose actionable SMS is unknown.
+    private void TrackUnavailableSms(string marketPair, SingleMarketSetting setting, string phase)
+    {
+      if (!SmsCanAffectTradingProperties(setting)) return;
+      if (!_smsUnavailableMarkets.TryGetValue(marketPair, out HashSet<string> reasons))
+      {
+        reasons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _smsUnavailableMarkets[marketPair] = reasons;
+      }
+      reasons.Add(setting.SettingName + " (" + phase + ")");
+    }
+
+    private void ApplyUnavailableSmsSafeguards()
+    {
+      if (_smsUnavailableMarkets.Count == 0) return;
+      string mainMarket = this.LastRuntimeSummary?.MainMarket;
+      if (String.IsNullOrWhiteSpace(mainMarket))
+        throw new InvalidOperationException("Unavailable SMS protection requires a valid PAIRS main market.");
+
+      // Use the existing SMS overlay delimiter so a subsequent raid can
+      // remove these temporary restrictions without leaving stale properties.
+      if (!this.PairsLines.Any(line => line.Contains("PTMagic_SingleMarketSettings", StringComparison.OrdinalIgnoreCase)))
+        this.PairsLines.Add("# PTMagic_SingleMarketSettings - unavailable SMS protection");
+
+      foreach (KeyValuePair<string, HashSet<string>> entry in
+        _smsUnavailableMarkets.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+      {
+        string symbol = entry.Key;
+        if (!symbol.EndsWith(mainMarket, StringComparison.OrdinalIgnoreCase) ||
+            symbol.Length <= mainMarket.Length)
+          throw new InvalidOperationException("Invalid market identity in unavailable SMS protection.");
+        string pair = symbol.Substring(0, symbol.Length - mainMarket.Length).Replace("_", "").Replace("-", "");
+        if (pair.Length == 0 || !pair.All(char.IsLetterOrDigit))
+          throw new InvalidOperationException("Invalid pair prefix in unavailable SMS protection.");
+
+        string som = pair + "_sell_only_mode_enabled";
+        string oldSom = pair + "_sell_only_mode";
+        string dca = pair + "_DCA_enabled";
+        // Apply after normal SMS property compilation. Do not send another
+        // earlier per-market value that would contradict the protective one.
+        this.PairsLines.RemoveAll(line =>
+        {
+          int equals = line.IndexOf('=');
+          if (equals <= 0 || line.TrimStart().StartsWith("#", StringComparison.Ordinal)) return false;
+          string property = line.Substring(0, equals).Trim();
+          return property.Equals(som, StringComparison.OrdinalIgnoreCase) ||
+            property.Equals(oldSom, StringComparison.OrdinalIgnoreCase) ||
+            property.Equals(dca, StringComparison.OrdinalIgnoreCase);
+        });
+        this.PairsLines.Add("# SMS data unavailable for " + symbol + ": " +
+          String.Join(", ", entry.Value.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)));
+        this.PairsLines.Add(som + " = true");
+        this.PairsLines.Add(dca + " = false");
+      }
+
+      string[] examples = _smsUnavailableMarkets.Keys
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase).Take(12).ToArray();
+      this.Log.DoLogWarn("Unresolved property-changing SMS for " +
+        _smsUnavailableMarkets.Count + " markets; new and DCA buying suspended for: " +
+        String.Join(", ", examples) +
+        (_smsUnavailableMarkets.Count > examples.Length ? ", ..." : "") +
+        ". Other market settings remain eligible for PT delivery.");
+    }
+
     private void ApplySingleMarketSettings()
     {
+      _smsUnavailableMarkets.Clear();
       if (this.PTMagicConfiguration.AnalyzerSettings.SingleMarketSettings.Count > 0)
       {
         // One progress line across the entire market/SMS pass.
@@ -2011,9 +2082,8 @@ namespace Core.Main
                           : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False).ToList())
                     : TriggerTruthValue.Unavailable;
                   bool settingOffTriggered = offResult == TriggerTruthValue.True;
-                  if (offResult == TriggerTruthValue.Unavailable &&
-                      SmsCanAffectTradingProperties(marketSetting))
-                    _selectionIndeterminate = true;
+                  if (offResult == TriggerTruthValue.Unavailable)
+                    TrackUnavailableSms(marketPair, marketSetting, "OffTrigger");
                   // Setting got off triggered, remove it from the summary
                   if (settingOffTriggered)
                   {
@@ -2218,8 +2288,13 @@ namespace Core.Main
                           : Core.MarketAnalyzer.MarketData.TriggerTruthValue.False));
                 settingTriggered = smsResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True;
                 activationIndeterminate = smsResult == TriggerTruthValue.Unavailable;
-                if (activationIndeterminate && SmsCanAffectTradingProperties(marketSetting))
-                  _selectionIndeterminate = true;
+                if (activationIndeterminate)
+                {
+                  TrackUnavailableSms(marketPair, marketSetting, "activation");
+                  // A possibly true StopProcess policy must also prevent
+                  // later SMS activation on this particular market.
+                  if (marketSetting.StopProcessWhenTriggered) stopTriggers = true;
+                }
               }
               catch (Exception ex)
               {
@@ -2417,6 +2492,7 @@ namespace Core.Main
           || (_lastActiveSingleMarketSettings != null && _lastActiveSingleMarketSettings.Count > 0);
         _lastActiveSingleMarketSettings = new List<KeyValuePair<string, string>>();
       }
+      ApplyUnavailableSmsSafeguards();
     }
 
     private bool haveSingleMarketSettingsHaveChanged(List<KeyValuePair<string, string>> oldMarketTriggers, List<KeyValuePair<string, string>> newMarketTriggers)
