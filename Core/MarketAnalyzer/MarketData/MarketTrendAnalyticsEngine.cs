@@ -160,10 +160,10 @@ namespace Core.MarketAnalyzer.MarketData
           interval,
           calculatedAtUtc,
           TimeSpan.FromMinutes(marketTrend.TrendMinutes));
-        // Top10 ranking and remaining-population comparison require a complete
-        // trailing-volume sample, unlike the 90% mean/median/breadth policy.
+        // Rank available source-valid markets. The fixed eligible denominator
+        // retains the ordinary 90% global coverage requirement.
         marketMetrics[MarketTrendMetrics.Concentration] = MarketMetricCoverage.Apply(
-          concentration, concentration.SampleCount, globalUniverse.Length, calculatedAtUtc, requireComplete: true);
+          concentration, concentration.SampleCount, globalUniverse.Length, calculatedAtUtc);
       }
 
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetMetrics =
@@ -575,6 +575,10 @@ namespace Core.MarketAnalyzer.MarketData
       List<RankedMarket> rankedMarkets = new List<RankedMarket>();
       foreach (string symbol in globalUniverse)
       {
+        // Exclude invalid/missing return observations before volume ranking.
+        // Never infer missing assets' placement within the Top 10.
+        if (!returns.TryGetValue(symbol, out FeatureValueSnapshot currentReturn) ||
+            !IsUsable(currentReturn)) continue;
         MarketDataSeriesSnapshot series = store.GetSnapshot(symbol, interval, calculatedAtUtc);
         if (TryCalculateCompleteTrailingQuoteVolume(series, interval, rankingWindow, expectedCloseTimeUtc, out double quoteVolume))
         {
@@ -591,8 +595,8 @@ namespace Core.MarketAnalyzer.MarketData
         return InvalidFeature(
           calculatedAtUtc,
           rankedMarkets.Count,
-          "At least 11 markets with a complete trailing " + rankingWindow.TotalMinutes +
-          "-minute quote-volume window ending at the current normalized endpoint are required for concentration. StoreDataMaxHours may be insufficient.");
+          "At least 11 valid markets with aligned returns and a complete trailing " + rankingWindow.TotalMinutes +
+          "-minute quote-volume window are required for concentration. StoreDataMaxHours may be insufficient.");
       }
 
       RankedMarket[] orderedMarkets = rankedMarkets

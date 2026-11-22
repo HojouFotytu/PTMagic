@@ -34,6 +34,7 @@ internal static class Program
       TestReturnAndConcentrationRequirements();
       TestConcentrationWithOnlyTrendWindow();
       TestConcentrationUsesSameWindowForRanking();
+      TestConcentrationUsesAvailableTop10AtNinetyPercentCoverage();
       TestInsufficientConfigurationRemainsUnavailable();
       Console.WriteLine("Phase 1 analytics reliability tests passed: " + _passed + ".");
       return 0;
@@ -243,6 +244,39 @@ internal static class Program
     FeatureValueSnapshot feature = Concentration(store, symbols);
     Assert(feature.IsValid && feature.Value.HasValue && Math.Abs(feature.Value.Value - 20) < 1e-9,
       "60m volume Top10 return advantage must be 20pp; obsolete 24h ranking would produce -2pp.");
+    _passed++;
+  }
+
+  private static void TestConcentrationUsesAvailableTop10AtNinetyPercentCoverage()
+  {
+    string[] symbols = Enumerable.Range(0, 12).Select(i => "COV" + i.ToString("00") + "USDT").ToArray();
+    DateTimeOffset latestOpen = FloorSource(Boundary).AddMinutes(-5);
+    var store = new MarketDataStore(14);
+    for (int market = 0; market < symbols.Length; market++)
+    {
+      // Top 10 valid markets have +10% returns and higher volume. The next
+      // valid market has -10%. The last has a high-volume 60m window but no
+      // earlier return-reference close, so it is deliberately excluded.
+      int firstIndex = market == 11 ? 1 : 0;
+      for (int index = firstIndex; index <= 12; index++)
+      {
+        double price = index == 0 ? 100 : market == 10 ? 90 : 110;
+        double volume = market == 11 ? 10000 : market == 10 ? 1 : 100;
+        store.UpsertCandle(Candle(symbols[market],
+          latestOpen.AddMinutes((index - 12) * 5), price, Boundary, volume));
+      }
+    }
+    FeatureValueSnapshot result = Concentration(store, symbols);
+    Assert(result.IsValid && result.SampleCount == 11 && result.EligibleSampleCount == 12 &&
+      result.CoveragePercent.HasValue && Math.Abs(result.CoveragePercent.Value - (100.0 * 11 / 12)) < 1e-9 &&
+      result.Value.HasValue && Math.Abs(result.Value.Value - 20.0) < 1e-9,
+      "Concentration must rank the Top 10 available valid markets and accept 11/12 >=90%.");
+
+    string[] thirteen = symbols.Concat(new[] { "NOHISTORYUSDT" }).ToArray();
+    FeatureValueSnapshot below90 = Concentration(store, thirteen);
+    Assert(!below90.IsValid && !below90.Value.HasValue && below90.SampleCount == 11 &&
+      below90.EligibleSampleCount == 13,
+      "Concentration must reject 11/13 (<90%) without shrinking the eligible denominator.");
     _passed++;
   }
 

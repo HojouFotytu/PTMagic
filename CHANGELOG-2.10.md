@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Concentration available-market ranking with 90% coverage (validation pending)
+
+The owner approved replacing Concentration's 100% complete ranked-population restriction with the standard **≥90% of the frozen eligible markets**. Markets without source-valid, aligned return or full quote-volume windows are excluded. Rank only valid markets by actual quote volume, take the highest-volume ten and subtract the remaining valid markets' mean return. Require at least eleven usable ranked markets, retain the original eligible denominator and do not invent ranks/values for missing markets. A 726/729 valid population is sufficient. The separate HHI/volume-share metrics retain their own coverage requirements. A new source-level regression verifies 11/12 valid and rejects 11/13 (<90%), including a high-volume symbol with missing return reference. **Build and owner-run test execution pending.** No Analyzer JSON or trading preset changed.
+
+
 ## November 23, 2026 — Linux state-lock startup and inline first-seen progress corrections (validation pending)
 
 **Startup fault:** PTMagic could terminate in its constructor on Linux before its first raid when creating named `analyzerStateMutex` required missing `/run/user/1000`. Replace the sole state-write mutex with an exclusive, persistent file lock at `_data/AnalyzerState.lock`, held while writing the unchanged `_data/AnalyzerState` integer. FileShare.None preserves cross-process exclusion among instances running the new code over the same directory; bounded retries replace unbounded named-mutex wait. Do not delete the lock sentinel. The old and new lock protocols are different, so concurrent mixed-version writers sharing an `_data` directory are **not** coordinated; stop the old process before upgrading. No other PT settings, SOM, metric or trading logic is altered.
