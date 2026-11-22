@@ -1,5 +1,9 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 22 — Unexecuted GlobalSetting Delta selection regression
+
+One additional focused acceptance case executes the production `CheckGlobalSettingsTriggers()` path against synthetic current Breadth=55 and previous Breadth=40. It verifies Delta=15 selection, unchanged explicit Absolute=55, Delta mismatch under absolute-only bounds, and missing historical Delta causing indeterminate selection instead of absolute fallback. Static runtime snapshots are restored after the test. The known older 84/84 PASS does not cover this case; run the current suite before claiming a new PASS.
+
 ## Current verification — 84/84 PASS on November 17, 2026
 
 **Two owner-executed `ConfigurationLifecycle` runs: 84/84 PASS** after `70146fa` and again after [`303b2e7`](https://github.com/HojouFotytu/PTMagic/commit/303b2e7f98d33a5d9cb07c13cf016406a1a49804). An earlier full Core/PTMagic/Monitor build **PASS 16.0s** at `fd4aa2e`; the final `303b2e7` `dotnet run` is not a newly reported *complete solution* build. `70146fa` updated a stale Monitor assertion `Model.GlobalMetricGroups` → `Model.DisplayedGlobalMetricGroups` that had stopped the first 84-group attempt.

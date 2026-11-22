@@ -1621,7 +1621,8 @@ namespace Core.Main
                         string metricError = "";
                         bool hasMetricValue = useNormalizedMetric &&
                           Core.MarketAnalyzer.MarketData.MarketTrendMetricTriggerResolver.TryResolveGlobal(
-                            this.PTMagicConfiguration, marketTrend, trigger.Metric, out resolvedMetricValue, out metricError);
+                            this.PTMagicConfiguration, marketTrend, trigger.Metric,
+                            trigger.MarketTrendRelation, out resolvedMetricValue, out metricError);
                         this.CaptureDecisionMetric(marketTrend, trigger.Metric, null, trigger.MarketTrendRelation,
                           hasMetricValue ? resolvedMetricValue : (double?)null, metricError,
                           "GlobalSetting", globalSetting.SettingName, "#" + (orderedTriggerResults.Count + 1));

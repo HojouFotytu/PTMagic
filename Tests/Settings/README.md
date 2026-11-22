@@ -1,5 +1,17 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
+## November 22 — v2.6.4 GlobalSetting Delta regression fix (new runtime evidence PENDING)
+
+**Single canonical fixture:** \`Tests/Settings/settings.analyzer.json\` **v2.6.4** with \`MarketAnalyzer.DescriptiveName = "2.6.4"\` and log heading \`2.6.4 RAID SUMMARY #N\`; blank name still produces \`RAID SUMMARY #N\` for Monitor Logs compatibility. All configured MarketTrends, existing G01–G09, SMS01–SMS14, OffTrigger definitions and presets remain unchanged. G10 remains first.
+
+**Reason:** In v2.6.3 LONG/SHORT TestMode archives, G10 was repeatedly selected but its three supposed Delta values equaled their respective absolute current metric readings. The live GlobalSetting call in Core/Main/PTMagic.cs used \`TryResolveGlobal(configuration, trend, metric, out ...)\`, which invokes the absolute overload and ignores \`trigger.MarketTrendRelation\`. SMS14 Delta and its OffTrigger used their relation-aware path correctly. **New revision passes the relation to the existing global resolver overload**; no new Delta algorithm or market input is needed.
+
+**Regression:** \`Tests/ConfigurationLifecycle/Program.cs\` executes the **actual** GlobalSetting selection path using synthetic pinned current Breadth=55 and historical Breadth=40. The trigger must select with Delta=15 under [10,20), select with Absolute=55 under [50,60), reject Delta under [50,60), and mark missing Delta source UNAVAILABLE rather than falling back to absolute. Earlier standalone resolver-focused tests alone could not catch this call-site error.
+
+**Runtime diagnostic distinction:** In G10, the completed-period H1 \`MedianTakerBuyRatio\` Delta is now bounded [-0.25,0.25), rather than ±1e12; the earlier erroneous absolute median was about 0.517, whereas the observed historical Delta was about -0.0096. This intentionally distinguishes the previous absolute-value bug during the next TestMode raids; **the range is diagnostic only, not a market-regime threshold**. G10 remains first priority, and all existing SMS14 tests remain.
+
+**Acceptance criteria:** Verify current source build and focused test suites; then run new v2.6.4 in **both isolated LONG/SHORT TestMode instances**, confirm G10 actually selects on warm fresh raids, its logged values are **current minus independently reconstructed historical values**, decision-history previous/current timestamps differ appropriately, no unintended live delivery, and no new ERROR/CRITICAL faults. Do not infer correctness merely because G10 selected: check arithmetic. Earlier v2.6.3 runtime evidence and predecessor f75f229 build passes do NOT validate this corrective revision.
+
 ## Current analyzer identity — November 22, 2026
 
 **Single test analyzer:** `Tests/Settings/settings.analyzer.json`, **version 2.6.3**. The optional `MarketAnalyzer.DescriptiveName` is **`2.6.3`**—the analyzer version only, with **no PTMagic version prefix or English description**. The resulting banner is `2.6.3 RAID SUMMARY #N`; a blank field remains `RAID SUMMARY #N`. The existing Monitor Logs readers still rely on the unchanged `RAID SUMMARY` marker.

@@ -1,16 +1,18 @@
 // TEST-ONLY PTMagic 2.10 comprehensive 45-metric analyzer. Use isolated TestMode only; never live trading.
 // SetIdentity = PTM2.10-45-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.6.3
+// SetVersion = 2.6.4
 // SetDate = 2026-11-22
-// DescriptiveName = 2.6.3; raid banner = 2.6.3 RAID SUMMARY #N
-// TargetApplicationSource = optional-analyzer-descriptive-name implementation and Delta relation
+// DescriptiveName = 2.6.4; raid banner = 2.6.4 RAID SUMMARY #N
+// TargetApplicationSource = GlobalSetting Delta relation-call correction after e3019a9
 // ApplicationBuildEvidence = DELTA_UNVERIFIED; previous_45_metric_build_PASS_15.0s_at_f75f229
 // ApplicationFocusedEvidence = DELTA_UNVERIFIED; previous_25_OHLCV_9_Adaptive_84_Lifecycle_at_f75f229
-// ConfiguredRuntimeAcceptance = DELTA NOT VERIFIED (LONG/SHORT TestMode evidence pending)
+// ConfiguredRuntimeAcceptance = v2.6.4 FIX PENDING (v2.6.3 G10 selected absolute values; SMS14 and heading verified)
 // Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
 // Sole testing analyzer in Tests/Settings; G10 Delta first, G09 preserved second.
 // All existing GlobalSettings remain in their previous relative order; DEFAULT last.
-// G10 tests rolling and completed-period global Delta. SMS14 tests rolling/completed Delta activation.
+// G10 tests rolling/completed-period global Delta. H1 MedianTakerBuyRatio Delta must be in (-0.25, 0.25), unlike current absolute ~0.517 in prior runtime evidence.
+// G10 bounds are diagnostic disambiguation only, not a market-regime threshold; verify true historical subtraction from decision history.
+// SMS14 tests rolling/completed Delta activation.
 // SMS14 Delta OffTrigger checks negative path-efficiency change on an already active setting.
 // Test bounds are numerical validity/sign checks, not market-regime thresholds.
 // New diagnostic bounds -0.000001..1.000001 cover the mathematically valid 0..1 range, not regimes.
@@ -18,7 +20,7 @@
 {
   "AnalyzerSettings": {
     "MarketAnalyzer": {
-      "DescriptiveName": "2.6.3",
+      "DescriptiveName": "2.6.4",
       "StoreDataMaxHours": 96,
       "IntervalMinutes": 5,
       "ExcludeMainCurrency": true,
@@ -298,8 +300,8 @@
             "MarketTrendName": "H1",
             "Metric": "MedianTakerBuyRatio",
             "MarketTrendRelation": "Delta",
-            "MinChange": -1000000000000,
-            "MaxChange": 1000000000000
+            "MinChange": -0.25,
+            "MaxChange": 0.25
           }
         ],
         "PairsProperties": {},

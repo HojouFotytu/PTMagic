@@ -1,5 +1,13 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 22, 2026 — GlobalSetting Delta relation call-site fix; runtime acceptance pending
+
+**Observed problem in v2.6.3 LONG/SHORT TestMode:** G10 \`DIAG_G10_DELTA\` selected yet its recorded values were equal to absolute current Breadth, MedianPricePathEfficiency and MedianTakerBuyRatio rather than historical differences. Cause verified in \`Core/Main/PTMagic.cs\`: \`CheckGlobalSettingsTriggers()\` called the legacy no-relation \`TryResolveGlobal\` overload, defaulting to Absolute despite \`trigger.MarketTrendRelation="Delta"\`. SMS14 relation-aware Delta and OffTrigger were independently functional. **Fix:** pass \`trigger.MarketTrendRelation\` into the already existing relation-aware global resolver. No Delta engine algorithm/metric registry/market data change. Existing Absolute and other relation handling retained.
+
+Added a synthetic production-path regression to \`Tests/ConfigurationLifecycle/Program.cs\` (current 55, prior 40, Delta 15; Absolute 55; mismatch and unavailable history). Sole fixture \`Tests/Settings/settings.analyzer.json\` now **v2.6.4**, \`DescriptiveName="2.6.4"\` and G10 first; H1 MedianTakerBuyRatio Delta's diagnostic range [-0.25,0.25) deliberately rejects the previously observed erroneous ~0.517 absolute result while admitting the observed ~-0.0096 difference. This is a **test discriminant, not a regime decision threshold**. No other diagnostic settings, preset assignments or live settings changed.
+
+**Current revision:** source and fixture changes committed; .NET build, new focused test execution and new LONG/SHORT TestMode acceptance remain **UNVERIFIED**.
+
 ## November 22, 2026 — Analyzer identity simplified to version-only (v2.6.3 fixture)
 
 The single TestMode analyzer now specifies `MarketAnalyzer.DescriptiveName: "2.6.3"`, matching its separately maintained `SetVersion = 2.6.3` header. The raid heading is `2.6.3 RAID SUMMARY #N`, or `RAID SUMMARY #N` when blank. This correction removes the unnecessary `PTM 2.10 Delta` prefix; **no runtime heading, parser, source-calculation, trigger or trading behavior is changed**. Monitor's optional field example and focused editor/banner tests now use version-only labels. Build and live TestMode evidence for the updated revision remain pending.

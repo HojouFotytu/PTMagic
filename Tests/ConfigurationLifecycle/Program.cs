@@ -113,6 +113,106 @@ internal static class Program
         analyses["M15"] = new MarketTrendAnalysisSnapshot { MarketTrendName = "M15" };
         Require(captured.Single(x => x.MarketTrendName == "M15" && x.Metric == "PriceTrend").Value == 0.5);
       });
+      Check("global Delta trigger selects historical change, not current absolute value", () =>
+      {
+        using var fixture = new Fixture();
+        var runtime = typeof(BinanceFuturesAnalyticsRuntime);
+        var currentField = runtime.GetField("_currentTrendAnalyses", BindingFlags.Static | BindingFlags.NonPublic);
+        var deltaField = runtime.GetField("_currentDeltaAnalyses", BindingFlags.Static | BindingFlags.NonPublic);
+        Require(currentField != null && deltaField != null);
+        object originalCurrent = currentField.GetValue(null);
+        object originalDelta = deltaField.GetValue(null);
+        try
+        {
+          DateTimeOffset asOf = DateTimeOffset.UtcNow;
+          var trend = new MarketTrend { Name = "H1", Platform = "Exchange",
+            TrendMinutes = 60, Metrics = "Breadth" };
+          fixture.Configuration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Add(trend);
+          var trigger = new Trigger
+          {
+            Tag = "A", MarketTrendName = "H1", Metric = "Breadth",
+            MarketTrendRelation = Constants.MarketTrendRelationDelta,
+            MinChange = 10.0, MaxChange = 20.0
+          };
+          var diagnostic = new GlobalSetting
+          {
+            SettingName = "DeltaDiagnostic", TriggerConnection = "AND",
+            Triggers = new List<Trigger> { trigger }
+          };
+          fixture.Configuration.AnalyzerSettings.GlobalSettings.Insert(0, diagnostic);
+          var current = new FeatureValueSnapshot
+          {
+            Value = 55.0, IsValid = true, CalculatedAtUtc = asOf,
+            SourceDataTimestampUtc = asOf.AddMinutes(-5)
+          };
+          var prior = new FeatureValueSnapshot
+          {
+            Value = 40.0, IsValid = true, CalculatedAtUtc = asOf.AddMinutes(-60),
+            SourceDataTimestampUtc = asOf.AddMinutes(-65)
+          };
+          MetricDeltaObservation comparison = MarketTrendDeltaEngine.Compare(current, prior, asOf);
+          Require(comparison.Delta.IsValid && comparison.Delta.Value == 15.0);
+          currentField.SetValue(null, new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase)
+          {
+            ["H1"] = new MarketTrendAnalysisSnapshot
+            {
+              MarketTrendName = "H1", TrendMinutes = 60, CalculatedAtUtc = asOf,
+              MarketMetrics = new Dictionary<string, FeatureValueSnapshot>
+              {
+                ["Breadth"] = current
+              }
+            }
+          });
+          deltaField.SetValue(null, new Dictionary<string, MarketTrendDeltaAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase)
+          {
+            ["H1"] = new MarketTrendDeltaAnalysisSnapshot
+            {
+              MarketTrendName = "H1", PreviousAsOfUtc = asOf.AddMinutes(-60),
+              MarketMetrics = new Dictionary<string, MetricDeltaObservation>
+              {
+                ["Breadth"] = comparison
+              }
+            }
+          });
+
+          GlobalSetting Evaluate()
+          {
+            object[] args = { fixture.Configuration.AnalyzerSettings.GlobalSettings
+              .Single(setting => setting.SettingName == "Default"), new List<string>() };
+            Call(fixture.Bot, "CheckGlobalSettingsTriggers", args);
+            return (GlobalSetting)args[0];
+          }
+
+          // 15 passes Delta's bounds, while the absolute current value 55 does not.
+          Require(Evaluate().SettingName == "DeltaDiagnostic");
+          var details = Get<List<GlobalSettingTriggerSummary>>(fixture.Bot, "_selectedGlobalTriggerDetails");
+          Require(details.Count == 1 && details[0].Value == 15.0 && details[0].Result == "TRUE");
+          Require(!Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+
+          // The same input still resolves as absolute when explicitly requested.
+          trigger.MarketTrendRelation = Constants.MarketTrendRelationAbsolute;
+          trigger.MinChange = 50.0; trigger.MaxChange = 60.0;
+          Require(Evaluate().SettingName == "DeltaDiagnostic");
+          details = Get<List<GlobalSettingTriggerSummary>>(fixture.Bot, "_selectedGlobalTriggerDetails");
+          Require(details.Count == 1 && details[0].Value == 55.0 && details[0].Result == "TRUE");
+
+          // Delta cannot silently fall back to current absolute measurement.
+          trigger.MarketTrendRelation = Constants.MarketTrendRelationDelta;
+          Require(Evaluate().SettingName == "Default" &&
+            !Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+
+          // Missing historical data is unavailable, not an absolute fallback or 0.
+          deltaField.SetValue(null, new Dictionary<string, MarketTrendDeltaAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase));
+          trigger.MinChange = 10.0; trigger.MaxChange = 20.0;
+          Require(Evaluate().SettingName == "Default" &&
+            Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+        }
+        finally
+        {
+          currentField.SetValue(null, originalCurrent);
+          deltaField.SetValue(null, originalDelta);
+        }
+      });
       Check("unavailable global metric is displayed as unavailable without inventing zero", () =>
       {
         var trends = new[] { new MarketTrend { Name = "H24", TrendMinutes = 1440, Metrics = "PriceTrend,Breadth" } };
