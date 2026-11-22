@@ -1,12 +1,24 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
+## Current Delta runtime fixture — November 22, 2026
+
+**Single canonical analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), **v2.6.1**. No other analyzer files or folders. This revision updates only the existing G10 and SMS14 diagnostics, retaining all 45 registered metrics, all previous GlobalSettings/SMS, configured MarketTrends, 96-hour diagnostic source retention, and inherited DEFAULT preset references.
+
+**G10 first priority (GlobalSettings):** Three AND conditions exercise `Delta(M30 Breadth)` (rolling), `Delta(H1 MedianPricePathEfficiency)` (rolling), and `Delta(H1 MedianTakerBuyRatio)` (**completed-period source**). Each uses broad mathematical-validity bounds, not regime criteria. G10 must be **selected** in a fresh and conclusive TestMode raid, not merely evaluated.
+
+**SMS14 activation:** Three AND conditions exercise `Delta(M30 PriceTrend)`, `Delta(H1 PricePathEfficiency)`, and `Delta(H1 TakerBuyRatio)`. The added taker-ratio condition tests a completed-period metric at asset scope. **SMS14 OffTrigger:** one `Delta(H1 PricePathEfficiency)` condition strictly **below zero** tests deactivation on a declining measured path efficiency; exact zero does not satisfy the off condition. This is a mathematical sign check, not a trading regime. The OffTrigger is evaluated only for previously active SMS14 positions and may be followed by reactivation in the same raid—verify **per-trigger decision-history records**, not just the active-SMS count.
+
+**Acceptance still pending:** At Delta source revision [`b1674bb`](https://github.com/HojouFotytu/PTMagic/commit/b1674bb27272d74829e7b9cedb370864e53a5625), run the .NET solution build and the focused `Phase1COhlcv`, `TriggerConfigurationValidation`, `MonitorSettingsRoundTrip` and `ConfigurationLifecycle` suites. Then confirm actual G10 selection, SMS14 activation, a negative Delta OffTrigger evaluation (and resulting off transition), prior/current source timestamps, global cohort/coverage and absence of unintended writes in **isolated LONG and SHORT `TestMode=true` instances**. The earlier 25/9/84 PASS belongs to pre-Delta source and is **not** proof of this revision.
+
+---
+
 ## November 22 — Delta relation TestMode coverage
 
-**Canonical single test analyzer:** `Tests/Settings/settings.analyzer.json`, updated to **v2.6.0** with **G10 Delta first**, previous G09 second, and a new property-free `DIAG_SMS14_DELTA` with no OffTriggers. G10 compares M30 `Breadth` and H1 `MedianPricePathEfficiency` against the same metrics one MarketTrend duration earlier. SMS14 compares M30 `PriceTrend` and H1 `PricePathEfficiency`. Bounds of ±1e12 cover all realistic finite outcomes and are **diagnostics**, not regime thresholds; acceptance requires actual valid historical values and matching source timestamps. The test analyzer retains all 45 metrics, all existing settings, retention, and the previous relative order of G01–G09 and DEFAULT. Only one test analyzer exists.
+**Canonical single test analyzer:** `Tests/Settings/settings.analyzer.json`, updated to **v2.6.1** with **G10 Delta first**, previous G09 second, and a new property-free `DIAG_SMS14_DELTA` with a diagnostic Delta OffTrigger. G10 compares M30 `Breadth` and H1 `MedianPricePathEfficiency` against the same metrics one MarketTrend duration earlier. SMS14 compares M30 `PriceTrend` and H1 `PricePathEfficiency`. Bounds of ±1e12 cover all realistic finite outcomes and are **diagnostics**, not regime thresholds; acceptance requires actual valid historical values and matching source timestamps. The test analyzer retains all 45 metrics, all existing settings, retention, and the previous relative order of G01–G09 and DEFAULT. Only one test analyzer exists.
 
 **New offline acceptance not yet executed:** build `PTMagic.sln`, and run `Tests/Phase1COhlcv`, `Tests/TriggerConfigurationValidation`, `Tests/MonitorSettingsRoundTrip`, `Tests/ConfigurationLifecycle`, then conduct isolated LONG/SHORT TestMode raids to verify G10 and SMS14. Historical PASS results predating the Delta source revision do not verify this change.
 
-**Canonical testing analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), version **2.6.0**. This is the **only testing analyzer**. The prior additional fixtures were removed; no new directories or analyzers are created. G09 and SMS13 validate the newly introduced asset and global price-path efficiency across M30/H1/H4 without regime thresholds. Application build and focused tests have passed (25/9/84); deployment TestMode raid acceptance remains pending.
+**Canonical testing analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), version **2.6.1**. This is the **only testing analyzer**. The prior additional fixtures were removed; no new directories or analyzers are created. G09 and SMS13 validate the newly introduced asset and global price-path efficiency across M30/H1/H4 without regime thresholds. Application build and focused tests have passed (25/9/84); deployment TestMode raid acceptance remains pending.
 
 ## November 21, 2026 — Path-efficiency metric fixture
 

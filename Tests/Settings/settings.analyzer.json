@@ -1,15 +1,17 @@
 // TEST-ONLY PTMagic 2.10 comprehensive 45-metric analyzer. Use isolated TestMode only; never live trading.
 // SetIdentity = PTM2.10-45-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.6.0
+// SetVersion = 2.6.1
 // SetDate = 2026-11-22
-// TargetApplicationSource = 49dd01f-or-later (45-metric code)
-// ApplicationBuildEvidence = PASS_15.0s_at_f75f229_user_run_2026-11-21
-// ApplicationFocusedEvidence = PASS_25_Phase1COhlcv_9_Phase2AdaptiveAcquisition_84_ConfigurationLifecycle_at_f75f229
-// ConfiguredRuntimeAcceptance = NOT VERIFIED (LONG/SHORT TestMode evidence pending)
+// TargetApplicationSource = b1674bb-or-later (Delta relation code)
+// ApplicationBuildEvidence = DELTA_UNVERIFIED; previous_45_metric_build_PASS_15.0s_at_f75f229
+// ApplicationFocusedEvidence = DELTA_UNVERIFIED; previous_25_OHLCV_9_Adaptive_84_Lifecycle_at_f75f229
+// ConfiguredRuntimeAcceptance = DELTA NOT VERIFIED (LONG/SHORT TestMode evidence pending)
 // Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
 // Sole testing analyzer in Tests/Settings; G10 Delta first, G09 preserved second.
 // All existing GlobalSettings remain in their previous relative order; DEFAULT last.
-// G10 and SMS14 validate Delta arithmetic and historic availability only; not regime thresholds.
+// G10 tests rolling and completed-period global Delta. SMS14 tests rolling/completed Delta activation.
+// SMS14 Delta OffTrigger checks negative path-efficiency change on an already active setting.
+// Test bounds are numerical validity/sign checks, not market-regime thresholds.
 // New diagnostic bounds -0.000001..1.000001 cover the mathematically valid 0..1 range, not regimes.
 // No new presets, installed settings, or PTMagic software modifications are part of this fixture.
 {
@@ -285,6 +287,14 @@
             "Tag": "B",
             "MarketTrendName": "H1",
             "Metric": "MedianPricePathEfficiency",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H1",
+            "Metric": "MedianTakerBuyRatio",
             "MarketTrendRelation": "Delta",
             "MinChange": -1000000000000,
             "MaxChange": 1000000000000
@@ -1307,9 +1317,26 @@
             "MarketTrendRelation": "Delta",
             "MinChange": -1000000000000,
             "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "C",
+            "MarketTrendName": "H1",
+            "Metric": "TakerBuyRatio",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
           }
         ],
-        "OffTriggers": [],
+        "OffTriggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "H1",
+            "Metric": "PricePathEfficiency",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 0
+          }
+        ],
         "PairsProperties": {},
         "DCAProperties": {},
         "IndicatorsProperties": {}
