@@ -1,5 +1,11 @@
 # Raid metric-warning natural-language regression tests
 
+## November 23 — One-line new-market history reporting
+
+Verified new-market history exclusions now produce exactly one INFO line per raid:
+`+ New markets with insufficient history, excluded from some metrics: AMDLUSDT, JNJUSDT, NIOUSDT`.
+No individual market notices, listing timestamps, affected-metric counts, or additional recovery announcements are printed in the summary. The existing classification, source verification, metric validity, and WARN treatment of genuine gaps remain untouched. The focused regression checks single- and six-market lists, repeat raids, and empty results. Build/runtime verification pending.
+
 ## November 23 — Move flat-path DEBUG out of raid summary
 
 Flat `PricePathEfficiency` source DEBUG is now emitted alongside each MarketTrend's calculation. Related SMS caller details are emitted at the moment each unavailable trigger is evaluated, using the standard file DEBUG logger. `BuildFlatPathDebugLines` and its end-of-raid call are removed: only the concise INFO group remains in the summary. Verified NO_TRADES DEBUG also moves to metric evaluation time. The ten-caller regression checks all entries already exist before summary construction and that the summary does not replay them. No live progress-dot calls, metric values, trading settings or delivery logic were modified.

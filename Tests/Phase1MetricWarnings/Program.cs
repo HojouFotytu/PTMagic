@@ -655,16 +655,15 @@ internal static class Program
     Expect(warnings.BuildLines(analysis, classification).Count == 0,
       "More than five affected SMS callers must still be safely reclassified.");
     var first = warnings.BuildNewMarketInfoLines(classification);
-    Expect(first.Count == 2 && first[0] == "+ New markets with insufficient history: SOXXUSDT"
-      && first[1].Contains("SOXXUSDT is too new")
-      && first[1].Contains("8 metric results"), "One INFO notice per new market.");
+    Expect(first.Count == 1 &&
+      first[0] == "+ New markets with insufficient history, excluded from some metrics: SOXXUSDT",
+      "New markets must produce one concise INFO line, with no per-market details.");
 
     warnings.Reset();
     var repeated = warnings.BuildNewMarketInfoLines(classification);
-    Expect(repeated.Count == 1 && repeated[0] == "+ New markets with insufficient history: SOXXUSDT",
-      "Unchanged shortage must not repeat detailed notices.");
-    // A summary must name every affected market, even when there are more
-    // than five. Existing per-market details remain suppressed on later raids.
+    Expect(repeated.Count == 1 && repeated[0] == first[0],
+      "Each raid must report only the same concise list, without detail lines.");
+    // The single summary names every affected market, even when there are more than five.
     var extraSymbols = new[] { "IGVUSDT", "ARTYUSDT", "IBITUSDT", "CCJUSDT", "ETNUSDT" };
     var baseTrend = ListingTrend();
     var multiAssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(
@@ -687,15 +686,15 @@ internal static class Program
       Analyses(multiTrend), ListingStore(extraSymbols: extraSymbols), _ => Listing);
     Expect(multiClassification.MarketCount == 6,
       "All six verified new listings must be classified.");
-    string expectedSummary = "+ New markets with insufficient history: ARTYUSDT, CCJUSDT, ETNUSDT, IBITUSDT, IGVUSDT, SOXXUSDT";
+    string expectedSummary = "+ New markets with insufficient history, excluded from some metrics: ARTYUSDT, CCJUSDT, ETNUSDT, IBITUSDT, IGVUSDT, SOXXUSDT";
     var multiWarnings = new RaidMetricWarnings();
     var multiLines = multiWarnings.BuildNewMarketInfoLines(multiClassification);
-    Expect(multiLines.Count == 7 && multiLines[0] == expectedSummary,
-      "First raid summary must list all six symbols followed by six individual notices.");
+    Expect(multiLines.Count == 1 && multiLines[0] == expectedSummary,
+      "The complete six-market list must fit in one INFO line, without individual notices.");
     multiWarnings.Reset();
     var multiRepeated = multiWarnings.BuildNewMarketInfoLines(multiClassification);
     Expect(multiRepeated.Count == 1 && multiRepeated[0] == expectedSummary,
-      "Later raid summaries must still name all markets without repeating detail notices.");
+      "Later raids must retain the same concise, complete market list.");
 
     var mixed = Analyses(ListingTrend(invalidTaker: true));
     var filtered = NewMarketHistoryClassification.Analyze(mixed, ListingStore(), _ => Listing);
@@ -706,11 +705,8 @@ internal static class Program
     warnings.ReportGlobalDecision("selection indeterminate; retained 'DEFAULT'.");
     Expect(warnings.BuildLines(analysis, classification).Any(line =>
       line.Contains("retained 'DEFAULT'")), "Global decision failure must remain WARN.");
-    var recovery = warnings.BuildNewMarketInfoLines(new NewMarketHistoryClassification());
-    Expect(recovery.Count == 1 && recovery[0].Contains("no longer has pre-listing"),
-      "Recovery must be noted once.");
     Expect(warnings.BuildNewMarketInfoLines(new NewMarketHistoryClassification()).Count == 0,
-      "Recovered market must not produce recurring messages.");
+      "When no new markets are excluded, no extra recovery or detail lines are required.");
     _passed++;
   }
 

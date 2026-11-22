@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Condense new-market history INFO to one line (validation pending)
+
+Replace the per-market INFO notices and recovery chatter with one sorted list: `+ New markets with insufficient history, excluded from some metrics: ...`. No per-market listing times, metric counts, or repeated explanatory text. Unavailable metric values, verified pre-listing classifications, genuine warning categories, market-data collection and trading behavior are unchanged. Updated Phase1MetricWarnings regression expectations for one market, six markets, repeated raids and no exclusions. Source published; focused build/tests and configured-runtime checks pending.
+
+
 ## November 23, 2026 — Remove residual normalized candle-refresh progress dots (validation pending)
 
 Build 112320260217 still printed market-progress periods after prior dot removal because `MarketDataService.RefreshAtAsync` retained a third, independent per-market `Console.Write('.')` path for Binance Futures 5m normalized candle refresh. Removed that whole console-only prefix/dot/newline lifecycle, including its progress lock and surrounding completion-only try/finally. Existing `RAID TIMING - normalized 5m refresh` and `BinanceFutures analytics - normalized 5m data refreshed` INFO status remain, with unchanged request, cancellation, caching, status, source-quality and trading logic. The new real-path NormalizedWarmStartCache test asserts no stdout and successful 2-market refresh. **Code committed, .NET build and regression execution pending.**

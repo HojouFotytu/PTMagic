@@ -65,9 +65,6 @@ namespace Core.MarketAnalyzer.MarketData
     private readonly Dictionary<string, Issue> _issues =
       new Dictionary<string, Issue>(StringComparer.OrdinalIgnoreCase);
     private string _globalDecision = "";
-    // Kept across raid Reset() so unchanged expected new-listing shortages do not flood INFO logs.
-    private readonly Dictionary<string, string> _previousNewMarketSignatures =
-      new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     private readonly Action<string> _inlineDebug;
 
     public RaidMetricWarnings(Action<string> inlineDebug = null)
@@ -325,39 +322,19 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     /// <summary>
-    /// One INFO summary per raid, but detail only for a newly affected market or
-    /// changed set of metric/timeframe exclusions. Reset() deliberately preserves
-    /// this reporting state; no metric calculation or decision is modified.
+    /// One concise INFO line per raid naming every verified new market whose
+    /// pre-listing history makes one or more metrics unavailable.
+    /// The underlying source-validity and exclusion decisions are unchanged.
     /// </summary>
     public IReadOnlyList<string> BuildNewMarketInfoLines(NewMarketHistoryClassification classification)
     {
-      classification ??= new NewMarketHistoryClassification();
-      var lines = new List<string>();
-      var affected = classification.Affected;
-      if (affected.Count > 0)
-        lines.Add("+ New markets with insufficient history: " +
-          String.Join(", ", affected.Keys.OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)));
-
-      foreach (var market in affected.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
-      {
-        string signature = String.Join(";", market.Value.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
-        if (_previousNewMarketSignatures.TryGetValue(market.Key, out string prior) && prior == signature)
-          continue;
-        DateTimeOffset? onboard = classification.OnboardDate(market.Key);
-        string listed = onboard.HasValue
-          ? " (listed " + onboard.Value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC)"
-          : "";
-        lines.Add("+ " + market.Key + " is too new" + listed + "; excluded from " +
-          market.Value.Count + " metric results requiring pre-listing history. Other valid metrics remain active.");
-        _previousNewMarketSignatures[market.Key] = signature;
-      }
-      foreach (string market in _previousNewMarketSignatures.Keys
-        .Where(key => !affected.ContainsKey(key)).ToArray())
-      {
-        lines.Add("+ " + market + " no longer has pre-listing metric exclusions in the current analysis.");
-        _previousNewMarketSignatures.Remove(market);
-      }
-      return lines;
+      IReadOnlyDictionary<string, IReadOnlyCollection<string>> affected =
+        (classification ?? new NewMarketHistoryClassification()).Affected;
+      if (affected.Count == 0) return Array.Empty<string>();
+      return new[] {
+        "+ New markets with insufficient history, excluded from some metrics: " +
+        String.Join(", ", affected.Keys.OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase))
+      };
     }
 
     /// <summary>
