@@ -1,5 +1,14 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 23, 2026 — Inline metric DEBUG and Monitor Logs SSE response completion (validation pending)
+
+Removed end-of-raid flat-path DEBUG replay and emitted exact `PricePathEfficiency` source DEBUG with its MarketTrend calculation, and affected SMS caller DEBUG during the corresponding trigger evaluation. Only the compact INFO aggregate remains at RAID SUMMARY. Existing NO_TRADES DEBUG moves to the MarketTrend evaluation stage. The live first-seen-market and SMS Console.Write dot streams are **unchanged**; no buffered-at-completion substitution was made.
+
+Monitor's `Logs?handler=Stream` handler previously returned `Task` after writing SSE chunks, allowing Razor Pages to attempt a second HTML page result on an already-started response and emit `Headers are read-only, response has already started`. It now returns `Task<IActionResult>` and `EmptyResult` after streaming, preserving 403/400 handling and SSE event behavior. A focused Monitor return-type regression is added. The supplied stack-trace tail does not by itself establish whether any other upstream exception is present.
+
+**Published code only; new .NET build, focused suites and live Monitor/SSE runtime acceptance pending.** No trading, Analyzer or SMS JSON changes.
+
+
 ## November 23, 2026 — Expected flat-price-path efficiency is INFO, full trigger provenance in DEBUG (validation pending)
 
 The raid's prior WARN included a full multi-SMS caller dump for source-verified `H1 PricePathEfficiency` flat 0/0 paths, even though this is a mathematically correct UNAVAILABLE result. Change **reporting only**: all-flat, nonstale source-valid asset-path groups emit a short INFO line such as `+ H1 PricePathEfficiency: 4/729 unavailable (flat price paths; 10 SMS trigger evaluations).`, while DEBUG retains all affected markets and distinct SMS trigger callers with context. The prior five-example WARN cap no longer discards caller identity from the DEBUG record. The canonical source reason is now a shared constant.

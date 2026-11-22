@@ -17,6 +17,14 @@ internal static class Program
   {
     try
     {
+      Check("Logs SSE handler returns an action result instead of rendering the page after streaming", () =>
+      {
+        var method = typeof(Monitor.Pages.LogsModel).GetMethod("OnGetStreamAsync");
+        Require(method != null && method.ReturnType.IsGenericType &&
+          method.ReturnType.GetGenericTypeDefinition() == typeof(Task<>) &&
+          method.ReturnType.GenericTypeArguments[0].FullName == "Microsoft.AspNetCore.Mvc.IActionResult");
+        Require(method.GetParameters().Length == 3);
+      });
       Check("DescriptiveName editor form persists and can clear the analyzer identity", () =>
       {
         var original = Baseline(); var form = Form(original);

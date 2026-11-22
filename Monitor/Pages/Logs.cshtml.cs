@@ -210,18 +210,16 @@ namespace Monitor.Pages
 
     // A single authenticated SSE connection follows one log file. The filesystem watcher
     // signals changes, while the occasional timeout recovers missed notifications.
-    public async Task OnGetStreamAsync(string source, string cursor = "", long offset = -1)
+    public async Task<IActionResult> OnGetStreamAsync(string source, string cursor = "", long offset = -1)
     {
       base.Init();
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
       {
-        Response.StatusCode = StatusCodes.Status403Forbidden;
-        return;
+        return StatusCode(StatusCodes.Status403Forbidden);
       }
       if (source != "analyzer" && source != "monitor")
       {
-        Response.StatusCode = StatusCodes.Status400BadRequest;
-        return;
+        return BadRequest();
       }
 
       Response.ContentType = "text/event-stream";
@@ -386,6 +384,9 @@ namespace Monitor.Pages
       {
         if (watcher != null) watcher.Dispose();
       }
+      // Streaming already wrote the SSE response. Never let Razor Pages
+      // attempt to render Logs.cshtml after its headers have started.
+      return new EmptyResult();
     }
 
     private async Task SendSnapshotAsync(string[] lines, CancellationToken cancellation)

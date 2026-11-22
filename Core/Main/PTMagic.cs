@@ -32,6 +32,7 @@ namespace Core.Main
       Func<bool, ConfigurationDeliveryResult> globalSellOnlyModeSender = null)
     {
       this.Log = log;
+      _raidMetricWarnings = new RaidMetricWarnings(line => this.Log.DoLogDebug(line));
       _configurationSender = configurationSender;
       _globalSellOnlyModeSender = globalSellOnlyModeSender;
     }
@@ -77,8 +78,7 @@ namespace Core.Main
     private Dictionary<string, int> _singleMarketSettingsCount = new Dictionary<string, int>();
     Dictionary<string, List<SingleMarketSetting>> _triggeredSingleMarketSettings = new Dictionary<string, List<SingleMarketSetting>>();
     private readonly SemaphoreSlim _raidSemaphore = new SemaphoreSlim(1, 1);
-    private readonly Core.MarketAnalyzer.MarketData.RaidMetricWarnings _raidMetricWarnings =
-      new Core.MarketAnalyzer.MarketData.RaidMetricWarnings();
+    private readonly Core.MarketAnalyzer.MarketData.RaidMetricWarnings _raidMetricWarnings;
     private readonly Func<ConfigurationPayload, ConfigurationDeliveryResult> _configurationSender;
     private readonly Func<bool, ConfigurationDeliveryResult> _globalSellOnlyModeSender;
     private ConfigurationDeliveryCoordinator _configurationDelivery = new ConfigurationDeliveryCoordinator();
@@ -1030,6 +1030,9 @@ namespace Core.Main
                 BinanceFuturesAnalyticsRuntime.EvaluateConfiguredMarketTrends(
                   this.GlobalMarketTrendChanges, this.SingleMarketTrendChanges,
                   this.PTMagicConfiguration, this.Log, this._recentMarketSnapshots);
+                foreach (string noTrade in this._raidMetricWarnings.BuildNoTradeDebugLines(
+                  BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses))
+                  this.Log.DoLogDebug(noTrade);
                 RaidStage("configured MarketTrend metric evaluations");
                 this.ApplyNormalizedPriceTrends();
                 MarketTrendAnalyticsMonitorExporter.SaveCurrentRuntimeSnapshot(this.Log);
@@ -1150,18 +1153,12 @@ namespace Core.Main
                         Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc)
                     : null;
                 IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses, newMarketHistory);
-                // Expected flat 0/0 efficiency is informative, not a broken
-                // source. Preserve all market/caller evidence in file DEBUG.
+                // Caller details were logged while SMS conditions were evaluated.
+                // The RAID SUMMARY contains only the short INFO aggregate.
                 foreach (string flatPathInfo in this._raidMetricWarnings.BuildFlatPathInfoLines())
                   this.Log.DoLogInfo(flatPathInfo);
-                foreach (string flatPathDetail in this._raidMetricWarnings.BuildFlatPathDebugLines())
-                  this.Log.DoLogDebug(flatPathDetail);
                 foreach (string newMarketInfo in this._raidMetricWarnings.BuildNewMarketInfoLines(newMarketHistory))
                   this.Log.DoLogInfo(newMarketInfo);
-                foreach (string noTradeSummary in this._raidMetricWarnings.BuildNoTradeDebugLines(analyses))
-                {
-                  this.Log.DoLogDebug(noTradeSummary);
-                }
                 if (warnings.Count > 0)
                 {
                   foreach (string warning in warnings)

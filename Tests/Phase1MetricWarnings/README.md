@@ -1,5 +1,12 @@
 # Raid metric-warning natural-language regression tests
 
+## November 23 — Move flat-path DEBUG out of raid summary
+
+Flat `PricePathEfficiency` source DEBUG is now emitted alongside each MarketTrend's calculation. Related SMS caller details are emitted at the moment each unavailable trigger is evaluated, using the standard file DEBUG logger. `BuildFlatPathDebugLines` and its end-of-raid call are removed: only the concise INFO group remains in the summary. Verified NO_TRADES DEBUG also moves to metric evaluation time. The ten-caller regression checks all entries already exist before summary construction and that the summary does not replay them. No live progress-dot calls, metric values, trading settings or delivery logic were modified.
+
+**Validation:** Source and focused tests authored; build and real runtime tests pending.
+
+
 ## November 23 — Flat-path price-efficiency INFO and complete DEBUG provenance (new tests pending)
 
 Exact source-verified `PricePathEfficiency` 0/0 results from fully flat, nonstale closed-candle paths are expected mathematical unavailability and are no longer counted as Metric WARN groups. The raid INFO summary now uses one line per eligible trend/metric, e.g. `+ H1 PricePathEfficiency: 4/729 unavailable (flat price paths; 10 SMS trigger evaluations).`. A separate file DEBUG detail names **all** affected markets and **all distinct SMS caller identities** (setting/trigger/market/relation), not only the former five bounded WARN examples. The underlying unavailable metric value, three-valued trigger truth, per-market SMS protective WARN and configuration-delivery safeguards are unchanged.

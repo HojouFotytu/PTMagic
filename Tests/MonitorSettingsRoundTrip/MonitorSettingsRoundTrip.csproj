@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Core/Core.csproj" />
+    <ProjectReference Include="../../Monitor/Monitor.csproj" />
     <Compile Include="../../Monitor/Configuration/AnalyzerSettingsForm.cs" Link="Production/AnalyzerSettingsForm.cs" />
     <Compile Include="../../Monitor/Configuration/AnalyzerSettingsEditor.cs" Link="Production/AnalyzerSettingsEditor.cs" />
     <Compile Include="../../Monitor/Configuration/AnalyzerSettingsStore.cs" Link="Production/AnalyzerSettingsStore.cs" />

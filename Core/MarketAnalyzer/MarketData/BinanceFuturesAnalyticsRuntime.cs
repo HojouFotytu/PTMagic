@@ -644,6 +644,19 @@ namespace Core.MarketAnalyzer.MarketData
             log.DoLogDebug(detail);
         }
 
+        // Emit source observations with the MarketTrend evaluation, not inside
+        // the later RAID SUMMARY.
+        foreach (KeyValuePair<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> asset in
+          analysis.AssetMetrics.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+        {
+          if (asset.Value != null &&
+              asset.Value.TryGetValue(MarketTrendMetrics.PricePathEfficiency, out FeatureValueSnapshot path) &&
+              path != null && !path.IsValid && !path.IsStale &&
+              String.Equals(path.InvalidReason, PricePathEfficiencyEngine.FlatPathUnavailableReason,
+                StringComparison.OrdinalIgnoreCase))
+            log.DoLogDebug("MarketTrend '" + marketTrend.Name + "' / " + asset.Key +
+              " PricePathEfficiency unavailable: " + path.InvalidReason);
+        }
         LogTrendAnalysis(marketTrend, analysis, log);
       }
 

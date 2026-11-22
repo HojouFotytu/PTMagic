@@ -522,7 +522,8 @@ internal static class Program
 
   private static void TestVerifiedFlatPricePathInfoAndCompleteDebug()
   {
-    var warnings = new RaidMetricWarnings();
+    var inlineDebug = new List<string>();
+    var warnings = new RaidMetricWarnings(line => inlineDebug.Add(line));
     string[] invalidMarkets = { "FRHCUSDT", "VKTXUSDT", "GAPUSDT", "IDLEUSDT" };
     string[] universe = invalidMarkets.Concat(Enumerable.Range(0, 725)
       .Select(index => "ACTIVE" + index.ToString("D3") + "USDT")).ToArray();
@@ -549,6 +550,11 @@ internal static class Program
         "SMS activation", "SMS_" + index, symbol, "Absolute", "tag=E" + index);
     }
 
+    Expect(inlineDebug.Count == 10 &&
+      invalidMarkets.All(symbol => inlineDebug.Any(line => line.Contains(symbol))) &&
+      Enumerable.Range(0, 10).All(index => inlineDebug.Any(line =>
+        line.Contains("SMS_" + index + "'") && line.Contains("E" + index))),
+      "All ten DEBUG callers must be emitted before the raid summary is constructed.");
     var source = Analyses(analysis);
     Expect(warnings.BuildLines(source).Count == 0,
       "Verified flat 0/0 paths alone must not be Metric Warnings.");
@@ -556,17 +562,12 @@ internal static class Program
     Expect(info.Count == 1 &&
       info[0] == "+ H1 PricePathEfficiency: 4/729 unavailable (flat price paths; 10 SMS trigger evaluations).",
       "One compact INFO line must preserve counts and not repeat caller lists.");
-    var debug = warnings.BuildFlatPathDebugLines();
-    Expect(debug.Count == 11 && debug[0].Contains("invalid markets=") &&
-      invalidMarkets.All(symbol => debug[0].Contains(symbol)) &&
-      Enumerable.Range(0, 10).All(index => debug.Any(line =>
-        line.Contains("SMS_" + index + "'") && line.Contains("E" + index))),
-      "All four markets and all ten trigger callers must remain in file DEBUG, not just five.");
+    Expect(inlineDebug.Count == 10,
+      "Building summary INFO must not replay additional DEBUG lines.");
 
     warnings.Reset();
     Expect(warnings.BuildLines(null!).Count == 0 &&
-      warnings.BuildFlatPathInfoLines().Count == 0 &&
-      warnings.BuildFlatPathDebugLines().Count == 0,
+      warnings.BuildFlatPathInfoLines().Count == 0,
       "A new raid cannot inherit old flat-path reporting.");
     _passed++;
   }
@@ -605,8 +606,7 @@ internal static class Program
     var lines = warnings.BuildLines(Analyses(analysis));
     Expect(lines.Count == 2 && lines[0] == "+ Metric warnings: 1" &&
       lines[1].Contains("STALEUSDT") &&
-      warnings.BuildFlatPathInfoLines().Count == 0 &&
-      warnings.BuildFlatPathDebugLines().Count == 0,
+      warnings.BuildFlatPathInfoLines().Count == 0,
       "Mixed flat paths and stale/missing sources must remain WARN.");
 
     // The same flat reason must not conceal a stale snapshot even if its

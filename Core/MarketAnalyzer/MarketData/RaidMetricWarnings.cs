@@ -47,11 +47,9 @@ namespace Core.MarketAnalyzer.MarketData
       public int FailedRequests;
       public readonly HashSet<string> Markets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       public readonly List<Caller> Callers = new List<Caller>();
-      // Preserve all distinct caller identities for DEBUG; the WARN UI keeps
-      // only its prior five bounded examples.
-      public readonly List<Caller> AllCallers = new List<Caller>();
-      public readonly HashSet<string> UnavailableAssetMarkets =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      // For genuine WARN, retain only bounded caller examples. Exact
+      // flat-path trigger DEBUG is emitted as the request is evaluated.
+      public bool HasNonSmsCaller;
       // Full reason/market facts are needed to safely classify >5 repeated
       // SMS trigger requests; Callers remain bounded only for display.
       public readonly List<ReportedCause> ReportedCauses = new List<ReportedCause>();
@@ -70,6 +68,12 @@ namespace Core.MarketAnalyzer.MarketData
     // Kept across raid Reset() so unchanged expected new-listing shortages do not flood INFO logs.
     private readonly Dictionary<string, string> _previousNewMarketSignatures =
       new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    private readonly Action<string> _inlineDebug;
+
+    public RaidMetricWarnings(Action<string> inlineDebug = null)
+    {
+      _inlineDebug = inlineDebug;
+    }
 
     public void Reset()
     {
@@ -110,9 +114,17 @@ namespace Core.MarketAnalyzer.MarketData
         Trigger = trigger?.Trim() ?? "",
         ImplicitPriceTrend = String.IsNullOrWhiteSpace(metricName)
       };
-      if (!issue.AllCallers.Any(existing => SameCaller(existing, caller)))
+      bool smsCaller = caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) ||
+        caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase);
+      if (!smsCaller) issue.HasNonSmsCaller = true;
+      if (smsCaller &&
+          String.Equals(issue.Metric, MarketTrendMetrics.PricePathEfficiency, StringComparison.OrdinalIgnoreCase) &&
+          String.Equals(NaturalReason(cleaned).TrimEnd('.'),
+            PricePathEfficiencyEngine.FlatPathUnavailableReason.TrimEnd('.'),
+            StringComparison.OrdinalIgnoreCase))
       {
-        issue.AllCallers.Add(caller);
+        _inlineDebug?.Invoke("PricePathEfficiency unavailable during SMS evaluation: MarketTrend '" +
+          issue.Trend + "', " + DescribeCaller(caller) + "; reason=" + NaturalReason(cleaned) + ".");
       }
       if (issue.Callers.Count < MaxCallerExamples &&
         !issue.Callers.Any(existing => SameCaller(existing, caller)))
@@ -136,7 +148,6 @@ namespace Core.MarketAnalyzer.MarketData
         issue.UnavailableAssets = 0;
         issue.EligibleAssets = 0;
         issue.AssetFailures.Clear();
-        issue.UnavailableAssetMarkets.Clear();
         issue.OtherAssetFailures = 0;
       }
 
@@ -191,7 +202,6 @@ namespace Core.MarketAnalyzer.MarketData
               }
 
               unavailable++;
-              GetIssue(trend, metric).UnavailableAssetMarkets.Add(symbol);
               string reason = feature == null ? "No metric snapshot was published."
                 : !String.IsNullOrWhiteSpace(feature.InvalidReason) ? feature.InvalidReason
                 : feature.IsStale ? "The market data is stale." : "No valid metric value was available.";
@@ -277,8 +287,7 @@ namespace Core.MarketAnalyzer.MarketData
           issue.FailedRequests != issue.ReportedCauses.Count ||
           issue.ReportedCauses.Any(cause => String.IsNullOrWhiteSpace(cause.Market) ||
             !Contains(cause.Reason, PricePathEfficiencyEngine.FlatPathUnavailableReason)) ||
-          issue.AllCallers.Any(caller => !caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) &&
-            !caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase)))
+          issue.HasNonSmsCaller)
         return false;
       return true;
     }
@@ -296,27 +305,6 @@ namespace Core.MarketAnalyzer.MarketData
           " unavailable (flat price paths" +
           (issue.FailedRequests > 0 ? "; " + issue.FailedRequests + " SMS trigger evaluations" : "") + ").")
         .ToArray();
-    }
-
-    // DEBUG retains every invalid market and every distinct SMS caller, even
-    // after the previous bounded five-example WARN rendering has been retired
-    // for verified flat paths.
-    public IReadOnlyList<string> BuildFlatPathDebugLines()
-    {
-      var lines = new List<string>();
-      foreach (Issue issue in _issues.Values.Where(IsVerifiedFlatPath)
-        .OrderBy(issue => issue.Trend, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(issue => issue.Metric, StringComparer.OrdinalIgnoreCase))
-      {
-        lines.Add("Verified flat-path detail: " + issue.Trend + " " + issue.Metric +
-          "; invalid markets=" + String.Join(", ", issue.UnavailableAssetMarkets
-            .OrderBy(symbol => symbol, StringComparer.OrdinalIgnoreCase)) +
-          "; trigger evaluations=" + issue.FailedRequests +
-          "; reason=" + PricePathEfficiencyEngine.FlatPathUnavailableReason);
-        foreach (Caller caller in issue.AllCallers)
-          lines.Add("Verified flat-path affected trigger: " + DescribeCaller(caller));
-      }
-      return lines;
     }
 
     // Only an unavailable-source result may be reclassified. Misconfigured
