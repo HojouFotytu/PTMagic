@@ -31,7 +31,8 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public static IReadOnlyList<MarketTrendHistoryRequirement> Describe(MarketTrend trend,
       IReadOnlyCollection<string> metrics, TimeSpan sourceInterval, DateTimeOffset asOfUtc,
-      int? configuredStoreDataMaxHours = null)
+      int? configuredStoreDataMaxHours = null,
+      IReadOnlyCollection<string> deltaMetrics = null)
     {
       if (trend == null) throw new ArgumentNullException(nameof(trend));
       MarketTrendTimeframe.Validate(trend, sourceInterval);
@@ -47,12 +48,14 @@ namespace Core.MarketAnalyzer.MarketData
         : null;
 
       List<MarketTrendHistoryRequirement> result = new List<MarketTrendHistoryRequirement>();
+      HashSet<string> deltaNames = new HashSet<string>(deltaMetrics ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
       foreach (string metric in (metrics ?? MarketTrendMetrics.ParseEnabled(trend))
         .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase))
       {
         if (!MarketTrendMetrics.IsKnown(metric)) continue;
         if (FuturesFundingFeatureEngine.IsMetric(metric) || FuturesFundingFeatureEngine.IsGlobalMetric(metric))
         {
+          bool historical = deltaNames.Contains(metric);
           result.Add(new MarketTrendHistoryRequirement
           {
             Metric = metric, SourceDataFamily = "BinanceFuturesFunding",
@@ -63,7 +66,7 @@ namespace Core.MarketAnalyzer.MarketData
               trend.TrendMinutes + " minute MarketTrend window, with the provider's own " +
               "settlement timestamps and variable funding schedule. A complete provider " +
               "query is required; no hardcoded 8h interval or separate retention hours.",
-            CalculationWindowMinutes = trend.TrendMinutes,
+            CalculationWindowMinutes = historical ? checked((long)trend.TrendMinutes * 2) : trend.TrendMinutes,
             MinimumClosedSourceCandles = 0, RequiredStoredSourceCandles = 0,
             RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
             ConfiguredStoreDataMaxHours = null, HasCurrentRaidCapacity = null,
@@ -143,6 +146,17 @@ namespace Core.MarketAnalyzer.MarketData
           basis = "Trailing TrendMinutes quote-volume ranking plus the same-window return and reference close; complete selected population required.";
         }
 
+        if (deltaNames.Contains(metric))
+        {
+          // Historical comparison must retain one additional MarketTrend window.
+          // Both current and prior values have their own source-valid history.
+          minimumSourceCount = checked(minimumSourceCount + trendSourceCount);
+          basis += " Delta compares against the same metric one TrendMinutes earlier.";
+          if (metric == MarketTrendMetrics.FundingRate || metric == MarketTrendMetrics.FundingSum ||
+              FuturesFundingFeatureEngine.IsGlobalMetric(metric))
+            basis += " Funding is managed by its separate provider-backed history store.";
+        }
+
         // One slot is reserved for the forming source candle returned by the
         // anchored loader. Partial trend periods consume retention but cannot
         // supply completed trend bars or correlation endpoints.
@@ -167,7 +181,8 @@ namespace Core.MarketAnalyzer.MarketData
 
         result.Add(new MarketTrendHistoryRequirement
         {
-          Metric = metric, Basis = basis, CalculationWindowMinutes = windowPeriods * trend.TrendMinutes,
+          Metric = metric, Basis = basis, CalculationWindowMinutes =
+            checked(windowPeriods * trend.TrendMinutes + (deltaNames.Contains(metric) ? (long)trend.TrendMinutes : 0L)),
           MinimumClosedSourceCandles = minimumSourceCount, RequiredStoredSourceCandles = required,
           RequiredStoreDataMaxHours = requiredHours, RecommendedStoreDataMaxHours = recommendedHours,
           ConfiguredStoreDataMaxHours = configuredStoreDataMaxHours, ConfiguredSourceCapacity = capacity,

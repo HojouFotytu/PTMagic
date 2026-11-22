@@ -37,6 +37,7 @@ namespace Core.Main
 
     public const string MarketTrendRelationRelative = "Relative";
     public const string MarketTrendRelationAbsolute = "Absolute";
+    public const string MarketTrendRelationDelta = "Delta";
     public const string MarketTrendRelationRelativeTrigger = "RelativeTrigger";
 
     public static readonly string[] ChartLineColors = new string[] { "#e67e22", "#5d9cec", "#fb6d9d", "#ffffff", "#81c868", "#f05050", "#34d3eb", "#ffbd4a", "#dcdcdc", "#ef1442", "#d73d76", "#9b31c9", "#52e9f1", "#c9b56e", "#b49ec1", "#9885f3", "#85748a", "#85748a", "#85748a", "#b57a4b" };

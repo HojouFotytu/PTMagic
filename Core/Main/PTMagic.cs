@@ -2807,6 +2807,11 @@ namespace Core.Main
       if (!this.PTMagicConfiguration.GeneralSettings.Application.DecisionHistoryEnabled) return;
       string name = MarketTrendMetrics.Normalize(metric);
       BinanceFuturesAnalyticsRuntime.TryGetMetric(trend?.Name, name, symbol, out FeatureValueSnapshot feature);
+      DateTimeOffset? previousSourceTime = null;
+      if (MarketTrendDeltaSelection.IsDelta(relation) &&
+          BinanceFuturesAnalyticsRuntime.TryGetDelta(trend?.Name, name, symbol,
+            out MetricDeltaObservation comparison))
+        previousSourceTime = comparison?.PreviousSourceDataTimestampUtc;
       string key = scope + "|" + settingName + "|" + triggerId + "|" + (trend?.Name ?? "")
         + "|" + name + "|" + (symbol ?? "") + "|" + (relation ?? "");
       _decisionInputs[key] = new DecisionMetricInput
@@ -2815,7 +2820,9 @@ namespace Core.Main
         MarketTrend = trend?.Name, Metric = name, Market = symbol, Relation = relation,
         Value = value.HasValue && double.IsFinite(value.Value) ? value : null,
         Available = value.HasValue && double.IsFinite(value.Value), Reason = reason ?? "",
-        SourceDataTimestampUtc = feature?.SourceDataTimestampUtc, CoveragePercent = feature?.CoveragePercent
+        SourceDataTimestampUtc = feature?.SourceDataTimestampUtc,
+        PreviousSourceDataTimestampUtc = previousSourceTime,
+        CoveragePercent = feature?.CoveragePercent
       };
     }
 

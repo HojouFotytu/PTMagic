@@ -11,6 +11,9 @@ internal static class Program
   {
     try
     {
+      Valid("Global Delta relation uses an existing metric", settings => settings.GlobalSettings[0].Triggers[0].MarketTrendRelation = "Delta");
+      Valid("SMS Delta relation uses an existing metric", settings => settings.SingleMarketSettings[0].Triggers[0].MarketTrendRelation = "Delta");
+      Valid("SMS OffTrigger Delta uses an existing metric", settings => settings.SingleMarketSettings[0].OffTriggers[0].MarketTrendRelation = "Delta");
       Valid("simple AND permits omitted tags", settings => { settings.GlobalSettings[0].Triggers[0].Tag = ""; settings.GlobalSettings[0].TriggerConnection = "AND"; });
       Valid("simple OR is case insensitive and trims whitespace", settings => { settings.SingleMarketSettings[0].TriggerConnection = " or "; settings.SingleMarketSettings[0].OffTriggerConnection = " and "; });
       Valid("trend references are case insensitive", settings => settings.GlobalSettings[0].Triggers[0].MarketTrendName = "SHAREDTREND");

@@ -1,14 +1,15 @@
 // TEST-ONLY PTMagic 2.10 comprehensive 45-metric analyzer. Use isolated TestMode only; never live trading.
 // SetIdentity = PTM2.10-45-METRIC-MULTITREND-DIAGNOSTIC
-// SetVersion = 2.5.1
-// SetDate = 2026-11-21
+// SetVersion = 2.6.0
+// SetDate = 2026-11-22
 // TargetApplicationSource = 49dd01f-or-later (45-metric code)
 // ApplicationBuildEvidence = PASS_15.0s_at_f75f229_user_run_2026-11-21
 // ApplicationFocusedEvidence = PASS_25_Phase1COhlcv_9_Phase2AdaptiveAcquisition_84_ConfigurationLifecycle_at_f75f229
 // ConfiguredRuntimeAcceptance = NOT VERIFIED (LONG/SHORT TestMode evidence pending)
 // Default preset = _presets/DEFAULT; all additional GlobalSettings inherit its preset trio.
-// Sole testing analyzer in Tests/Settings; G09 is first priority to verify activation, SMS13 tests per-asset activation.
-// All original G01-G08 order and DEFAULT fallback remain unchanged.
+// Sole testing analyzer in Tests/Settings; G10 Delta first, G09 preserved second.
+// All existing GlobalSettings remain in their previous relative order; DEFAULT last.
+// G10 and SMS14 validate Delta arithmetic and historic availability only; not regime thresholds.
 // New diagnostic bounds -0.000001..1.000001 cover the mathematically valid 0..1 range, not regimes.
 // No new presets, installed settings, or PTMagic software modifications are part of this fixture.
 {
@@ -268,6 +269,31 @@
       ]
     },
     "GlobalSettings": [
+      {
+        "SettingName": "DIAG_G10_DELTA",
+        "TriggerConnection": "AND",
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M30",
+            "Metric": "Breadth",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "MedianPricePathEfficiency",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
+          }
+        ],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
       {
         "SettingName": "DIAG_G09_PATH_EFFICIENCY",
         "TriggerConnection": "AND",
@@ -1248,6 +1274,39 @@
             "MarketTrendRelation": "Absolute",
             "MinChange": -0.000001,
             "MaxChange": 1.000001
+          }
+        ],
+        "OffTriggers": [],
+        "PairsProperties": {},
+        "DCAProperties": {},
+        "IndicatorsProperties": {}
+      },
+      {
+        "SettingName": "DIAG_SMS14_DELTA",
+        "TriggerConnection": "AND",
+        "OffTriggerConnection": "OR",
+        "RefreshOffTriggers": false,
+        "IgnoredMarkets": "",
+        "AllowedMarkets": "",
+        "IgnoredGlobalSettings": "",
+        "AllowedGlobalSettings": "",
+        "StopProcessWhenTriggered": false,
+        "Triggers": [
+          {
+            "Tag": "A",
+            "MarketTrendName": "M30",
+            "Metric": "PriceTrend",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
+          },
+          {
+            "Tag": "B",
+            "MarketTrendName": "H1",
+            "Metric": "PricePathEfficiency",
+            "MarketTrendRelation": "Delta",
+            "MinChange": -1000000000000,
+            "MaxChange": 1000000000000
           }
         ],
         "OffTriggers": [],

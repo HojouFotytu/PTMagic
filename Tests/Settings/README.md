@@ -1,6 +1,12 @@
 # PTMagic 2.10 — 45-metric multi-trend diagnostic analyzer
 
-**Canonical testing analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), version **2.5.0**. This is the **only testing analyzer**. The prior additional fixtures were removed; no new directories or analyzers are created. G09 and SMS13 validate the newly introduced asset and global price-path efficiency across M30/H1/H4 without regime thresholds. Application build and focused tests have passed (25/9/84); deployment TestMode raid acceptance remains pending.
+## November 22 — Delta relation TestMode coverage
+
+**Canonical single test analyzer:** `Tests/Settings/settings.analyzer.json`, updated to **v2.6.0** with **G10 Delta first**, previous G09 second, and a new property-free `DIAG_SMS14_DELTA` with no OffTriggers. G10 compares M30 `Breadth` and H1 `MedianPricePathEfficiency` against the same metrics one MarketTrend duration earlier. SMS14 compares M30 `PriceTrend` and H1 `PricePathEfficiency`. Bounds of ±1e12 cover all realistic finite outcomes and are **diagnostics**, not regime thresholds; acceptance requires actual valid historical values and matching source timestamps. The test analyzer retains all 45 metrics, all existing settings, retention, and the previous relative order of G01–G09 and DEFAULT. Only one test analyzer exists.
+
+**New offline acceptance not yet executed:** build `PTMagic.sln`, and run `Tests/Phase1COhlcv`, `Tests/TriggerConfigurationValidation`, `Tests/MonitorSettingsRoundTrip`, `Tests/ConfigurationLifecycle`, then conduct isolated LONG/SHORT TestMode raids to verify G10 and SMS14. Historical PASS results predating the Delta source revision do not verify this change.
+
+**Canonical testing analyzer:** [`Tests/Settings/settings.analyzer.json`](settings.analyzer.json), version **2.6.0**. This is the **only testing analyzer**. The prior additional fixtures were removed; no new directories or analyzers are created. G09 and SMS13 validate the newly introduced asset and global price-path efficiency across M30/H1/H4 without regime thresholds. Application build and focused tests have passed (25/9/84); deployment TestMode raid acceptance remains pending.
 
 ## November 21, 2026 — Path-efficiency metric fixture
 

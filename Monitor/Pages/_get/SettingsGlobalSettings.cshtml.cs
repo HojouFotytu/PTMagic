@@ -39,6 +39,8 @@ namespace Monitor.Pages
 
     public string GetMarketTrendSelection(Trigger trigger) => AnalyzerSettingsEditor.Options(
       PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.MarketTrends.Select(trend => trend.Name), trigger?.MarketTrendName);
+    public string GetMarketTrendRelationSelection(Trigger trigger) => AnalyzerSettingsEditor.Options(
+      new[] { "Relative", "Absolute", "Delta" }, trigger?.MarketTrendRelation ?? "Absolute");
     public string GetValueModes(string key) => AnalyzerSettingsEditor.ValueModes(key);
 
   }

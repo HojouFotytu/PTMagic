@@ -41,6 +41,8 @@ internal static class Program
       TestPathEfficiencyMath();
       TestPathEfficiencyCoverage();
       TestPathEfficiencyFiatAndValidity();
+      TestMarketTrendDelta();
+      TestMarketTrendDeltaCoverageAndTime();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
       return 0;
     }
@@ -1004,6 +1006,104 @@ internal static class Program
     });
     Near(PathValue(store, "BTCETH", 20, now, "Fiat", "ETH"), 1,
       "Currently forming candle must be excluded");
+    _passed++;
+  }
+
+
+  private static void TestMarketTrendDelta()
+  {
+    var store = NewStore();
+    var closes = new[] { 100d, 101d, 102d, 103d, 104d, 105d, 107d, 106d, 110d };
+    AddPathCandles(store, "DELTAUSDT", closes);
+    var at = Start.AddMinutes(45).AddSeconds(1);
+    var trend = new MarketTrend { Name = "D20", TrendMinutes = 20,
+      Metrics = "PriceTrend,PricePathEfficiency,MedianPricePathEfficiency" };
+    var names = new[] { "DELTAUSDT" };
+    var current = MarketTrendAnalyticsEngine.Calculate(
+      trend, names, names, store, Interval, at);
+    var requested = new[] {
+      MarketTrendMetrics.PriceTrend, MarketTrendMetrics.PricePathEfficiency,
+      MarketTrendMetrics.MedianPricePathEfficiency
+    };
+    var delta = MarketTrendDeltaEngine.Calculate(trend, requested, current, store, Interval);
+    double expected = (110d / 104d - 1d) * 100 - (104d / 100d - 1d) * 100;
+    Near(delta.MarketMetrics[MarketTrendMetrics.PriceTrend].Delta, expected,
+      "Delta global PriceTrend compares rolling endpoints one configured trend apart");
+    Near(delta.AssetMetrics[names[0]][MarketTrendMetrics.PriceTrend].Delta, expected,
+      "Delta asset PriceTrend uses the same source reference");
+    Near(delta.MarketMetrics[MarketTrendMetrics.MedianPricePathEfficiency].Delta,
+      delta.AssetMetrics[names[0]][MarketTrendMetrics.PricePathEfficiency].Delta.Value.Value,
+      "Global median and asset efficiency of single eligible asset agree");
+    Assert(delta.PreviousAsOfUtc == at.AddMinutes(-20),
+      "Previous observation time comes from TrendMinutes, not a new user field");
+    Assert(delta.MarketMetrics[MarketTrendMetrics.PriceTrend].PreviousSourceDataTimestampUtc ==
+      Start.AddMinutes(25).AddMilliseconds(-1),
+      "Prior source timestamp is preserved");
+    var config = new AnalyzerSettings
+    {
+      MarketAnalyzer = new MarketAnalyzer { MarketTrends = new List<MarketTrend> { trend } },
+      GlobalSettings = new List<GlobalSetting> {
+        new GlobalSetting { SettingName = "D", Triggers = new List<Trigger> {
+          new Trigger { MarketTrendName = "D20", Metric = "PriceTrend", MarketTrendRelation = "Delta" } } } },
+      SingleMarketSettings = new List<SingleMarketSetting>()
+    };
+    var selected = MarketTrendDeltaSelection.Select(trend, config);
+    Assert(selected.SequenceEqual(new[] { MarketTrendMetrics.PriceTrend }),
+      "Only a referenced Delta metric is evaluated as historical");
+    config.GlobalSettings[0].Triggers[0].MarketTrendRelation = "Absolute";
+    Assert(MarketTrendDeltaSelection.Select(trend, config).Count == 0,
+      "Legacy Absolute triggers do not request historical metrics");
+    _passed++;
+  }
+
+  private static void TestMarketTrendDeltaCoverageAndTime()
+  {
+    var trend = new MarketTrend { Name = "D20", TrendMinutes = 20,
+      Metrics = "PriceTrend,Breadth" };
+    var at = Start.AddMinutes(45).AddSeconds(1);
+    var markets = Enumerable.Range(0, 10).Select(i => "D" + i + "USDT").ToArray();
+    MarketDataStore Source(int incomplete)
+    {
+      var store = NewStore();
+      for (int i = 0; i < markets.Length; i++)
+        AddPathCandles(store, markets[i],
+          new[] { 100d, 101d, 102d, 103d, 104d, 105d, 107d, 106d, 110d },
+          skip: i >= markets.Length - incomplete ? 0 : -1);
+      return store;
+    }
+    MarketTrendDeltaAnalysisSnapshot Check(int missing)
+    {
+      var store = Source(missing);
+      var current = MarketTrendAnalyticsEngine.Calculate(
+        trend, markets, markets, store, Interval, at);
+      return MarketTrendDeltaEngine.Calculate(trend, new[] { MarketTrendMetrics.PriceTrend,
+        MarketTrendMetrics.Breadth }, current, store, Interval);
+    }
+    Near(Check(0).MarketMetrics[MarketTrendMetrics.PriceTrend].Delta,
+      (110d / 104d - 1d) * 100 - (104d / 100d - 1d) * 100,
+      "Valid global delta when 100% eligible observations present");
+    Near(Check(1).MarketMetrics[MarketTrendMetrics.PriceTrend].Delta,
+      (110d / 104d - 1d) * 100 - (104d / 100d - 1d) * 100,
+      "90% historical eligible source coverage succeeds");
+    Invalid(Check(2).MarketMetrics[MarketTrendMetrics.PriceTrend].Delta,
+      "80% prior historical coverage stays unavailable");
+    FeatureValueSnapshot Value(double value, DateTimeOffset source) =>
+      new FeatureValueSnapshot { Value = value, IsValid = true,
+        SourceDataTimestampUtc = source, CalculatedAtUtc = at };
+    Invalid(MarketTrendDeltaEngine.Compare(
+      Value(5, at), Value(3, at), at).Delta,
+      "Reposted same completed period must not be treated as new observation");
+    Near(MarketTrendDeltaEngine.Compare(
+      Value(5, at), Value(5, at.AddMinutes(-20)), at).Delta, 0,
+      "Zero numeric delta between distinct observations is valid");
+    Invalid(MarketTrendDeltaEngine.Compare(
+      Value(5, at), null, at).Delta, "Missing historical measurement fails closed");
+    var required = MarketTrendHistoryRequirements.Describe(trend,
+      new[] { MarketTrendMetrics.PriceTrend }, Interval, at, 12,
+      new[] { MarketTrendMetrics.PriceTrend }).Single();
+    Assert(required.MinimumClosedSourceCandles == 9 &&
+      required.CalculationWindowMinutes == 40,
+      "History calculator requires two configured windows, not one");
     _passed++;
   }
 

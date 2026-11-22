@@ -53,9 +53,9 @@ function AnalyzerTriggerTemplate(row) {
       '" class="form-control">' + row.marketTrends + '</select><span class="help-block"><small>MarketTrend</small></span></div>';
     result += analyzerInput(prefix, 'Metric', row.metric, 'Metric (blank = PriceTrend)', 4, 'PriceTrend');
     result += analyzerInput(prefix, 'Tag', row.tag, 'Tag for Boolean expression', 4, 'Optional for AND / OR');
-    if (row.settingType === 'SingleMarketSetting') {
+    if (row.settingType === 'SingleMarketSetting' || row.settingType === 'GlobalSetting') {
       result += '<div class="col-md-4"><select name="' + analyzerAttribute(prefix + 'MarketTrendRelation') +
-        '" class="form-control">' + row.marketTrendRelations + '</select><span class="help-block"><small>Relation (PriceTrend only)</small></span></div>';
+        '" class="form-control">' + row.marketTrendRelations + '</select><span class="help-block"><small>Relation (Delta supports any numeric metric)</small></span></div>';
     }
     result += analyzerInput(prefix, 'MinChange', row.minChange, 'Minimum (metric units)', 3);
     result += analyzerInput(prefix, 'MaxChange', row.maxChange, 'Maximum (metric units)', 3);

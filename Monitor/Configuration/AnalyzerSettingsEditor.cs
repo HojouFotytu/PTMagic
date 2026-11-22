@@ -70,7 +70,7 @@ namespace Monitor.Configuration
         max24hVolume = trigger.Max24hVolume == Constants.Max24hVolume ? "" : Number(trigger.Max24hVolume),
         coinAgeDays = trigger.AgeDaysLowerThan.ToString(CultureInfo.InvariantCulture),
         marketTrends = Options(trends.Select(trend => trend.Name), trigger.MarketTrendName),
-        marketTrendRelations = Options(new[] { "Relative", "Absolute" }, trigger.MarketTrendRelation)
+        marketTrendRelations = Options(new[] { "Relative", "Absolute", "Delta" }, trigger.MarketTrendRelation)
       }).ToArray();
     }
 
@@ -91,7 +91,7 @@ namespace Monitor.Configuration
         max24hVolume = trigger.Max24hVolume == Constants.Max24hVolume ? "" : Number(trigger.Max24hVolume),
         hoursSinceTriggered = trigger.HoursSinceTriggered.ToString(CultureInfo.InvariantCulture),
         marketTrends = Options(trends.Select(trend => trend.Name), trigger.MarketTrendName),
-        marketTrendRelations = Options(new[] { "Relative", "RelativeTrigger", "Absolute" }, trigger.MarketTrendRelation)
+        marketTrendRelations = Options(new[] { "Relative", "RelativeTrigger", "Absolute", "Delta" }, trigger.MarketTrendRelation)
       }).ToArray();
 
     public static object[] PropertyRows(Dictionary<string, object> properties, string settingType,

@@ -17,6 +17,17 @@ internal static class Program
   {
     try
     {
+      Check("Delta relation roundtrip for GlobalSetting, SMS and OffTrigger", () =>
+      {
+        var source = Baseline(); var form = Form(source);
+        Set(form, Global + "Trigger_i0|MarketTrendRelation", "Delta");
+        Set(form, Single + "Trigger_i0|MarketTrendRelation", "Delta");
+        Set(form, Single + "OffTrigger_i0|MarketTrendRelation", "Delta");
+        var saved = AnalyzerSettingsForm.Apply(source, form);
+        Require(saved.GlobalSettings[0].Triggers[0].MarketTrendRelation == "Delta");
+        Require(saved.SingleMarketSettings[0].Triggers[0].MarketTrendRelation == "Delta");
+        Require(saved.SingleMarketSettings[0].OffTriggers[0].MarketTrendRelation == "Delta");
+      });
       Check("complete no-edit form roundtrip", () =>
       {
         var source = Baseline();

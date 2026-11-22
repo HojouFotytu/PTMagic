@@ -44,6 +44,8 @@ namespace Core.MarketAnalyzer.MarketData
     private const int FuturesRefreshConcurrency = 4;
     private static readonly TimeSpan BaseInterval = TimeSpan.FromMinutes(5);
     private static readonly object SnapshotLock = new object();
+    private static IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> _currentDeltaAnalyses =
+      new ReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot>(new Dictionary<string, MarketTrendDeltaAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase));
     private static readonly MarketDataService DataServiceInstance = new MarketDataService(
       new MarketDataStore(2),
       new MarketDataWarmStartCache(Path.Combine(Environment.CurrentDirectory, "_data", "NormalizedOhlcvCache")));
@@ -111,6 +113,11 @@ namespace Core.MarketAnalyzer.MarketData
       }
     }
 
+    public static IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> CurrentDeltaAnalyses
+    {
+      get { lock (SnapshotLock) return _currentDeltaAnalyses; }
+    }
+
     public static IReadOnlyList<MarketDataRefreshStatus> LastRefreshStatuses
     {
       get
@@ -165,6 +172,7 @@ namespace Core.MarketAnalyzer.MarketData
         _currentUniverse = null;
         _currentAnalysis = null;
         _currentTrendAnalyses = EmptyTrendAnalyses();
+        _currentDeltaAnalyses = EmptyDeltaAnalyses();
         _currentRaidAsOfUtc = null;
       }
 
@@ -383,6 +391,7 @@ namespace Core.MarketAnalyzer.MarketData
         _currentUniverse = universe;
         _currentAnalysis = null;
         _currentTrendAnalyses = EmptyTrendAnalyses();
+        _currentDeltaAnalyses = EmptyDeltaAnalyses();
       }
 
       string typeCounts = String.Join(", ", universe.Markets
@@ -469,6 +478,14 @@ namespace Core.MarketAnalyzer.MarketData
         pin.Value.AddSeconds(configuration.GeneralSettings?.Application?.MaxAnalysisAgeSeconds ?? 300));
       var enabled = trends.Where(t => t.TrendMinutes >= 5 && t.TrendMinutes % 5 == 0).ToArray();
       int horizon = FuturesFundingDataService.RequiredHorizonMinutes(enabled);
+      // A Delta funding comparison needs the preceding entire settlement window.
+      foreach (MarketTrend trend in enabled)
+      {
+        var prior = MarketTrendDeltaSelection.Select(trend, configuration.AnalyzerSettings);
+        if (prior.Any(metric => FuturesFundingFeatureEngine.IsMetric(metric) ||
+          FuturesFundingFeatureEngine.IsGlobalMetric(metric)))
+          horizon = Math.Max(horizon, checked(trend.TrendMinutes * 2));
+      }
       if (horizon <= 0) return;
       var assets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       foreach (var trend in enabled)
@@ -537,6 +554,8 @@ namespace Core.MarketAnalyzer.MarketData
 
       Dictionary<string, MarketTrendAnalysisSnapshot> analyses =
         new Dictionary<string, MarketTrendAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase);
+      Dictionary<string, MarketTrendDeltaAnalysisSnapshot> deltas =
+        new Dictionary<string, MarketTrendDeltaAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase);
       DateTimeOffset evaluationStartedUtc = DateTimeOffset.UtcNow;
       DateTimeOffset analysisAsOfUtc = refreshAsOfUtc ?? evaluationStartedUtc;
       log.DoLogInfo("BinanceFutures analytics - normalized MarketTrends evaluate as of " +
@@ -581,6 +600,8 @@ namespace Core.MarketAnalyzer.MarketData
         string[] globalSymbols = population.GlobalSymbols.ToArray();
         string[] assetSymbols = population.AssetSymbols.ToArray();
 
+        IReadOnlyCollection<string> deltaMetrics = MarketTrendDeltaSelection.Select(
+          marketTrend, systemConfiguration.AnalyzerSettings);
         MarketTrendAnalysisSnapshot analysis = MarketTrendAnalyticsEngine.Calculate(
           marketTrend,
           globalSymbols,
@@ -592,8 +613,17 @@ namespace Core.MarketAnalyzer.MarketData
           "BTC" + universe.MainMarket,
           systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours ?? 0,
           systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
-          FundingDataServiceInstance);
+          FundingDataServiceInstance, deltaMetrics);
         analyses[marketTrend.Name] = analysis;
+        if (deltaMetrics.Count > 0)
+        {
+          deltas[marketTrend.Name] = MarketTrendDeltaEngine.Calculate(
+            marketTrend, deltaMetrics, analysis, DataServiceInstance.Store,
+            BaseInterval, "BTC" + universe.MainMarket,
+            systemConfiguration.AnalyzerSettings?.MarketAnalyzer?.StoreDataMaxHours,
+            systemConfiguration.GeneralSettings?.Application?.Exchange ?? "BinanceFutures",
+            FundingDataServiceInstance);
+        }
 
         foreach (MarketTrendHistoryRequirement requirement in analysis.HistoryRequirements)
         {
@@ -620,6 +650,23 @@ namespace Core.MarketAnalyzer.MarketData
       lock (SnapshotLock)
       {
         _currentTrendAnalyses = new ReadOnlyDictionary<string, MarketTrendAnalysisSnapshot>(analyses);
+        _currentDeltaAnalyses = new ReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot>(deltas);
+      }
+    }
+
+    private static IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> EmptyDeltaAnalyses() =>
+      new ReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot>(
+        new Dictionary<string, MarketTrendDeltaAnalysisSnapshot>(StringComparer.OrdinalIgnoreCase));
+
+    public static bool TryGetDelta(
+      string marketTrendName, string metric, string marketSymbol,
+      out MetricDeltaObservation observation)
+    {
+      observation = null;
+      lock (SnapshotLock)
+      {
+        return _currentDeltaAnalyses.TryGetValue(marketTrendName ?? "", out var analysis) &&
+          analysis.TryGet(MarketTrendMetrics.Normalize(metric), marketSymbol, out observation);
       }
     }
 

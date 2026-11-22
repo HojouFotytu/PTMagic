@@ -36,8 +36,14 @@ namespace Core.MarketAnalyzer.MarketData
       out double value,
       out string error)
     {
-      return TryResolve(configuration, marketTrend, metric, null, true, out value, out error);
+      return TryResolveGlobal(configuration, marketTrend, metric, Constants.MarketTrendRelationAbsolute,
+        out value, out error);
     }
+
+    public static bool TryResolveGlobal(PTMagicConfiguration configuration,
+      MarketTrend marketTrend, string metric, string relation,
+      out double value, out string error) =>
+      TryResolve(configuration, marketTrend, metric, null, true, relation, out value, out error);
 
     public static bool TryResolveSingle(
       PTMagicConfiguration configuration,
@@ -47,7 +53,8 @@ namespace Core.MarketAnalyzer.MarketData
       out double value,
       out string error)
     {
-      return TryResolve(configuration, marketTrend, metric, marketSymbol, false, out value, out error);
+      return TryResolve(configuration, marketTrend, metric, marketSymbol, false,
+        Constants.MarketTrendRelationAbsolute, out value, out error);
     }
 
     /// <summary>
@@ -59,7 +66,7 @@ namespace Core.MarketAnalyzer.MarketData
       string marketSymbol, string relation, double currentPrice, double activationPrice,
       out double value, out string error)
     {
-      if (!TryResolveSingle(configuration, trend, metric, marketSymbol, out value, out error))
+      if (!TryResolve(configuration, trend, metric, marketSymbol, false, relation, out value, out error))
       {
         return false;
       }
@@ -162,6 +169,7 @@ namespace Core.MarketAnalyzer.MarketData
       string metric,
       string marketSymbol,
       bool globalSettingContext,
+      string relation,
       out double value,
       out string error)
     {
@@ -242,6 +250,21 @@ namespace Core.MarketAnalyzer.MarketData
         return false;
       }
 
+      if (MarketTrendDeltaSelection.IsDelta(relation))
+      {
+        if (!BinanceFuturesAnalyticsRuntime.TryGetDelta(marketTrend.Name,
+          normalizedMetric, marketSymbol, out MetricDeltaObservation observation) ||
+          observation?.Delta == null || !observation.Delta.IsValid ||
+          observation.Delta.IsStale || !observation.Delta.Value.HasValue ||
+          !double.IsFinite(observation.Delta.Value.Value))
+        {
+          error = "Delta unavailable for " + normalizedMetric + " on " + marketTrend.Name +
+            ": " + (observation?.Delta?.InvalidReason ?? "No source-valid historical comparison exists.");
+          return false;
+        }
+        value = observation.Delta.Value.Value;
+        return true;
+      }
       value = feature.Value.Value;
       return true;
     }

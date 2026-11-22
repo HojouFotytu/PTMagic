@@ -24,7 +24,8 @@ namespace Core.MarketAnalyzer.MarketData
       string benchmarkSymbol = "BTCUSDT",
       int? configuredStoreDataMaxHours = null,
       string exchangeName = "BinanceFutures",
-      FuturesFundingDataService fundingData = null)
+      FuturesFundingDataService fundingData = null,
+      IReadOnlyCollection<string> deltaMetrics = null)
     {
       if (marketTrend == null)
       {
@@ -409,7 +410,7 @@ namespace Core.MarketAnalyzer.MarketData
         AssetSymbols = Array.AsReadOnly(assetUniverse),
         EnabledMetrics = Array.AsReadOnly(enabledMetrics.ToArray()),
         HistoryRequirements = MarketTrendHistoryRequirements.Describe(marketTrend, enabledMetrics,
-          interval, calculatedAtUtc, configuredStoreDataMaxHours),
+          interval, calculatedAtUtc, configuredStoreDataMaxHours, deltaMetrics),
         MarketMetrics = new ReadOnlyDictionary<string, FeatureValueSnapshot>(marketMetrics),
         AssetMetrics = new ReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>(assetMetrics)
       };

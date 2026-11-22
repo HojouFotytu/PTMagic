@@ -113,7 +113,7 @@
 
     $('#btn-new-standardtrigger-GS@(Model.SettingName)').click(function () {
       var dataTarget = $(this).data('datatarget');
-      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', trendName: '', minChange: '', maxChange: '', marketTrends: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetMarketTrendSelection(null))) }].map(GSStandardTriggerTemplate).join(''));
+      $('#' + dataTarget).append([{ settingType: 'GlobalSetting', settingName: '@(Model.SettingName)', trendName: '', minChange: '', maxChange: '', marketTrends: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetMarketTrendSelection(null))), marketTrendRelations: @Html.Raw(AnalyzerSettingsEditor.Json(Model.GetMarketTrendRelationSelection(null))) }].map(GSStandardTriggerTemplate).join(''));
       $(document).ready(function () { BindRemoveParentRow@(Model.SettingName)Event(); });
       return false;
     });

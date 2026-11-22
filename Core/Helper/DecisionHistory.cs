@@ -50,6 +50,8 @@ namespace Core.Helper
     public bool Available { get; set; }
     public string Reason { get; set; }
     public DateTimeOffset? SourceDataTimestampUtc { get; set; }
+    // Set for Delta relation to audit both independent observation endpoints.
+    public DateTimeOffset? PreviousSourceDataTimestampUtc { get; set; }
     public double? CoveragePercent { get; set; }
   }
 

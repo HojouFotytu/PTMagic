@@ -1,5 +1,15 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 22, 2026 — Generic Delta MarketTrendRelation (development; runtime acceptance pending)
+
+**Source implementation:** Adds `Delta` to existing GlobalSetting Trigger, SingleMarketSetting Trigger, and SMS OffTrigger `MarketTrendRelation` values. A Delta compares **the same registered numeric metric** for the selected MarketTrend at the current pinned observation and **one configured `TrendMinutes` earlier**. For completed-period metrics, the prior evaluation is the prior completed source period; for rolling metrics, the two aligned rolling endpoints are separated by exactly `TrendMinutes`. No new user field, separate comparison period, indicator, metric-registry name, exchange endpoint, trading preset, or live settings are introduced. The catalogue remains 45 names.
+
+**Evidence correctness:** Fixed current eligible global/asset cohorts are reused for the historical calculation, with the same MarketTrend definition/currency/reference. Both observations require valid finite numerical values, distinct ordered source timestamps, and complete source history; otherwise Delta is `UNAVAILABLE`. History requirements add one full configured trend for Delta source dependencies; funding Delta requests its preceding verified settlement period. Neither hidden data fallbacks nor synthetic zero values are permitted. The existing three-valued unavailable trigger semantics, 300-second freshness policy and independent runtime settings delivery remain unchanged. Optional Delta is calculated only for metrics explicitly referenced by Delta triggers. Decision history retains both current and previous source timestamps.
+
+**UI and verification:** Monitor editor exposes Delta relations for global triggers, SMS triggers and SMS OffTriggers, with value-based triggers preserving existing bounds. The **sole** existing TestMode analyzer is versioned v2.6.0, placing diagnostic G10 first and adding SMS14 without changing previous diagnostic definitions. Focused source tests cover historical Delta arithmetic, 90% fixed cohort, missing/duplicate source time, opt-in computation and Monitor settings roundtrip.
+
+**ACCEPTANCE NOT YET VERIFIED:** This commit is prepared without a .NET runtime in the editing environment; compiled solution, automated focused harnesses and deployed LONG/SHORT TestMode results remain pending. Do not claim a PASS until owner-run .NET tests and current-source runtime evidence are reviewed.
+
 ## November 21, 2026 — PricePathEfficiency and MedianPricePathEfficiency source development
 
 Two **regime-descriptive** metrics are added as one source-candle path family: asset **PricePathEfficiency** and global **MedianPricePathEfficiency**. Registration increases the published names from 43 to 45. The global median is equal-market and uses the frozen eligible cohort with existing 90% coverage semantics. Asset dependencies computed for the median are published for Monitor display without being activated as SMS triggers.
