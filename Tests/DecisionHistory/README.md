@@ -1,5 +1,10 @@
 # Decision history regression harness
 
+## November 24 — Combined historical growth estimate
+
+Added one combined size projection for legacy MarketData snapshots and DecisionHistory, excluding active OHLCV cache. The server measures file metadata in a rolling 48-hour observation window and reports observed daily growth, total existing history bytes, and available disk capacity, with five-minute caching on the Settings General page. The browser projects requested days immediately without further file scans and displays only combined estimated storage, free capacity, and observed daily growth. Fewer than one observed hour shows "Collecting data" rather than inventing a growth rate. Added a two-dataset offline estimator regression. .NET build and live UI verification pending.
+
+
 ## November 24 — Unified history retention
 
 `Application.HistoryRetentionDays` (default 30 days) now controls historical MarketData snapshots and DecisionHistory JSONL. Removed DecisionHistory total size quota and its early deletion behavior; 16 MiB segment limits and age-based pruning remain. Older explicit DecisionHistoryRetentionDays is migrated only when the new key is absent. MarketData cleanup is restricted to MarketData snapshots and never truncates below the active StoreDataMaxHours requirement. Tests verify quota-free retention, migration, scope-limited cleanup and existing integrity. .NET build/test execution pending.

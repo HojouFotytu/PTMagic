@@ -124,6 +124,24 @@
               </div>
 
               <div class="form-group row">
+                <label for="Application_HistoryRetentionDays" class="col-md-4 col-form-label">History Retention (Days) <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Retains historical MarketData snapshots and DecisionHistory on disk. Does not change active OHLCV candles or StoreDataMaxHours."></i></label>
+                <div class="col-md-8">
+                  <input id="Application_HistoryRetentionDays" type="number" min="1" max="3650" step="1" required class="form-control" name="Application_HistoryRetentionDays" value="@Model.PTMagicConfiguration.GeneralSettings.Application.HistoryRetentionDays" />
+                  <div id="history-storage-estimate"
+                    data-daily-bytes="@Model.StorageEstimate.ObservedDailyBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                    data-existing-bytes="@Model.StorageEstimate.ExistingBytes"
+                    data-free-bytes="@Model.StorageEstimate.AvailableBytes"
+                    data-sample-hours="@Model.StorageEstimate.ObservedHours.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                    class="small text-muted mt-2">
+                    <span>Estimated storage required: <strong id="history-storage-required">Calculating...</strong></span>
+                    <span class="ml-3">Available capacity: <strong id="history-storage-available">Calculating...</strong></span>
+                    <span class="ml-3">Observed daily growth: <strong id="history-storage-growth">Calculating...</strong></span>
+                    <div id="history-storage-warning" class="text-warning" hidden></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group row">
                 <label class="col-md-4 col-form-label">Bot Instance Name <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="The name of this bot. This will be used in your monitor and your Telegram messages. In case you are running more than one bot, you may set different names to separate them."></i></label>
                 <div class="col-md-8">
                   <input type="text" class="form-control" name="Application_InstanceName" value="@Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName">
@@ -476,6 +494,42 @@
     $(document).ready(function () {
       $('[data-toggle="tooltip"]').tooltip();
       $('.text-autocolor').autocolor(false);
+
+      // Project from a five-minute server-side observation; editing the days
+      // does not trigger network requests or scan any history files.
+      (function () {
+        var info = document.getElementById('history-storage-estimate');
+        var daysInput = document.getElementById('Application_HistoryRetentionDays');
+        if (!info || !daysInput) return;
+        var daily = Number(info.getAttribute('data-daily-bytes'));
+        var existing = Number(info.getAttribute('data-existing-bytes'));
+        var available = Number(info.getAttribute('data-free-bytes'));
+        var hours = Number(info.getAttribute('data-sample-hours'));
+        function size(bytes) {
+          if (!Number.isFinite(bytes) || bytes < 0) return 'Unavailable';
+          var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+          var unit = 0;
+          while (bytes >= 1024 && unit < units.length - 1) { bytes /= 1024; unit++; }
+          return bytes.toLocaleString(undefined, {maximumFractionDigits: 1}) + ' ' + units[unit];
+        }
+        function update() {
+          var days = Number(daysInput.value);
+          var valid = Number.isInteger(days) && days >= 1 && days <= 3650 && daysInput.value !== '';
+          var measured = hours >= 1 && daily > 0;
+          document.getElementById('history-storage-available').textContent = size(available);
+          document.getElementById('history-storage-growth').textContent =
+            measured ? size(daily) + '/day' : 'Collecting data';
+          document.getElementById('history-storage-required').textContent =
+            valid && measured ? size(daily * days) : valid ? 'Collecting data' : 'Invalid period';
+          var warning = document.getElementById('history-storage-warning');
+          var extraRequired = Math.max(0, daily * days - existing);
+          warning.hidden = !(valid && measured && available >= 0 && extraRequired > available);
+          warning.textContent = warning.hidden ? '' :
+            'Projected additional history storage exceeds available disk space.';
+        }
+        daysInput.addEventListener('input', update);
+        update();
+      })();
 
       $('#btn-test-telegram').click(function () {
 

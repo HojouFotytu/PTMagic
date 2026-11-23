@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 24, 2026 — Application history retention UI and combined capacity projection (validation pending)
+
+General Settings / APPLICATION now edits Application.HistoryRetentionDays (1–3650) with server-side pre-save validation. Displays ONLY combined estimated storage required, available disk capacity, and observed daily storage growth for MarketData and DecisionHistory; no dataset breakdown, no OHLCV included. A Core history estimator scans file metadata in the last 48 hours with a five-minute Monitor cache; browser recomputes projections as the requested days change, with no further disk scans. No source-data historical OHLCV archive is added in this change. Warns when estimated incremental growth exceeds available free space. Under one hour of observations reports "Collecting data" rather than claiming a precise estimate. A real filesystem regression covers combined accounting and excludes expired files from the observed growth rate. Settings and trading behavior are otherwise unchanged. Native build and browser acceptance pending.
+
+
 ## November 24, 2026 — Unified history retention core (tests pending)
 
 Add Application.HistoryRetentionDays (default 30) for legacy MarketData snapshots and DecisionHistory. Old DecisionHistoryRetentionDays is automatically migrated when the new key is missing. Remove the separate DecisionHistoryMaxMegabytes limit and size-based pruning; preserve age expiration and the 16 MiB record/segment integrity bound. MarketData cleanup is scoped to MarketData_*.json and preserves any legacy active StoreDataMaxHours window. OHLCV cache, metric calculation, market acquisition, PT delivery and trading settings are unchanged. Add focused migration/retention/cleanup regressions. Monitor UI and combined storage estimate are addressed in the following change. .NET validation pending.

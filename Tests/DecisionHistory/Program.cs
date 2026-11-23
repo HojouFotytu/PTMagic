@@ -141,6 +141,26 @@ internal static class Program
         Require(migrated.Contains("\"HistoryRetentionDays\": 42") &&
           !migrated.Contains("DecisionHistoryRetentionDays") && !migrated.Contains("DecisionHistoryMaxMegabytes"));
       });
+      Run("combined historical disk-growth estimator uses both datasets", directory =>
+      {
+        string market = Path.Combine(directory, "_data", "Exchange");
+        string history = Path.Combine(directory, "_data", "DecisionHistory");
+        Directory.CreateDirectory(market); Directory.CreateDirectory(history);
+        string marketFile = Path.Combine(market, "MarketData_recent.json");
+        string historyFile = Path.Combine(history, "2026-11-24-000001.jsonl");
+        string oldFile = Path.Combine(market, "MarketData_old.json");
+        File.WriteAllText(marketFile, new string('m', 2048));
+        File.WriteAllText(historyFile, new string('d', 6144));
+        File.WriteAllText(oldFile, new string('o', 512));
+        DateTime clock = DateTime.UtcNow;
+        File.SetLastWriteTimeUtc(marketFile, clock.AddHours(-24));
+        File.SetLastWriteTimeUtc(historyFile, clock.AddHours(-12));
+        File.SetLastWriteTimeUtc(oldFile, clock.AddDays(-5));
+        var estimate = HistoryStorageEstimator.Measure(directory, clock);
+        Require(estimate.ExistingBytes == 8704 && estimate.SampleFileCount == 2);
+        Require(estimate.ObservedHours >= 23.9 && estimate.ObservedHours <= 48);
+        Require(estimate.ObservedDailyBytes > 0 && estimate.AvailableBytes >= 0);
+      });
       Run("acknowledgement checkpoint stores identities without raw properties", directory =>
       {
         var delivery = new ConfigurationDeliveryCoordinator();

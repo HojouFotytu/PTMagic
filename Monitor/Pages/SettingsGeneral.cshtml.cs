@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Core.Main;
 using Core.Helper;
@@ -14,6 +15,31 @@ namespace Monitor.Pages
   public string ValidationMessage = ""; 
   public ProfitTrailerData PTData = null;
   public MiscData MiscData { get; set; }
+  public HistoryStorageEstimate StorageEstimate { get; private set; } = new HistoryStorageEstimate();
+  private static readonly object StorageEstimateLock = new object();
+  private static string _measuredPath;
+  private static DateTime _measuredAtUtc = DateTime.MinValue;
+  private static HistoryStorageEstimate _measuredValue;
+
+  // A single bounded metadata scan per instance every five minutes, rather
+  // than scanning directories each time a user edits the retention field.
+  private void LoadStorageEstimate()
+  {
+    string path = System.IO.Path.GetFullPath(PTMagicBasePath);
+    lock (StorageEstimateLock)
+    {
+      if (_measuredValue == null || !String.Equals(_measuredPath, path, StringComparison.OrdinalIgnoreCase)
+        || DateTime.UtcNow - _measuredAtUtc >= TimeSpan.FromMinutes(5))
+      {
+        try { _measuredValue = HistoryStorageEstimator.Measure(path); }
+        catch (System.IO.IOException) { _measuredValue = new HistoryStorageEstimate(); }
+        catch (UnauthorizedAccessException) { _measuredValue = new HistoryStorageEstimate(); }
+        _measuredPath = path;
+        _measuredAtUtc = DateTime.UtcNow;
+      }
+      StorageEstimate = _measuredValue;
+    }
+  }
 
     private string GetTimezoneOffsetString(TimeZoneInfo tzi)
     {
@@ -30,6 +56,7 @@ namespace Monitor.Pages
     public void OnGet()
     {
       base.Init();
+      LoadStorageEstimate();
       PTData = this.PtDataObject;
       MiscData = this.PTData.Misc;
 
@@ -45,6 +72,24 @@ namespace Monitor.Pages
     public void OnPost()
     {
       base.Init();
+      LoadStorageEstimate();
+
+      // Validate before mutating or writing ANY fields, since an invalid
+      // retention period must never partially save other trading settings.
+      int days = PTMagicConfiguration.GeneralSettings.Application.HistoryRetentionDays;
+      if (HttpContext.Request.Form.TryGetValue("Application_HistoryRetentionDays", out var submitted))
+      {
+        if (!Int32.TryParse(submitted.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out days)
+          || days < 1 || days > 3650)
+        {
+          ValidationMessage = "History Retention must be a whole number from 1 to 3650 days.";
+          NotifyHeadline = "Settings were not saved";
+          NotifyMessage = ValidationMessage;
+          NotifyType = "error";
+          return;
+        }
+      }
+      PTMagicConfiguration.GeneralSettings.Application.HistoryRetentionDays = days;
 
       // Read the new settings
       PTMagicConfiguration.GeneralSettings.Application.IsEnabled = HttpContext.Request.Form["Application_IsEnabled"].Equals("on");
