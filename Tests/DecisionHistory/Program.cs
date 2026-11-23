@@ -137,9 +137,16 @@ internal static class Program
         var settings = new PTMagicConfiguration(directory);
         Require(settings.GeneralSettings.Application.HistoryRetentionDays == 42);
         settings.WriteGeneralSettings();
+        // The test supplies a directory without a trailing slash. Both the
+        // backup and the updated file must remain inside that directory.
+        Require(File.Exists(Path.Combine(directory, "settings.general.json.backup")));
+        Require(!File.Exists(directory + "settings.general.json"));
         string migrated = File.ReadAllText(Path.Combine(directory, "settings.general.json"));
         Require(migrated.Contains("\"HistoryRetentionDays\": 42") &&
           !migrated.Contains("DecisionHistoryRetentionDays") && !migrated.Contains("DecisionHistoryMaxMegabytes"));
+        settings.WriteAnalyzerSettings();
+        Require(File.Exists(Path.Combine(directory, "settings.analyzer.json.backup")));
+        Require(!File.Exists(directory + "settings.analyzer.json"));
       });
       Run("combined historical disk-growth estimator uses both datasets", directory =>
       {

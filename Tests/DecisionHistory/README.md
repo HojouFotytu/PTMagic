@@ -1,5 +1,10 @@
 # Decision history regression harness
 
+## November 24 — Fix migration-test save path
+
+A .NET 10 run passed the first ten DecisionHistory checks then failed in the migration case: PTMagicConfiguration(string basePath) accepted an unseparated temp-directory path, while its write/backup helpers relied on a trailing directory separator. Both constructors now normalize the base path before any read/write, and the migration regression asserts the settings backup and subsequent Analyzer settings backup remain inside the supplied directory. Native retest of the amended commit pending.
+
+
 ## November 24 — Combined historical growth estimate
 
 Added one combined size projection for legacy MarketData snapshots and DecisionHistory, excluding active OHLCV cache. The server measures file metadata in a rolling 48-hour observation window and reports observed daily growth, total existing history bytes, and available disk capacity, with five-minute caching on the Settings General page. The browser projects requested days immediately without further file scans and displays only combined estimated storage, free capacity, and observed daily growth. Fewer than one observed hour shows "Collecting data" rather than inventing a growth rate. Added a two-dataset offline estimator regression. .NET build and live UI verification pending.

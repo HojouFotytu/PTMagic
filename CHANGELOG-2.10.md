@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 24, 2026 — Normalize settings base path for migration regression (retest pending)
+
+Fix PTMagicConfiguration constructors to normalize base path separators once, ensuring WriteGeneralSettings and WriteAnalyzerSettings create backups and write files inside the requested instance directory even when the caller omits the trailing path separator. A real Windows .NET build succeeded and the first ten DecisionHistory regression checks passed; the following migration test exposed this save-path error. Extend the migration fixture to verify both backup paths and no accidentally concatenated sibling filenames. No Analyzer logic, retention policy or settings data are changed. Native regression rerun pending.
+
+
 ## November 24, 2026 — Application history retention UI and combined capacity projection (validation pending)
 
 General Settings / APPLICATION now edits Application.HistoryRetentionDays (1–3650) with server-side pre-save validation. Displays ONLY combined estimated storage required, available disk capacity, and observed daily storage growth for MarketData and DecisionHistory; no dataset breakdown, no OHLCV included. A Core history estimator scans file metadata in the last 48 hours with a five-minute Monitor cache; browser recomputes projections as the requested days change, with no further disk scans. No source-data historical OHLCV archive is added in this change. Warns when estimated incremental growth exceeds available free space. Under one hour of observations reports "Collecting data" rather than claiming a precise estimate. A real filesystem regression covers combined accounting and excludes expired files from the observed growth rate. Settings and trading behavior are otherwise unchanged. Native build and browser acceptance pending.

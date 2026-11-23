@@ -20,15 +20,21 @@ namespace Core.Main
 
     public PTMagicConfiguration()
     {
-      _basePath = Directory.GetCurrentDirectory();
+      _basePath = NormalizeBasePath(Directory.GetCurrentDirectory());
       LoadSettings(_basePath);
     }
 
     public PTMagicConfiguration(string basePath)
     {
-      _basePath = basePath;
+      _basePath = NormalizeBasePath(basePath);
       LoadSettings(_basePath);
     }
+
+    // The file/backup writers concatenate _basePath and filenames. Normalize
+    // once on construction, including for paths supplied without a separator.
+    private static string NormalizeBasePath(string basePath) =>
+      Path.GetFullPath(basePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+      + Path.DirectorySeparatorChar;
 
     public void RefreshSettings()
     {
