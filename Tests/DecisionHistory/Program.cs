@@ -34,8 +34,8 @@ internal static class Program
       Run("append preserves independently parseable complete records", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
-        string path = writer.Append(Record("one"), 30, 64);
-        Require(writer.Append(Record("two"), 30, 64) == path);
+        string path = writer.Append(Record("one"), 30);
+        Require(writer.Append(Record("two"), 30) == path);
         var records = Read(path);
         Require(records.Length == 2 && records[0].RaidId == "one" && records[1].RaidId == "two");
         Require(File.ReadAllBytes(path)[^1] == (byte)'\n');
@@ -45,27 +45,27 @@ internal static class Program
         var writer = new DecisionHistoryWriter(directory);
         var first = Record("first"); first.RecordedAtUtc = new DateTimeOffset(Now.UtcDateTime.Date, TimeSpan.Zero).AddHours(1);
         var next = Record("next"); next.RecordedAtUtc = first.RecordedAtUtc.AddDays(1);
-        string a = writer.Append(first, 30, 64);
-        string b = writer.Append(next, 30, 64);
+        string a = writer.Append(first, 30);
+        string b = writer.Append(next, 30);
         Require(a != b && Read(a)[0].RaidId == "first" && Read(b)[0].RaidId == "next");
       });
       Run("expired whole segments are removed and unrelated files survive", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var old = Record("expired"); old.RecordedAtUtc = Now.AddDays(-31);
-        string oldPath = writer.Append(old, 30, 64);
+        string oldPath = writer.Append(old, 30);
         File.SetLastWriteTimeUtc(oldPath, Now.UtcDateTime.AddDays(-31));
         string unrelated = Path.Combine(directory, "operator-notes.txt"); File.WriteAllText(unrelated, "keep");
-        string current = writer.Append(Record("current"), 30, 64);
+        string current = writer.Append(Record("current"), 30);
         Require(!File.Exists(oldPath) && File.Exists(current) && File.ReadAllText(unrelated) == "keep");
       });
       Run("an interrupted tail is preserved and the next record rotates", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
-        string old = writer.Append(Record("complete"), 30, 64);
+        string old = writer.Append(Record("complete"), 30);
         File.AppendAllText(old, "{\"RaidId\":\"interrupted");
         string before = File.ReadAllText(old);
-        string next = writer.Append(Record("after"), 30, 64);
+        string next = writer.Append(Record("after"), 30);
         Require(next != old && File.ReadAllText(old) == before && Read(next).Single().RaidId == "after");
       });
       Run("16 MiB segment rotation retains complete records", directory =>
@@ -73,38 +73,73 @@ internal static class Program
         var writer = new DecisionHistoryWriter(directory);
         var a = Record("large-a"); a.MetricInputs = LargeInputs(9 * 1024 * 1024);
         var b = Record("large-b"); b.MetricInputs = LargeInputs(9 * 1024 * 1024);
-        string first = writer.Append(a, 30, 64);
-        string second = writer.Append(b, 30, 64);
+        string first = writer.Append(a, 30);
+        string second = writer.Append(b, 30);
         Require(first != second && Read(first).Single().RaidId == "large-a" && Read(second).Single().RaidId == "large-b");
         Require(new FileInfo(first).Length <= 16L * 1024 * 1024 && new FileInfo(second).Length <= 16L * 1024 * 1024);
       });
-      Run("quota prunes complete older segments and keeps newest record", directory =>
+      Run("older segments survive growth past the former quota", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var a = Record("old"); a.MetricInputs = LargeInputs(9 * 1024 * 1024);
         var b = Record("new"); b.MetricInputs = LargeInputs(9 * 1024 * 1024);
-        string old = writer.Append(a, 30, 16);
-        string newest = writer.Append(b, 30, 16);
-        Require(!File.Exists(old) && Read(newest).Single().RaidId == "new");
-        Require(Directory.GetFiles(directory, "*.jsonl").Sum(path => new FileInfo(path).Length) <= 16L * 1024 * 1024);
+        string old = writer.Append(a, 30);
+        string newest = writer.Append(b, 30);
+        Require(File.Exists(old) && File.Exists(newest) && old != newest);
+        Require(Read(old).Single().RaidId == "old" && Read(newest).Single().RaidId == "new");
+        Require(Directory.GetFiles(directory, "*.jsonl").Sum(path => new FileInfo(path).Length) > 16L * 1024 * 1024);
       });
       Run("one oversized record is rejected before damaging existing history", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
-        string path = writer.Append(Record("preserved"), 30, 64);
+        string path = writer.Append(Record("preserved"), 30);
         byte[] before = File.ReadAllBytes(path);
         var large = Record("too-large"); large.MetricInputs = LargeInputs(16 * 1024 * 1024);
-        Throws<InvalidOperationException>(() => writer.Append(large, 30, 64));
+        Throws<InvalidOperationException>(() => writer.Append(large, 30));
         Require(File.ReadAllBytes(path).SequenceEqual(before) && Directory.GetFiles(directory, "*.jsonl").Length == 1);
       });
-      Run("invalid retention and quota fail without creating files", directory =>
+      Run("invalid day retention fails before writing files", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
-        Throws<ArgumentOutOfRangeException>(() => writer.Append(Record("bad"), 0, 64));
-        Throws<ArgumentOutOfRangeException>(() => writer.Append(Record("bad"), 3651, 64));
-        Throws<ArgumentOutOfRangeException>(() => writer.Append(Record("bad"), 30, 15));
-        Throws<ArgumentOutOfRangeException>(() => writer.Append(Record("bad"), 30, 102401));
+        Throws<ArgumentOutOfRangeException>(() => writer.Append(Record("bad"), 0));
+        Throws<ArgumentOutOfRangeException>(() => writer.Append(Record("bad"), 3651));
         Require(Directory.GetFiles(directory).Length == 0);
+      });
+      Run("MarketData-only cleanup does not remove exchange metadata", directory =>
+      {
+        string folder = Path.Combine(directory, "Exchange"); Directory.CreateDirectory(folder);
+        string old = Path.Combine(folder, "MarketData_old.json");
+        string fresh = Path.Combine(folder, "MarketData_recent.json");
+        string metadata = Path.Combine(folder, "MarketInfo.json");
+        File.WriteAllText(old, "{}"); File.WriteAllText(fresh, "{}"); File.WriteAllText(metadata, "{}");
+        File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-32));
+        File.SetLastWriteTimeUtc(metadata, DateTime.UtcNow.AddDays(-32));
+        FileHelper.CleanupMarketDataFiles(folder, 30 * 24);
+        Require(!File.Exists(old) && File.Exists(fresh) && File.Exists(metadata));
+      });
+      Run("legacy history-days migration keeps explicit setting and drops old quota", directory =>
+      {
+        var general = new GeneralSettingsWrapper { GeneralSettings = new GeneralSettings
+        {
+          Application = new Application { Exchange = "BinanceFutures", ProfitTrailerMonitorURL = "http://localhost/" },
+          Monitor = new Core.Main.DataObjects.PTMagicData.Monitor(), Backup = new Backup(),
+          Telegram = new Core.Main.DataObjects.PTMagicData.Telegram()
+        }};
+        string json = JsonConvert.SerializeObject(general).Replace("\"HistoryRetentionDays\":30",
+          "\"DecisionHistoryRetentionDays\":42");
+        Require(json.Contains("\"DecisionHistoryRetentionDays\":42"));
+        File.WriteAllText(Path.Combine(directory, "settings.general.json"), json);
+        File.WriteAllText(Path.Combine(directory, "settings.analyzer.json"), JsonConvert.SerializeObject(new AnalyzerSettingsWrapper
+        {
+          AnalyzerSettings = new AnalyzerSettings { MarketAnalyzer = new Core.Main.DataObjects.PTMagicData.MarketAnalyzer
+            { StoreDataMaxHours = 48, MarketTrends = new() }, GlobalSettings = new(), SingleMarketSettings = new() }
+        }));
+        var settings = new PTMagicConfiguration(directory);
+        Require(settings.GeneralSettings.Application.HistoryRetentionDays == 42);
+        settings.WriteGeneralSettings();
+        string migrated = File.ReadAllText(Path.Combine(directory, "settings.general.json"));
+        Require(migrated.Contains("\"HistoryRetentionDays\": 42") &&
+          !migrated.Contains("DecisionHistoryRetentionDays") && !migrated.Contains("DecisionHistoryMaxMegabytes"));
       });
       Run("acknowledgement checkpoint stores identities without raw properties", directory =>
       {

@@ -73,6 +73,20 @@ namespace Core.Helper
       }
     }
 
+    // Only these legacy market snapshots are historical files; MarketInfo and
+    // exchange metadata in the same directory must not be purged.
+    public static void CleanupMarketDataFiles(string folderPath, int maxHours)
+    {
+      if (maxHours < 0) throw new ArgumentOutOfRangeException(nameof(maxHours));
+      if (!Directory.Exists(folderPath)) return;
+      DateTime cutoffUtc = DateTime.UtcNow.AddHours(-(maxHours + 1));
+      foreach (FileInfo file in new DirectoryInfo(folderPath).EnumerateFiles("MarketData_*.json"))
+      {
+        if ((file.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+        if (file.LastWriteTimeUtc < cutoffUtc) file.Delete();
+      }
+    }
+
     public static void CleanupFiles(string folderPath, int maxHours)
     {
       if (!Directory.Exists(folderPath))

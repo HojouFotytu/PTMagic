@@ -1315,9 +1315,8 @@ namespace Core.Main
       Application application = this.PTMagicConfiguration.GeneralSettings.Application;
       if (application.MaxAnalysisAgeSeconds < 1 || application.MaxAnalysisAgeSeconds > 86400)
         throw new InvalidOperationException("MaxAnalysisAgeSeconds must be between 1 and 86400.");
-      if (application.DecisionHistoryRetentionDays < 1 || application.DecisionHistoryRetentionDays > 3650
-        || application.DecisionHistoryMaxMegabytes < 16 || application.DecisionHistoryMaxMegabytes > 102400)
-        throw new InvalidOperationException("Decision history requires retention 1–3650 days and a quota of 16–102400 MiB.");
+      if (application.HistoryRetentionDays < 1 || application.HistoryRetentionDays > 3650)
+        throw new InvalidOperationException("HistoryRetentionDays must be between 1 and 3650 days.");
       //Reimport Initial ProfitTrailer Information(Deactivated for now)
       //SettingsAPI.GetInitialProfitTrailerSettings(this.PTMagicConfiguration);
 
@@ -2960,7 +2959,7 @@ namespace Core.Main
             }).ToArray()
         };
         new DecisionHistoryWriter(Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "DecisionHistory"))
-          .Append(record, app.DecisionHistoryRetentionDays, app.DecisionHistoryMaxMegabytes);
+          .Append(record, app.HistoryRetentionDays);
         _historyWritten = true;
       }
       catch (Exception exception)

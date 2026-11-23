@@ -39,8 +39,9 @@ namespace Core.Main.DataObjects.PTMagicData
     // This does not limit the age of a complete higher-timeframe source bar.
     public int MaxAnalysisAgeSeconds { get; set; } = 300;
     public bool DecisionHistoryEnabled { get; set; } = true;
-    public int DecisionHistoryRetentionDays { get; set; } = 30;
-    public int DecisionHistoryMaxMegabytes { get; set; } = 256;
+    // Applies only to archived MarketData snapshots and DecisionHistory JSONL.
+    // StoreDataMaxHours continues to define live Analyzer candle capacity.
+    public int HistoryRetentionDays { get; set; } = 30;
     public bool EnableBetaFeatures { get; set; } = false;
     public string ProfitTrailerLicense { get; set; } = "";
     public string ProfitTrailerLicenseXtra { get; set; } = "";

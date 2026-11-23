@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Core.Helper;
 using Core.Main.DataObjects.PTMagicData;
 
@@ -41,8 +42,16 @@ namespace Core.Main
         basePath += Path.DirectorySeparatorChar;
       }
 
-      GeneralSettingsWrapper gsw = JsonConvert.DeserializeObject<GeneralSettingsWrapper>(File.ReadAllText(basePath + "settings.general.json"));
+      string generalJson = File.ReadAllText(basePath + "settings.general.json");
+      GeneralSettingsWrapper gsw = JsonConvert.DeserializeObject<GeneralSettingsWrapper>(generalJson);
       _generalSettings = gsw.GeneralSettings;
+      // Retain an explicitly configured legacy decision-history duration when
+      // upgrading a settings file that does not yet contain HistoryRetentionDays.
+      JToken applicationJson = JObject.Parse(generalJson)["GeneralSettings"]?["Application"];
+      if (applicationJson?["HistoryRetentionDays"] == null &&
+          applicationJson?["DecisionHistoryRetentionDays"]?.Type == JTokenType.Integer)
+        _generalSettings.Application.HistoryRetentionDays =
+          applicationJson["DecisionHistoryRetentionDays"].Value<int>();
 
       AnalyzerSettingsWrapper asw = JsonConvert.DeserializeObject<AnalyzerSettingsWrapper>(File.ReadAllText(basePath + "settings.analyzer.json"));
       _analyzerSettings = asw.AnalyzerSettings;

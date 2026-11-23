@@ -104,13 +104,11 @@ namespace Core.Helper
     private readonly string _directory;
     public DecisionHistoryWriter(string directory) => _directory = Path.GetFullPath(directory);
 
-    public string Append(DecisionHistoryRecord record, int retentionDays, int maxMegabytes)
+    public string Append(DecisionHistoryRecord record, int retentionDays)
     {
       if (record == null) throw new ArgumentNullException(nameof(record));
       if (retentionDays < 1 || retentionDays > 3650) throw new ArgumentOutOfRangeException(nameof(retentionDays));
-      if (maxMegabytes < 16 || maxMegabytes > 102400) throw new ArgumentOutOfRangeException(nameof(maxMegabytes));
       byte[] bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(record, Formatting.None) + "\n");
-      long quota = (long)maxMegabytes * 1024 * 1024;
       if (bytes.LongLength > SegmentBytes) throw new InvalidOperationException("Decision record exceeds the 16 MiB history segment limit.");
 
       lock (_sync)
@@ -129,27 +127,8 @@ namespace Core.Helper
           path = Path.Combine(_directory, day + "-" + sequence.ToString("D6", CultureInfo.InvariantCulture) + ".jsonl");
         }
 
-        // Only whole old segments are pruned. Never truncate a record or alter an
-        // earlier valid segment; an interrupted tail starts a fresh segment.
-        FileInfo[] files = Files();
-        long total = files.Sum(file => file.Length);
-        foreach (FileInfo file in files)
-        {
-          if (total + bytes.LongLength <= quota) break;
-          if (file.FullName == path) continue;
-          total -= file.Length;
-          file.Delete();
-        }
-        if (total + bytes.LongLength > quota)
-        {
-          // A single active segment can consume a small configured quota. Rotate
-          // before pruning it so the newest full record is always retained.
-          FileInfo active = new FileInfo(path);
-          int sequence = Int32.Parse(Path.GetFileNameWithoutExtension(active.Name).Substring(11), CultureInfo.InvariantCulture) + 1;
-          string rotated = Path.Combine(_directory, day + "-" + sequence.ToString("D6", CultureInfo.InvariantCulture) + ".jsonl");
-          if (active.Exists) active.Delete();
-          path = rotated;
-        }
+        // No cumulative size cap: only the age limit removes old segments.
+        // The 16 MiB individual-record/segment integrity bound remains.
         using (FileStream stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
         {
           stream.Write(bytes, 0, bytes.Length);

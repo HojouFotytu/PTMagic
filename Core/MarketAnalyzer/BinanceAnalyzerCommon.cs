@@ -389,7 +389,10 @@ namespace Core.MarketAnalyzer
       DateTime fileDateTime = DateTime.UtcNow;
       FileHelper.WriteTextToFile(dataDirectoryPath, "MarketData_" + fileDateTime.ToString("yyyy-MM-dd_HH.mm") + ".json", JsonConvert.SerializeObject(markets), fileDateTime, fileDateTime);
       log.DoLogInfo(exchangeName + " - Market data saved for " + markets.Count.ToString() + " markets with " + mainMarket + ".");
-      FileHelper.CleanupFiles(dataDirectoryPath, systemConfiguration.AnalyzerSettings.MarketAnalyzer.StoreDataMaxHours);
+      int retentionHours = Math.Max(
+        checked(systemConfiguration.GeneralSettings.Application.HistoryRetentionDays * 24),
+        systemConfiguration.AnalyzerSettings.MarketAnalyzer.StoreDataMaxHours);
+      FileHelper.CleanupMarketDataFiles(dataDirectoryPath, retentionHours);
       log.DoLogInfo(exchangeName + " - Market data cleaned.");
     }
 

@@ -1,5 +1,10 @@
 # Decision history regression harness
 
+## November 24 — Unified history retention
+
+`Application.HistoryRetentionDays` (default 30 days) now controls historical MarketData snapshots and DecisionHistory JSONL. Removed DecisionHistory total size quota and its early deletion behavior; 16 MiB segment limits and age-based pruning remain. Older explicit DecisionHistoryRetentionDays is migrated only when the new key is absent. MarketData cleanup is restricted to MarketData snapshots and never truncates below the active StoreDataMaxHours requirement. Tests verify quota-free retention, migration, scope-limited cleanup and existing integrity. .NET build/test execution pending.
+
+
 **Status: all 13 check groups passed in the user's .NET 10.0.403 run at source `d331fbd059041241069646c3bb82ac6549423a70`.** Core, PTMagic and Monitor built successfully in 10.9 seconds, and the ConfigurationLifecycle harness passed all 66 checks before this project ran. Under D-021 the user runs all native .NET validation locally.
 
 The earlier validation at source `86c2ea3ff430b62e654f929a222935ec53ea8fa6` stopped on a `Telegram` type/namespace collision in ConfigurationLifecycle before this project ran. Both fixtures now explicitly construct `Core.Main.DataObjects.PTMagicData.Telegram`, and the successful continuation validates that correction.

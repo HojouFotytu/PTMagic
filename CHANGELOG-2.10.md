@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 24, 2026 — Unified history retention core (tests pending)
+
+Add Application.HistoryRetentionDays (default 30) for legacy MarketData snapshots and DecisionHistory. Old DecisionHistoryRetentionDays is automatically migrated when the new key is missing. Remove the separate DecisionHistoryMaxMegabytes limit and size-based pruning; preserve age expiration and the 16 MiB record/segment integrity bound. MarketData cleanup is scoped to MarketData_*.json and preserves any legacy active StoreDataMaxHours window. OHLCV cache, metric calculation, market acquisition, PT delivery and trading settings are unchanged. Add focused migration/retention/cleanup regressions. Monitor UI and combined storage estimate are addressed in the following change. .NET validation pending.
+
+
 ## November 23, 2026 — Condense new-market history INFO to one line (validation pending)
 
 Replace the per-market INFO notices and recovery chatter with one sorted list: `+ New markets with insufficient history, excluded from some metrics: ...`. No per-market listing times, metric counts, or repeated explanatory text. Unavailable metric values, verified pre-listing classifications, genuine warning categories, market-data collection and trading behavior are unchanged. Updated Phase1MetricWarnings regression expectations for one market, six markets, repeated raids and no exclusions. Source published; focused build/tests and configured-runtime checks pending.

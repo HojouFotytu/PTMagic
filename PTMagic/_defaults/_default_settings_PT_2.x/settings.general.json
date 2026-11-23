@@ -7,8 +7,7 @@
       "StartupSellOnlyMode": true, // Control PT global SOM at startup: pause new/DCA buys, allow sells; release after fresh conclusive analysis and acknowledged settings delivery
       "MaxAnalysisAgeSeconds": 300, // Maximum age of the raid observation time before a configuration transfer
       "DecisionHistoryEnabled": true, // Append credential-free decision records under _data/DecisionHistory
-      "DecisionHistoryRetentionDays": 30, // Prune old history segments
-      "DecisionHistoryMaxMegabytes": 256, // Total history quota in MiB; minimum 16
+      "HistoryRetentionDays": 30, // Disk-only retention of MarketData snapshots and DecisionHistory, independent of StoreDataMaxHours
       "ProfitTrailerLicense": "ptlicense1asdf234f4325ehm", // Your Profit Trailer license key (needed to change your settings)
       "ProfitTrailerLicenseXtra": "", // Licenses for additional bots for PTM to update (optional - comma separated list)
       "ProfitTrailerServerAPIToken": "", //Your Profit Trailer Server API Token
