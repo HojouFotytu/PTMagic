@@ -28,11 +28,17 @@ namespace Monitor.Pages
     // Download complete source files, independently of the filtered/bounded log
     // viewer. Keep the ZIP on a temporary disk stream to avoid buffering all
     // log history in memory; ASP.NET disposes the stream after the download.
-    public async Task<IActionResult> OnGetDownloadAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetDownloadAsync(int historyCount, string historyUnit,
+      CancellationToken cancellationToken)
     {
       base.Init();
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
+      // Missing query parameters (old download links) retain all-history behavior.
+      bool noRange = String.IsNullOrEmpty(historyUnit) && historyCount == 0;
+      if (!_Internal.ExportHistoryPeriod.TryFromInput(historyCount,
+        noRange ? "all" : historyUnit, DateTime.UtcNow, out _, out DateTime? cutoffUtc))
+        return BadRequest("Choose a positive whole number of days, weeks, or months.");
 
       string analyzerFolder = Path.Combine(PTMagicBasePath, "_logs");
       string monitorFolder = Path.Combine(PTMagicMonitorBasePath, "_logs");
@@ -49,6 +55,7 @@ namespace Monitor.Pages
         .SelectMany(folder => Directory.EnumerateFiles(folder.Path, "*", SearchOption.TopDirectoryOnly)
           // Logs stored as links must not expose files outside the log folder.
           .Where(path => (System.IO.File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
+          .Where(path => _Internal.LogArchiveDateFilter.Includes(path, cutoffUtc, DateTime.UtcNow))
           .Select(path => (Path: path, Entry: folder.Prefix + Path.GetFileName(path))))
         .ToArray();
 
