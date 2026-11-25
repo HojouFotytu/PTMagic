@@ -122,6 +122,15 @@ namespace Core.Main.DataObjects.PTMagicData
     public MarketAnalyzer MarketAnalyzer { get; set; }
     public List<GlobalSetting> GlobalSettings { get; set; }
     public List<SingleMarketSetting> SingleMarketSettings { get; set; }
+    public string HeldMarketDefenseProperty { get; set; }
+    public List<HeldMarketDefenseRule> HeldMarketDefense { get; set; }
+  }
+
+  public class HeldMarketDefenseRule
+  {
+    public int Level { get; set; }
+    public string TriggerConnection { get; set; } = "AND";
+    public List<Trigger> Triggers { get; set; }
   }
 
   public class MarketAnalyzer

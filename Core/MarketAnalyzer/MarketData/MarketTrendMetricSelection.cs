@@ -26,6 +26,8 @@ namespace Core.MarketAnalyzer.MarketData
       if ((analyzer.GlobalSettings ?? new List<GlobalSetting>())
         .Where(setting => setting?.Triggers != null)
         .SelectMany(setting => setting.Triggers)
+        .Concat((analyzer.HeldMarketDefense ?? new List<HeldMarketDefenseRule>())
+          .Where(rule => rule?.Triggers != null).SelectMany(rule => rule.Triggers))
         .Any(t => NeedsImplicitPriceTrend(t?.MarketTrendName, t?.Metric, trend)))
       {
         metrics.Add(MarketTrendMetrics.PriceTrend);

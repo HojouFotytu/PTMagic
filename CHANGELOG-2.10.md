@@ -1,5 +1,12 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Measured market legs, liquid-cohort breadth and independent held-market defense
+
+Analyzer presets can opt into `HeldMarketDefense` with a numeric `HeldMarketDefenseProperty` in PAIRS. Fresh market evidence can raise that property's compiled Global floor to 1 or 2 before single-market settings run. An unavailable rule retains previously acknowledged protection only while the evidence still permits that level. Failed delivery, destination changes and test mode retain the existing acknowledgement boundaries. Decision history records desired and confirmed levels.
+
+The 5-minute futures engine adds breadth for frozen top-50, top-75 and top-100 turnover cohorts, asset and market returns in ATR units, asset return in excess of the market median in ATR units, and event-anchored drawdown/rally measurements. Measured price recovery, participation and overlap use one aligned basket, shared turning points and only closed candles. For shock detection, MedianReturnInPriorATR divides the rolling market median return by median ATRP calculated as of the start of that return window. The developing shock cannot increase its own denominator. Configurations request each metric by name. Existing presets can omit the new controls.
+
+
 ## November 25, 2026 — Configurable PT Data and PTMagic log ZIP periods (validation pending)
 
 Add a numeric count and days/weeks/months selector to PT Data trade-history exports and PTMagic/Monitor log ZIP downloads. Both support All available, including the existing all-history PT export default; calendar months use AddMonths. Server-side validation prevents invalid durations. PT Data retains original pagination, history manifests, source payloads, current snapshots and funding behavior, with a new shared parser accepting legacy range codes. The log ZIP filters complete dated daily log files (including the boundary day), with modification-time fallback for undated filenames, without filtering the live log viewer or altering the complete _data ZIP download. Regression tests cover range arithmetic, invalid input, legacy range codes, and dated/undated log selection. Native build, regression execution and browser verification pending.

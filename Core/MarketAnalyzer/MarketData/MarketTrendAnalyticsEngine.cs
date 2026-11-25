@@ -45,10 +45,17 @@ namespace Core.MarketAnalyzer.MarketData
       string[] assetUniverse = NormalizeSymbols(assetSymbols);
       IReadOnlyCollection<string> enabledMetrics = selectedMetrics ?? MarketTrendMetrics.ParseEnabled(marketTrend);
 
+      bool Requested(string metric) => enabledMetrics.Contains(metric, StringComparer.OrdinalIgnoreCase);
+      bool medianReturnInPriorAtr = Requested(MarketTrendMetrics.MedianReturnInPriorATR);
+      bool medianReturnInAtr = Requested(MarketTrendMetrics.MedianReturnInATR);
+      bool assetReturnInAtr = Requested(MarketTrendMetrics.ReturnInATR);
+      bool relativeReturnInAtr = Requested(MarketTrendMetrics.RelativeStrengthInATR);
+      bool rankedBreadth = Requested(MarketTrendMetrics.Top50Breadth) || Requested(MarketTrendMetrics.Top75Breadth)
+        || Requested(MarketTrendMetrics.Top100Breadth);
       bool needsMeanPriceTrend = enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.Dispersion, StringComparer.OrdinalIgnoreCase);
-      bool needsMedianPriceTrend = enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase)
+      bool needsMedianPriceTrend = medianReturnInPriorAtr || medianReturnInAtr || relativeReturnInAtr || enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
       bool needsBreadth = enabledMetrics.Contains(MarketTrendMetrics.Breadth, StringComparer.OrdinalIgnoreCase);
@@ -56,8 +63,8 @@ namespace Core.MarketAnalyzer.MarketData
       bool needsConcentration = enabledMetrics.Contains(MarketTrendMetrics.Concentration, StringComparer.OrdinalIgnoreCase);
       bool needsRelativeStrengthMarket = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
       bool needsRelativeStrengthBTC = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthBTC, StringComparer.OrdinalIgnoreCase);
-      bool needsGlobalReturns = needsMeanPriceTrend || needsMedianPriceTrend || needsBreadth || needsConcentration;
-      bool needsAssetReturns = needsRelativeStrengthMarket || needsRelativeStrengthBTC
+      bool needsGlobalReturns = needsMeanPriceTrend || needsMedianPriceTrend || needsBreadth || needsConcentration || rankedBreadth;
+      bool needsAssetReturns = assetReturnInAtr || relativeReturnInAtr || needsRelativeStrengthMarket || needsRelativeStrengthBTC
         || enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase);
 
       HashSet<string> symbolsToCalculate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -139,11 +146,37 @@ namespace Core.MarketAnalyzer.MarketData
           calculatedAtUtc,
           marketTrend.TrendMinutes), globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
       }
+      if (medianReturnInPriorAtr)
+      {
+        // The most recent *complete* UTC trend period at the rolling return's reference
+        // close supplies the last range in the baseline. No current-return candle enters it.
+        var referenceAsOf = calculatedAtUtc.AddMinutes(-marketTrend.TrendMinutes);
+        var prior = MarketTrendPhase1CEngine.Calculate(marketTrend, new[] { MarketTrendMetrics.MedianATRP },
+          globalUniverse, Array.Empty<string>(), store, interval, referenceAsOf, quote);
+        marketMetrics[MarketTrendMetrics.MedianReturnInPriorATR] = InAtrUnits(medianPriceTrend,
+          prior.GlobalMetrics[MarketTrendMetrics.MedianATRP], calculatedAtUtc, fiatConversionSymbol != null);
+      }
       if (needsBreadth)
       {
         marketMetrics[MarketTrendMetrics.Breadth] = MarketMetricCoverage.Apply(
           CalculateBreadth(globalReturns, calculatedAtUtc, marketTrend.TrendMinutes),
           globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
+      }
+      if (rankedBreadth)
+      {
+        // Select before filtering missing returns. PopulationSelector supplies exchange turnover
+        // order and Delta reuses this raid's exact constituent order at its earlier endpoint.
+        void PublishBreadth(string metric, int count)
+        {
+          if (!Requested(metric)) return;
+          var cohort = globalUniverse.Take(count).ToArray();
+          var valid = cohort.Select(symbol => returns[symbol]).Where(IsUsable).ToList();
+          marketMetrics[metric] = MarketMetricCoverage.Apply(
+            CalculateBreadth(valid, calculatedAtUtc, marketTrend.TrendMinutes), valid.Count, cohort.Length, calculatedAtUtc);
+        }
+        PublishBreadth(MarketTrendMetrics.Top50Breadth, 50);
+        PublishBreadth(MarketTrendMetrics.Top75Breadth, 75);
+        PublishBreadth(MarketTrendMetrics.Top100Breadth, 100);
       }
       if (needsDispersion)
       {
@@ -252,15 +285,25 @@ namespace Core.MarketAnalyzer.MarketData
 
       // Phase 1C runs only for explicitly enabled metrics, sharing the exact
       // frozen MarketTrend populations and the existing normalized OHLCV store.
-      if (MarketTrendPhase1CEngine.HasMetrics(enabledMetrics))
+      var ohlcvMetrics = new HashSet<string>(enabledMetrics, StringComparer.OrdinalIgnoreCase);
+      if (medianReturnInAtr || Requested(MarketTrendMetrics.DrawdownSizeInATR) || Requested(MarketTrendMetrics.RallySizeInATR))
+        ohlcvMetrics.Add(MarketTrendMetrics.MedianATRP);
+      if (assetReturnInAtr || relativeReturnInAtr) ohlcvMetrics.Add(MarketTrendMetrics.ATRP);
+      if (MarketTrendPhase1CEngine.HasMetrics(ohlcvMetrics))
       {
         Phase1CFeatureResult phase1c = MarketTrendPhase1CEngine.Calculate(
-          marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc,
+          marketTrend, ohlcvMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc,
           benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase)
             ? benchmarkSymbol.Substring(3) : "USDT");
         foreach (KeyValuePair<string, FeatureValueSnapshot> feature in phase1c.GlobalMetrics)
         {
           marketMetrics[feature.Key] = feature.Value;
+        }
+        if (medianReturnInAtr)
+        {
+          var ratio = InAtrUnits(medianPriceTrend, marketMetrics[MarketTrendMetrics.MedianATRP],
+            calculatedAtUtc, fiatConversionSymbol != null);
+          marketMetrics[MarketTrendMetrics.MedianReturnInATR] = ratio;
         }
         foreach (KeyValuePair<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> asset in phase1c.AssetMetrics)
         {
@@ -272,12 +315,37 @@ namespace Core.MarketAnalyzer.MarketData
             {
               merged[metric.Key] = metric.Value;
             }
+            if (assetReturnInAtr || relativeReturnInAtr)
+            {
+              var atrp = merged[MarketTrendMetrics.ATRP];
+              var assetReturn = returns[asset.Key];
+              if (assetReturnInAtr)
+                merged[MarketTrendMetrics.ReturnInATR] = InAtrUnits(assetReturn, atrp, calculatedAtUtc, fiatConversionSymbol != null);
+              if (relativeReturnInAtr)
+              {
+                var excess = CalculateDifference(assetReturn, medianPriceTrend, calculatedAtUtc,
+                  "The asset return or corresponding market median is unavailable.");
+                merged[MarketTrendMetrics.RelativeStrengthInATR] = InAtrUnits(excess, atrp, calculatedAtUtc, fiatConversionSymbol != null);
+              }
+            }
             assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
           }
           else
           {
             assetMetrics[asset.Key] = asset.Value;
           }
+        }
+      }
+
+      if (enabledMetrics.Any(MarketLegMetrics.IsMetric))
+      {
+        foreach (var pair in MarketLegMetrics.Calculate(marketTrend, enabledMetrics, globalUniverse,
+          store, interval, calculatedAtUtc, fiatConversion, fiatConversionSymbol != null))
+        {
+          bool size = pair.Key == MarketTrendMetrics.DrawdownSizeInATR || pair.Key == MarketTrendMetrics.RallySizeInATR;
+          marketMetrics[pair.Key] = size
+            ? InAtrUnits(pair.Value, marketMetrics[MarketTrendMetrics.MedianATRP], calculatedAtUtc, fiatConversionSymbol != null)
+            : pair.Value;
         }
       }
 
@@ -529,6 +597,24 @@ namespace Core.MarketAnalyzer.MarketData
         calculatedAtUtc,
         GetOldestSourceTimestamp(new FeatureValueSnapshot[] { meanPriceTrend, medianPriceTrend }),
         sampleCount);
+    }
+
+    private static FeatureValueSnapshot InAtrUnits(FeatureValueSnapshot price, FeatureValueSnapshot atr,
+      DateTimeOffset asOf, bool needsFiatConversion)
+    {
+      if (needsFiatConversion || !IsUsable(price) || !IsUsable(atr) || atr.Value.Value <= 0)
+        return InvalidFeature(asOf, 0, "Requires a valid return and positive ATRP in the same quote currency.");
+      double value = price.Value.Value / atr.Value.Value;
+      if (!double.IsFinite(value)) return InvalidFeature(asOf, 0, "Nonfinite return / ATRP.");
+      var inputs = new[] { price, atr };
+      return new FeatureValueSnapshot
+      {
+        Value = value, IsValid = true, CalculatedAtUtc = asOf,
+        SourceDataTimestampUtc = GetOldestSourceTimestamp(inputs),
+        SampleCount = inputs.Min(input => input.SampleCount),
+        EligibleSampleCount = price.EligibleSampleCount ?? atr.EligibleSampleCount,
+        CoveragePercent = inputs.Min(input => input.CoveragePercent)
+      };
     }
 
     private static FeatureValueSnapshot CalculateBreadth(List<FeatureValueSnapshot> features, DateTimeOffset calculatedAtUtc, int trendMinutes)

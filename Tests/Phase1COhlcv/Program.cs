@@ -41,6 +41,8 @@ internal static class Program
       TestPathEfficiencyMath();
       TestPathEfficiencyCoverage();
       TestPathEfficiencyFiatAndValidity();
+      TestCurrentLegAndCandidateBreadth();
+      TestMedianReturnInPriorATR();
       TestMarketTrendDelta();
       TestMarketTrendDeltaCoverageAndTime();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
@@ -1009,6 +1011,119 @@ internal static class Program
     _passed++;
   }
 
+  private static void TestCurrentLegAndCandidateBreadth()
+  {
+    var names = new[] { "AAAUSDT", "BBBUSDT", "CCCUSDT", "DDDUSDT" };
+    var turn = new[] { 80d, 90d, 95d, 105d };
+    var trend = new MarketTrend { Name = "Leg", TrendMinutes = 10, ATRPeriod = 1, Metrics =
+      "DrawdownSizeInATR,DrawdownRecoveryPercent,DrawdownParticipationRecoveryPercent,DrawdownLeaderOverlapPercent,"
+      + "RallySizeInATR,RallyRetracementPercent,RallyParticipationReversalPercent,RallyLeaderOverlapPercent,"
+      + "MedianReturnInATR,ReturnInATR,RelativeStrengthInATR" };
+    MarketTrendAnalysisSnapshot Build(double[] end, bool mirror = false, bool gap = false)
+    {
+      var store = NewStore();
+      for (int i = 0; i < names.Length; i++)
+      {
+        var path = new[] { 100d, 100d, 100d, 100d, 100d, turn[i], end[i] };
+        if (mirror) path = path.Select(price => 200 - price).ToArray();
+        AddPathCandles(store, names[i], path, gap && i == 0 ? 5 : -1);
+      }
+      return MarketTrendAnalyticsEngine.Calculate(trend, names, names, store, Interval, Start.AddMinutes(35).AddSeconds(1));
+    }
+    var recovered = new[] { 95d, 95d, 94d, 101d };
+    var down = Build(recovered);
+    Near(down.MarketMetrics["DrawdownRecoveryPercent"], 50, "exact 50% of the common originating decline recovered");
+    Near(down.MarketMetrics["DrawdownParticipationRecoveryPercent"], 200.0 / 3, "two advancing vs three originally declining");
+    Near(down.MarketMetrics["DrawdownLeaderOverlapPercent"], 100, "largest responding symbol also led original decline");
+    Assert(down.MarketMetrics["DrawdownSizeInATR"].Value > 0, "swing size normalized by same-horizon median ATRP");
+    Near(down.MarketMetrics["MedianReturnInATR"], -5 / down.MarketMetrics["MedianATRP"].Value!.Value, "continuous signed shock scale");
+    double atr = down.AssetMetrics[names[2]]["ATRP"].Value!.Value;
+    Near(down.AssetMetrics[names[2]]["ReturnInATR"], -6 / atr, "own rolling return in units of own ATR");
+    Near(down.AssetMetrics[names[2]]["RelativeStrengthInATR"], -1 / atr, "median-excess return in units of own ATR");
+    Assert(!down.EnabledMetrics.Contains("ATRP"), "internal ATR dependency does not enable a standalone trigger");
+    var up = Build(recovered, mirror: true);
+    Near(up.MarketMetrics["RallyRetracementPercent"], 50, "half of original common rally retraced");
+    Near(up.MarketMetrics["RallyParticipationReversalPercent"], 200.0 / 3, "mirror downward participation");
+    Near(up.MarketMetrics["RallyLeaderOverlapPercent"], 100, "same rally leader now declining");
+    Near(Build(new[] { 81d, 100d, 104d, 100d }).MarketMetrics["DrawdownLeaderOverlapPercent"], 0,
+      "equal market recovery with a different leader");
+    Near(Build(turn).MarketMetrics["DrawdownRecoveryPercent"], 0, "fresh extreme has observed zero recovery");
+    Invalid(Build(recovered, gap: true).MarketMetrics["DrawdownRecoveryPercent"], "three complete paths out of four fail coverage");
+
+    // A fresh, smaller excursion after complete recovery replaces the prior large decline.
+    var recoveredMarket = NewStore();
+    AddPathCandles(recoveredMarket, names[0], new[] { 100d, 60d, 100d, 96d, 98d });
+    var longer = new MarketTrend { Name = "Current", TrendMinutes = 20, Metrics = "DrawdownRecoveryPercent" };
+    var one = new[] { names[0] };
+    var current = MarketTrendAnalyticsEngine.Calculate(longer, one, one, recoveredMarket, Interval, Start.AddMinutes(25));
+    Near(current.MarketMetrics["DrawdownRecoveryPercent"], 50, "use the new 100 to 96 decline after the old one was reclaimed");
+    var monotonic = NewStore();
+    AddPathCandles(monotonic, names[0], new[] { 100d, 101d, 102d, 103d, 104d });
+    var rising = MarketTrendAnalyticsEngine.Calculate(longer, one, one, monotonic, Interval, Start.AddMinutes(25));
+    Invalid(rising.MarketMetrics["DrawdownRecoveryPercent"], "no originating decline makes recovery undefined");
+
+    var store = NewStore();
+    var ranked = Enumerable.Range(0, 100).Select(i => "R" + (100-i).ToString("D3") + "USDT").ToArray();
+    for (int i = 0; i < ranked.Length; i++)
+      AddPathCandles(store, ranked[i], new[] { 100d, i < 50 ? 99d : 102d });
+    var ranks = new MarketTrend { Name = "Liquid", TrendMinutes = 5, Metrics = "Top50Breadth,Top75Breadth,Top100Breadth,Breadth" };
+    var observed = MarketTrendAnalyticsEngine.Calculate(ranks, ranked, ranked, store, Interval, Start.AddMinutes(10));
+    Near(observed.MarketMetrics["Top50Breadth"], 0, "retain turnover order instead of alphabetical order");
+    Near(observed.MarketMetrics["Top75Breadth"], 100.0 / 3, "nested top 75 breadth");
+    Near(observed.MarketMetrics["Top100Breadth"], 50, "top 100 breadth");
+    Near(observed.MarketMetrics["Breadth"], 50, "preserve broad breadth alongside candidate group");
+    foreach (var symbol in ranked.Take(6)) store.RemoveSeries(symbol, Interval);
+    var sparse = MarketTrendAnalyticsEngine.Calculate(ranks, ranked, ranked, store, Interval, Start.AddMinutes(10));
+    Invalid(sparse.MarketMetrics["Top50Breadth"], "do not replace six missing ranked names with lower-turnover assets");
+    Assert(sparse.MarketMetrics["Top50Breadth"].EligibleSampleCount == 50 && sparse.MarketMetrics["Top50Breadth"].SampleCount == 44,
+      "record the within-cohort numerator and original denominator");
+    Near(sparse.MarketMetrics["Top100Breadth"], 100d * 50 / 94, "larger cohort has adequate independent coverage");
+    _passed++;
+  }
+
+  private static void TestMedianReturnInPriorATR()
+  {
+    var trend = new MarketTrend { Name = "PriorShock", TrendMinutes = 10, ATRPeriod = 1, Metrics = "MedianReturnInPriorATR" };
+    const string metric = MarketTrendMetrics.MedianReturnInPriorATR;
+    var asOf = Start.AddMinutes(35).AddSeconds(1);
+    FeatureValueSnapshot Score(double priorRange, double shockRange, double end = 94, bool gap = false)
+    {
+      var store = NewStore();
+      const string symbol = "SCALEUSDT";
+      for (int i = 0; i < 7; i++)
+      {
+        if (i == 2 && gap) continue;
+        double close = i < 5 ? 100 : end;
+        double range = i < 4 ? priorRange : shockRange;
+        store.UpsertCandle(new MarketCandle
+        {
+          Symbol = symbol, Interval = Interval, OpenTimeUtc = Start.AddMinutes(5 * i),
+          CloseTimeUtc = Start.AddMinutes(5 * (i + 1)).AddMilliseconds(-1),
+          Open = close, Close = close, High = close + range / 2, Low = close - range / 2,
+          BaseVolume = 1, QuoteVolume = 1, TradeCount = 1, IsClosed = true
+        });
+      }
+      // Only this frozen Global member may enter either median.
+      AddPathCandles(store, "EXCLUDEDUSDT", new[] { 10d, 80d, 1d, 99d, 100d, 190d, 190d });
+      var result = MarketTrendAnalyticsEngine.Calculate(trend, new[] { symbol }, new[] { symbol, "EXCLUDEDUSDT" },
+        store, Interval, asOf);
+      Assert(!result.EnabledMetrics.Contains(MarketTrendMetrics.MedianATRP), "a prior ATR dependency is not a standalone trigger");
+      return result.MarketMetrics[metric];
+    }
+    var down = Score(2, 8);
+    Near(down, -3, "six-percent drop is three prior ATRs when prior ATRP is 2%");
+    Near(Score(2, 80), -3, "widening current or incomplete reference-period ranges cannot dilute the shock");
+    Near(Score(8, 80), -.75, "identical drop against a four times wider prior baseline");
+    Near(Score(2, 80, 106), 3, "upward shocks retain positive sign");
+    Invalid(Score(0, 80), "zero prior volatility cannot supply a ratio");
+    Invalid(Score(2, 80, gap: true), "missing contiguous prior trend period cannot be filled using the shock");
+    Assert(down.CalculatedAtUtc == asOf && down.SourceDataTimestampUtc == Start.AddMinutes(20).AddMilliseconds(-1),
+      "report current evaluation time and conservative source time of strictly preceding aligned ATR");
+    var req = MarketTrendHistoryRequirements.Describe(trend, new[] { metric }, Interval, asOf, 168, new[] { metric }).Single();
+    Assert(req.MinimumClosedSourceCandles == 8 && req.RequiredStoredSourceCandles == 10 && req.HasAllAlignmentCapacity == true,
+      "history includes prior ATR, current return, requested Delta, UTC skew and forming candle");
+    _passed++;
+  }
 
   private static void TestMarketTrendDelta()
   {

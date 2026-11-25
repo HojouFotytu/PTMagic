@@ -17,15 +17,22 @@ namespace Core.ProfitTrailer
     public IReadOnlyList<string> Indicators { get; }
     public string DestinationHash { get; }
     public string PayloadHash { get; }
+    public string HeldMarketDefenseProperty { get; }
+    public int? HeldMarketDefenseLevel { get; }
+    public string HeldMarketDefensePolicyHash { get; }
 
     public ConfigurationPayload(string settingName, IEnumerable<string> pairs, IEnumerable<string> dca,
-      IEnumerable<string> indicators, string destinationHash)
+      IEnumerable<string> indicators, string destinationHash, string heldMarketDefenseProperty = null,
+      int? heldMarketDefenseLevel = null, string heldMarketDefensePolicyHash = null)
     {
       SettingName = settingName ?? "";
       Pairs = Array.AsReadOnly((pairs ?? throw new ArgumentNullException(nameof(pairs))).ToArray());
       Dca = Array.AsReadOnly((dca ?? throw new ArgumentNullException(nameof(dca))).ToArray());
       Indicators = Array.AsReadOnly((indicators ?? throw new ArgumentNullException(nameof(indicators))).ToArray());
       DestinationHash = destinationHash ?? "";
+      HeldMarketDefenseLevel = heldMarketDefenseLevel;
+      HeldMarketDefensePolicyHash = heldMarketDefenseLevel.HasValue ? heldMarketDefensePolicyHash : null;
+      HeldMarketDefenseProperty = heldMarketDefenseLevel.HasValue ? heldMarketDefenseProperty : null;
       PayloadHash = Hash(JsonConvert.SerializeObject(new
       {
         SettingName, DestinationHash,
@@ -67,6 +74,14 @@ namespace Core.ProfitTrailer
     public string AppliedPayloadHash { get; set; } = "";
     public string DestinationHash { get; set; } = "";
     public DateTimeOffset? AppliedAtUtc { get; set; }
+    public string HeldMarketDefenseProperty { get; set; }
+    public int? HeldMarketDefenseLevel { get; set; }
+    public string HeldMarketDefensePolicyHash { get; set; }
+
+    public int? PreviousDefenseFor(string destinationHash, string property, string policyHash) =>
+      DestinationHash == destinationHash && HeldMarketDefenseProperty == property
+        && !String.IsNullOrEmpty(policyHash) && HeldMarketDefensePolicyHash == policyHash
+        ? HeldMarketDefenseLevel : null;
   }
 
   /// <summary>
@@ -78,6 +93,7 @@ namespace Core.ProfitTrailer
   {
     private ConfigurationDeliveryState _preview;
     public ConfigurationDeliveryState Confirmed { get; private set; }
+    public ConfigurationDeliveryState StateFor(bool testMode) => testMode ? _preview : Confirmed;
     public ConfigurationDeliveryResult LastResult { get; private set; } = ConfigurationDeliveryResult.Deferred("No delivery yet.");
     public bool Pending { get; private set; }
 
@@ -97,6 +113,10 @@ namespace Core.ProfitTrailer
       // confirmed payload must be replayed until every target acknowledges it.
       if (unchanged && !force && !Pending)
       {
+        // An upgraded checkpoint can lack defense metadata for identical delivered bytes.
+        current.HeldMarketDefenseProperty = payload.HeldMarketDefenseProperty;
+        current.HeldMarketDefenseLevel = payload.HeldMarketDefenseLevel;
+        current.HeldMarketDefensePolicyHash = payload.HeldMarketDefensePolicyHash;
         Pending = false;
         return LastResult = new ConfigurationDeliveryResult
           { Succeeded = true, Simulated = testMode, Status = testMode ? "TestMode unchanged" : "Unchanged" };
@@ -131,7 +151,8 @@ namespace Core.ProfitTrailer
     private static ConfigurationDeliveryState Acknowledged(ConfigurationPayload payload) => new ConfigurationDeliveryState
     {
       AppliedSettingName = payload.SettingName, AppliedPayloadHash = payload.PayloadHash,
-      DestinationHash = payload.DestinationHash,
+      DestinationHash = payload.DestinationHash, HeldMarketDefenseProperty = payload.HeldMarketDefenseProperty,
+      HeldMarketDefenseLevel = payload.HeldMarketDefenseLevel, HeldMarketDefensePolicyHash = payload.HeldMarketDefensePolicyHash,
       AppliedAtUtc = DateTimeOffset.UtcNow
     };
 

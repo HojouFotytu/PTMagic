@@ -94,10 +94,75 @@ internal static class Program
       Invalid("active threshold must be finite", settings => { settings.MarketAnalyzer.MarketTrends[0].Metrics += ",VolatilityBreadth"; settings.MarketAnalyzer.MarketTrends[0].ATRPBreadthThreshold = Double.NaN; }, "ATRPBreadthThreshold");
       Invalid("active expansion threshold must be nonnegative", settings => { settings.MarketAnalyzer.MarketTrends[0].Metrics += ",VolumeExpansionBreadth"; settings.MarketAnalyzer.MarketTrends[0].VolumeExpansionBreadthThreshold = -1; }, "VolumeExpansionBreadthThreshold");
       Valid("unused parameters do not invalidate legacy configuration", settings => { settings.MarketAnalyzer.MarketTrends[0].CorrelationLookback = 1; settings.MarketAnalyzer.MarketTrends[0].ATRPeriod = 0; });
+      HeldDefenseTests();
       Console.WriteLine("Trigger configuration validation checks passed: " + _passed + ".");
       return 0;
     }
     catch (Exception ex) { Console.Error.WriteLine("Trigger configuration validation FAILED: " + ex); return 1; }
+  }
+
+  private static void HeldDefenseTests()
+  {
+    const string target = "GLOBAL_Z_FORMULA";
+    static void WithDefense(AnalyzerSettings settings)
+    {
+      settings.HeldMarketDefenseProperty = target;
+      settings.HeldMarketDefense = new List<HeldMarketDefenseRule> { new HeldMarketDefenseRule
+      {
+        Level = 1, TriggerConnection = "A", Triggers = new List<Trigger> {
+          new Trigger { Tag = "A", MarketTrendName = "SharedTrend", Metric = "Breadth", MinChange = 60 }
+        }
+      } };
+    }
+    Valid("defense overlay is optional and accepts measured Global evidence", WithDefense);
+    Invalid("missing defense target", s => { WithDefense(s); s.HeldMarketDefenseProperty = null; }, "HeldMarketDefenseProperty");
+    Invalid("defense does not write arbitrary PT properties", s => { WithDefense(s); s.HeldMarketDefenseProperty = "DEFAULT_sell_strategy"; }, "HeldMarketDefenseProperty");
+    Invalid("defense level requires evidence", s => { WithDefense(s); s.HeldMarketDefense[0].Triggers.Clear(); }, "requires market evidence");
+    Invalid("duplicate defense levels", s => { WithDefense(s); s.HeldMarketDefense.Add(s.HeldMarketDefense[0]); }, "distinct levels");
+    Invalid("defense expression uses actual trigger references", s => { WithDefense(s); s.HeldMarketDefense[0].TriggerConnection = "Missing"; }, "invalid");
+    Warning("defense unavailable metric diagnosed", s => { WithDefense(s); s.HeldMarketDefense[0].Triggers[0].Metric = "MissingMetric"; }, "Unknown metric");
+    foreach (var metric in new[] { "ReturnInATR", "MedianReturnInATR", "MedianReturnInPriorATR", "RelativeStrengthInATR", "RallySizeInATR", "DrawdownSizeInATR" })
+      Invalid(metric + " validates ATRPeriod", s => { s.MarketAnalyzer.MarketTrends[0].Metrics = metric; s.MarketAnalyzer.MarketTrends[0].ATRPeriod = 0; }, "ATRPeriod");
+
+    var settings = Baseline();
+    WithDefense(settings);
+    var trend = settings.MarketAnalyzer.MarketTrends[0];
+    settings.GlobalSettings.Clear();
+    settings.SingleMarketSettings.Clear();
+    trend.Metrics = "Breadth";
+    settings.HeldMarketDefense[0].Triggers[0].Metric = "";
+    settings.HeldMarketDefense[0].Triggers[0].MarketTrendRelation = "Delta";
+    if (!MarketTrendDeltaSelection.Select(trend, settings).Contains("PriceTrend"))
+      throw new InvalidOperationException("Overlay-only omitted PriceTrend/Delta must be scheduled");
+    Pass("implicit PriceTrend and Delta selected for overlay-only reference");
+
+    var t = TriggerTruthValue.True; var f = TriggerTruthValue.False; var u = TriggerTruthValue.Unavailable;
+    void Check(int floor, int? prior, TriggerTruthValue one, TriggerTruthValue two, int expected)
+    {
+      var lines = new List<string> { "# unchanged", target + " = " + floor, "GLOBAL_F_FORMULA = 32" };
+      int got = HeldMarketDefensePolicy.Apply(lines, target, prior, new[] { (1, one), (2, two) });
+      if (got != expected || lines[1] != target + " = " + expected || lines[2] != "GLOBAL_F_FORMULA = 32")
+        throw new InvalidOperationException($"Defense floor={floor} prior={prior} L1={one} L2={two}: {got} expected {expected}");
+    }
+    Check(0, null, u, u, 0);
+    Check(0, null, t, u, 1);
+    Check(0, null, f, t, 2);
+    Check(0, 2, t, u, 2);
+    Check(0, 2, u, f, 1);
+    Check(0, 1, f, f, 0);
+    Check(1, 2, f, f, 1);
+    Check(2, 0, f, f, 2);
+    Pass("independent defense, confirmed retention, downgrade and market mask invariants");
+    foreach (var assignments in new[] { Array.Empty<string>(), new[] { target + "=1", target + "=0" },
+      new[] { target + "=NaN" }, new[] { target + "=3" } })
+    {
+      var lines = assignments.ToList();
+      bool rejected = false;
+      try { HeldMarketDefensePolicy.Apply(lines, target, 2, new[] { (1, t) }); }
+      catch (InvalidOperationException) { rejected = true; }
+      if (!rejected || !lines.SequenceEqual(assignments)) throw new InvalidOperationException("Malformed defense baseline");
+    }
+    Pass("malformed and ambiguous defense targets rejected without mutation");
   }
 
   private static AnalyzerSettings Baseline() => new AnalyzerSettings

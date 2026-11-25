@@ -93,6 +93,8 @@ namespace Core.Helper
     public string[] DesiredSingleMarketSettings { get; set; } = Array.Empty<string>();
     public string DeliveryStatus { get; set; }
     public string ErrorCategory { get; set; }
+    public int? DesiredHeldMarketDefense { get; set; }
+    public int? ConfirmedHeldMarketDefense { get; set; }
     public DecisionTrendUniverse[] Universes { get; set; } = Array.Empty<DecisionTrendUniverse>();
     public DecisionMetricInput[] MetricInputs { get; set; } = Array.Empty<DecisionMetricInput>();
   }

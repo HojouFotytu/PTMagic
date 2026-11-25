@@ -1,5 +1,11 @@
 # Phase 1C OHLCV metrics deterministic tests
 
+## November 25, 2026 — market legs, liquid breadth and ATR-normalized returns
+
+The deterministic fixture exercises both the drawdown/recovery and rally/retracement directions. It checks a 50% price recovery, two returning participants per three original participants, complete versus zero leader overlap, a fresh extreme, an absent originating decline, coverage loss and a new excursion after a full recovery. The price path uses a common basket of equal initial investments throughout the rolling horizon. Each comparison uses the same starting, turning and ending closes. The strongest directional quarter on each leg includes ties at its cutoff.
+
+The ranked-breadth fixture passes the exchange turnover order through the analytics entry point and verifies the independent coverage denominator for each rank. The normalized-return checks use a rolling return, or an asset’s excess over the broad median, divided by the same horizon’s positive ATR percentage. The market-wide ratio divides median return by median ATR percentage. The additional shock fixture divides current rolling median return by median ATR percentage at the beginning of the return window. It exercises unaligned UTC boundaries, wider current-candle ranges, a different historical volatility regime, a zero denominator, and gaps in the prior history. The 29 Phase1COhlcv and 21 Phase1DCorrelation offline test groups passed on the .NET 10 SDK.
+
 ## Current source/test boundary — November 19, 2026
 
 The current `Tests/Phase1COhlcv/Program.cs` calls **22 focused test groups**, including the newer verified-no-trade/90%-coverage Phase 3 group and the taker failure-category diagnostics. The previously reported **20/20 PASS** belongs to the earlier `33a33f0` checkpoint; no newer **22/22 PASS** is established by this documentation update. Running or publishing a new test result requires separate evidence.

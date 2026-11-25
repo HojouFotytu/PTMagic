@@ -19,6 +19,21 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public static class MarketTrendMetrics
   {
+    public const string Top50Breadth = "Top50Breadth";
+    public const string Top75Breadth = "Top75Breadth";
+    public const string Top100Breadth = "Top100Breadth";
+    public const string MedianReturnInPriorATR = "MedianReturnInPriorATR";
+    public const string MedianReturnInATR = "MedianReturnInATR";
+    public const string DrawdownSizeInATR = "DrawdownSizeInATR";
+    public const string DrawdownRecoveryPercent = "DrawdownRecoveryPercent";
+    public const string DrawdownParticipationRecoveryPercent = "DrawdownParticipationRecoveryPercent";
+    public const string DrawdownLeaderOverlapPercent = "DrawdownLeaderOverlapPercent";
+    public const string RallySizeInATR = "RallySizeInATR";
+    public const string RallyRetracementPercent = "RallyRetracementPercent";
+    public const string RallyParticipationReversalPercent = "RallyParticipationReversalPercent";
+    public const string RallyLeaderOverlapPercent = "RallyLeaderOverlapPercent";
+    public const string ReturnInATR = "ReturnInATR";
+    public const string RelativeStrengthInATR = "RelativeStrengthInATR";
     public const string PriceTrend = "PriceTrend";
     public const string MedianPriceTrend = "MedianPriceTrend";
     public const string PricePathEfficiency = "PricePathEfficiency";
@@ -70,6 +85,21 @@ namespace Core.MarketAnalyzer.MarketData
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
       {
+        [Top50Breadth] = MarketTrendMetricScope.Global,
+        [Top75Breadth] = MarketTrendMetricScope.Global,
+        [Top100Breadth] = MarketTrendMetricScope.Global,
+        [MedianReturnInPriorATR] = MarketTrendMetricScope.Global,
+        [MedianReturnInATR] = MarketTrendMetricScope.Global,
+        [DrawdownSizeInATR] = MarketTrendMetricScope.Global,
+        [DrawdownRecoveryPercent] = MarketTrendMetricScope.Global,
+        [DrawdownParticipationRecoveryPercent] = MarketTrendMetricScope.Global,
+        [DrawdownLeaderOverlapPercent] = MarketTrendMetricScope.Global,
+        [RallySizeInATR] = MarketTrendMetricScope.Global,
+        [RallyRetracementPercent] = MarketTrendMetricScope.Global,
+        [RallyParticipationReversalPercent] = MarketTrendMetricScope.Global,
+        [RallyLeaderOverlapPercent] = MarketTrendMetricScope.Global,
+        [ReturnInATR] = MarketTrendMetricScope.Asset,
+        [RelativeStrengthInATR] = MarketTrendMetricScope.Asset,
         [PriceTrend] = MarketTrendMetricScope.Both,
         [MedianPriceTrend] = MarketTrendMetricScope.Global,
         [PricePathEfficiency] = MarketTrendMetricScope.Asset,

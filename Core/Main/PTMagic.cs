@@ -114,6 +114,8 @@ namespace Core.Main
     private List<GlobalSettingTriggerSummary> _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
     private string _selectedGlobalTriggerConnection = "";
     private string _selectedGlobalSelectionBasis = "";
+    private int? _desiredHeldDefense;
+    private string _desiredHeldPolicyHash;
     public ConfigurationDeliveryCoordinator ConfigurationDelivery => _configurationDelivery;
 
     public LogHelper Log
@@ -950,6 +952,8 @@ namespace Core.Main
             _decisionFresh = false;
             _decisionInputs.Clear();
             _desiredPayloadHash = "";
+            _desiredHeldDefense = null;
+            _desiredHeldPolicyHash = null;
             _desiredSms = Array.Empty<string>();
             _desiredGlobalSettingName = this.ActiveSettingName;
             _raidPriorSetting = this.ActiveSetting;
@@ -1054,6 +1058,10 @@ namespace Core.Main
 
               // Activate global setting
               this.ActivateSetting(ref triggeredSetting, ref matchedTriggers);
+
+              // The Global is now final, including flood protection. Its compiled
+              // numeric floor is preserved; asset-specific defenses follow this overlay.
+              if (_decisionFresh) ApplyHeldMarketDefense();
 
               // Check for single market trend triggers
               if (_decisionFresh) this.ApplySingleMarketSettings();
@@ -1806,6 +1814,42 @@ namespace Core.Main
       this.ActiveSetting = triggeredSetting;
       this.ActiveSettingName = triggeredSetting.SettingName;
       _desiredGlobalSettingName = triggeredSetting.SettingName;
+    }
+
+    private void ApplyHeldMarketDefense()
+    {
+      AnalyzerSettings settings = PTMagicConfiguration.AnalyzerSettings;
+      if (settings.HeldMarketDefense == null || settings.HeldMarketDefense.Count == 0) return;
+
+      var observations = new List<(int Level, TriggerTruthValue Result)>();
+      foreach (HeldMarketDefenseRule rule in settings.HeldMarketDefense)
+      {
+        var ordered = new List<TriggerTruthValue>();
+        var tagged = new Dictionary<string, TriggerTruthValue>(StringComparer.OrdinalIgnoreCase);
+        foreach (Trigger trigger in rule.Triggers)
+        {
+          MarketTrend trend = settings.MarketAnalyzer.MarketTrends.Find(item =>
+            String.Equals(item.Name, trigger.MarketTrendName, StringComparison.OrdinalIgnoreCase));
+          bool valid = MarketTrendMetricTriggerResolver.TryResolveGlobal(PTMagicConfiguration, trend,
+            trigger.Metric, trigger.MarketTrendRelation, out double value, out string reason);
+          TriggerTruthValue result = !valid ? TriggerTruthValue.Unavailable :
+            value >= trigger.MinChange && value < trigger.MaxChange ? TriggerTruthValue.True : TriggerTruthValue.False;
+          ordered.Add(result);
+          if (!String.IsNullOrWhiteSpace(trigger.Tag)) tagged[trigger.Tag] = result;
+          CaptureDecisionMetric(trend, trigger.Metric, null, trigger.MarketTrendRelation,
+            valid ? value : (double?)null, reason, "HeldMarketDefense", rule.Level.ToString(), "#" + ordered.Count);
+        }
+        observations.Add((rule.Level, ThreeValuedTriggerLogic.Evaluate(rule.TriggerConnection, ordered, tagged)));
+      }
+
+      var prior = _configurationDelivery.StateFor(PTMagicConfiguration.GeneralSettings.Application.TestMode);
+      // A different side or revised evidence definition may use the same numeric PT property.
+      _desiredHeldPolicyHash = ConfigurationPayload.Hash(JsonConvert.SerializeObject(settings.HeldMarketDefense));
+      int? previous = prior?.PreviousDefenseFor(DestinationFingerprint(), settings.HeldMarketDefenseProperty, _desiredHeldPolicyHash);
+      _desiredHeldDefense = HeldMarketDefensePolicy.Apply(PairsLines, settings.HeldMarketDefenseProperty,
+        previous, observations);
+      Log.DoLogInfo("Held market defense: " + String.Join(", ", observations.Select(o => o.Level + "=" + o.Result))
+        + "; effective level " + _desiredHeldDefense + ".");
     }
 
     // An unavailable monitoring-only SMS cannot change PT properties and
@@ -2785,7 +2829,8 @@ namespace Core.Main
         .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
         .SelectMany(pair => pair.Value.Select(setting => pair.Key + "/" + setting.SettingName)).ToArray();
       ConfigurationPayload desired = new ConfigurationPayload(this.ActiveSettingName, this.PairsLines,
-        this.DCALines, this.IndicatorsLines, DestinationFingerprint());
+        this.DCALines, this.IndicatorsLines, DestinationFingerprint(),
+        this.PTMagicConfiguration.AnalyzerSettings.HeldMarketDefenseProperty, _desiredHeldDefense, _desiredHeldPolicyHash);
       _desiredPayloadHash = desired.PayloadHash;
       _decisionFresh = this.IsRaidFresh(out string freshnessReason);
       if (!_decisionFresh || _startupGuardPending ||
@@ -2953,6 +2998,8 @@ namespace Core.Main
           DesiredGlobalSetting = _desiredGlobalSettingName, ConfirmedGlobalSetting = _configurationDelivery.Confirmed.AppliedSettingName,
           DesiredSingleMarketSettings = _desiredSms, DeliveryStatus = _raidDelivery.Status,
           ErrorCategory = String.IsNullOrWhiteSpace(errorCategory) ? (_raidDelivery.Succeeded ? "" : _raidDelivery.Status) : errorCategory,
+          DesiredHeldMarketDefense = _desiredHeldDefense,
+          ConfirmedHeldMarketDefense = _configurationDelivery.Confirmed.HeldMarketDefenseLevel,
           MetricInputs = _decisionInputs.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(pair => pair.Value).ToArray(),
           Universes = !_raidAnalysisBuilt ? Array.Empty<DecisionTrendUniverse>() :
             BinanceFuturesAnalyticsRuntime.CurrentTrendAnalyses.Values.Select(analysis => new DecisionTrendUniverse

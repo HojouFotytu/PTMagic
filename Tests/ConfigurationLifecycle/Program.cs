@@ -432,6 +432,77 @@ internal static class Program
         var result = coordinator.Deliver(payload, _ => ConfigurationDeliveryResult.Applied(), false);
         Require(result.Succeeded && !coordinator.Pending && coordinator.Confirmed.AppliedPayloadHash == payload.PayloadHash && coordinator.Confirmed.AppliedAtUtc.HasValue);
       });
+      Check("held market evidence changes the delivered defense under the same hard entry veto", () =>
+      {
+        using var fixture = new Fixture();
+        const string property = "GLOBAL_Z_FORMULA";
+        File.AppendAllLines(fixture.DefaultPreset("pairs.properties"), new[] { property + " = 0.0", "GLOBAL_F_FORMULA = 32" });
+        var settings = fixture.Configuration.AnalyzerSettings;
+        settings.MarketAnalyzer.MarketTrends.Add(new MarketTrend
+          { Name = "Pulse", Platform = "Exchange", TrendMinutes = 20, Metrics = "Breadth" });
+        settings.HeldMarketDefenseProperty = property;
+        settings.HeldMarketDefense = new List<HeldMarketDefenseRule>();
+        foreach (var threshold in new[] { (1, 40.0), (2, 25.0) })
+          settings.HeldMarketDefense.Add(new HeldMarketDefenseRule { Level = threshold.Item1, Triggers = new List<Trigger> {
+            new Trigger { MarketTrendName = "Pulse", Metric = "Breadth", MaxChange = threshold.Item2 }
+          } });
+        var field = typeof(BinanceFuturesAnalyticsRuntime).GetField("_currentTrendAnalyses", BindingFlags.Static | BindingFlags.NonPublic);
+        object original = field.GetValue(null);
+        try
+        {
+          void Raid(double? breadth, int expected)
+          {
+            fixture.BeforeRaid();
+            fixture.CompileClean();
+            field.SetValue(null, new Dictionary<string, MarketTrendAnalysisSnapshot> { ["Pulse"] = new()
+            {
+              MarketTrendName = "Pulse", TrendMinutes = 20, CalculatedAtUtc = DateTimeOffset.UtcNow,
+              MarketMetrics = new Dictionary<string, FeatureValueSnapshot> { ["Breadth"] =
+                new FeatureValueSnapshot { Value = breadth, IsValid = breadth.HasValue, CalculatedAtUtc = DateTimeOffset.UtcNow } }
+            } });
+            Call(fixture.Bot, "ApplyHeldMarketDefense");
+            Call(fixture.Bot, "SaveProfitTrailerProperties");
+            var payload = fixture.Sent.Last();
+            Require(payload.SettingName == "Default" && payload.Pairs.Contains("GLOBAL_F_FORMULA = 32"));
+            Require(payload.HeldMarketDefenseLevel == expected && fixture.Bot.ConfigurationDelivery.Confirmed.HeldMarketDefenseLevel == expected);
+            Require(payload.Pairs.Any(line => line == property + " = " + expected || line == property + " = " + expected + ".0"));
+          }
+          Raid(35, 1);
+          Raid(20, 2);
+          Raid(null, 2);
+          Raid(35, 1);
+          Raid(55, 0);
+        }
+        finally { field.SetValue(null, original); }
+      });
+      Check("held defense follows acknowledgement through failure, retry, restart and preview", () =>
+      {
+        using var fixture = new Fixture();
+        var delivery = new ConfigurationDeliveryCoordinator();
+        ConfigurationPayload Defense(int level) => new ConfigurationPayload("Uncertain",
+          new[] { "GLOBAL_F_FORMULA = 32", "GLOBAL_Z_FORMULA = " + level },
+          Array.Empty<string>(), Array.Empty<string>(), "destination", "GLOBAL_Z_FORMULA", level, "long-policy");
+        var one = Defense(1);
+        var two = Defense(2);
+        delivery.Deliver(one, _ => ConfigurationDeliveryResult.Applied(), false);
+        delivery.Deliver(two, _ => ConfigurationDeliveryResult.Failed("partial"), false);
+        Require(delivery.Confirmed.HeldMarketDefenseLevel == 1);
+        delivery.Deliver(two, _ => ConfigurationDeliveryResult.Applied(), false);
+        Require(delivery.Confirmed.HeldMarketDefenseLevel == 2);
+        delivery.Deliver(one, _ => throw new Exception("preview sent a live request"), true);
+        Require(delivery.StateFor(true).HeldMarketDefenseLevel == 1 && delivery.Confirmed.HeldMarketDefenseLevel == 2);
+        string path = Path.Combine(fixture.Root, "defense-checkpoint.json");
+        delivery.SaveConfirmed(path);
+        var restored = ConfigurationDeliveryCoordinator.Load(path);
+        Require(restored.HeldMarketDefenseProperty == "GLOBAL_Z_FORMULA" && restored.HeldMarketDefenseLevel == 2);
+        Require(restored.PreviousDefenseFor("destination", "GLOBAL_Z_FORMULA", "long-policy") == 2);
+        Require(restored.PreviousDefenseFor("other-bot", "GLOBAL_Z_FORMULA", "long-policy") == null
+          && restored.PreviousDefenseFor("destination", "GLOBAL_Z_FORMULA", "short-policy") == null);
+        restored.HeldMarketDefenseLevel = null; // previous releases had no defense metadata
+        var upgraded = new ConfigurationDeliveryCoordinator(restored);
+        var unchanged = upgraded.Deliver(two, _ => throw new Exception("identical bytes were resent"), false);
+        Require(unchanged.Succeeded && !unchanged.Attempted && upgraded.Confirmed.HeldMarketDefenseLevel == 2);
+      });
       Check("failed delivery preserves acknowledgement and identical retry sends", () =>
       {
         var coordinator = new ConfigurationDeliveryCoordinator(); var payload = Payload("A"); int calls = 0;
@@ -1409,6 +1480,6 @@ internal static class Program
       && error.Message.Contains("market", StringComparison.OrdinalIgnoreCase));
     return error;
   }
-  private static void Require(bool condition) { if (!condition) throw new InvalidOperationException("Assertion failed."); }
+  private static void Require(bool condition, string message = "Assertion failed.") { if (!condition) throw new InvalidOperationException(message); }
   private static void Check(string name, Action test) { test(); _passed++; Console.WriteLine("PASS " + name); }
 }

@@ -79,7 +79,17 @@ namespace Core.MarketAnalyzer.MarketData
         long minimumSourceCount = trendSourceCount + 1;
         string basis = "One TrendMinutes return and its exact reference close.";
 
-        if (metric == MarketTrendMetrics.PricePathEfficiency ||
+        if (MarketLegMetrics.IsMetric(metric) && metric != MarketTrendMetrics.DrawdownSizeInATR && metric != MarketTrendMetrics.RallySizeInATR)
+        {
+          basis = "A common cohort with contiguous source closes throughout the rolling TrendMinutes window. "
+            + "At least 90% coverage; the same assets and closed endpoints define the originating excursion and response.";
+        }
+        else if (metric == MarketTrendMetrics.Top50Breadth || metric == MarketTrendMetrics.Top75Breadth ||
+          metric == MarketTrendMetrics.Top100Breadth)
+        {
+          basis = "Rolling return and exact reference close for the top N frozen eligible assets ranked by current exchange 24h turnover; 90% valid within the selected cohort.";
+        }
+        else if (metric == MarketTrendMetrics.PricePathEfficiency ||
           metric == MarketTrendMetrics.MedianPricePathEfficiency)
         {
           basis = "One pinned rolling TrendMinutes interval with N+1 exactly aligned, " +
@@ -88,13 +98,28 @@ namespace Core.MarketAnalyzer.MarketData
             "requires synchronized quote/USDT conversion closes; global median " +
             "requires at least 90% valid source-verified eligible assets.";
         }
+        else if (metric == MarketTrendMetrics.MedianReturnInPriorATR)
+        {
+          alignedTrendPeriods = true;
+          // Current rolling return plus N+1 whole periods for ATR at its reference close.
+          windowPeriods = (long)trend.ATRPeriod + 2;
+          minimumSourceCount = windowPeriods * trendSourceCount;
+          basis = "Rolling median return against the frozen cohort's median ATRP at the start of the return. "
+            + "The prior Wilder ATR requires " + (trend.ATRPeriod + 1) + " complete UTC trend periods ending at or before the return reference close.";
+        }
         else if (metric == MarketTrendMetrics.ATRP || metric == MarketTrendMetrics.MedianATRP ||
-          metric == MarketTrendMetrics.VolatilityBreadth)
+          metric == MarketTrendMetrics.VolatilityBreadth || metric == MarketTrendMetrics.MedianReturnInATR ||
+          metric == MarketTrendMetrics.DrawdownSizeInATR || metric == MarketTrendMetrics.RallySizeInATR ||
+          metric == MarketTrendMetrics.ReturnInATR || metric == MarketTrendMetrics.RelativeStrengthInATR)
         {
           alignedTrendPeriods = true;
           windowPeriods = (long)trend.ATRPeriod + 1;
           minimumSourceCount = windowPeriods * trendSourceCount;
           basis = "ATR(" + trend.ATRPeriod + ") needs " + windowPeriods + " complete UTC trend periods to seed Wilder smoothing.";
+          if (MarketLegMetrics.IsMetric(metric))
+            basis += " The numerator measures a directional excursion on the same complete constituent paths across a rolling TrendMinutes window.";
+          else if (metric == MarketTrendMetrics.MedianReturnInATR || metric == MarketTrendMetrics.ReturnInATR || metric == MarketTrendMetrics.RelativeStrengthInATR)
+            basis += " The signed rolling return requires the exact current and TrendMinutes-earlier source closes.";
         }
         else if (metric == MarketTrendMetrics.VolumeExpansion || metric == MarketTrendMetrics.MedianVolumeExpansion ||
           metric == MarketTrendMetrics.VolumeExpansionBreadth || metric == MarketTrendMetrics.StrongVolumeExpansionBreadth)

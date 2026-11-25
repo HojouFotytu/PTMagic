@@ -32,6 +32,11 @@ namespace Core.MarketAnalyzer.MarketData
           if (trigger != null && Match(trigger.MarketTrendName, trigger.MarketTrendRelation))
             requested.Add(MarketTrendMetrics.Normalize(trigger.Metric));
 
+      foreach (HeldMarketDefenseRule rule in settings.HeldMarketDefense ?? new List<HeldMarketDefenseRule>())
+        foreach (Trigger trigger in rule?.Triggers ?? new List<Trigger>())
+          if (trigger != null && Match(trigger.MarketTrendName, trigger.MarketTrendRelation))
+            requested.Add(MarketTrendMetrics.Normalize(trigger.Metric));
+
       foreach (SingleMarketSetting setting in settings.SingleMarketSettings ?? new List<SingleMarketSetting>())
       {
         foreach (Trigger trigger in setting?.Triggers ?? new List<Trigger>())

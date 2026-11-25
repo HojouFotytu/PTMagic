@@ -64,6 +64,26 @@ namespace Core.Helper
         }
       }
 
+      if (settings.HeldMarketDefense?.Count > 0)
+      {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(settings.HeldMarketDefenseProperty ?? "",
+            @"^GLOBAL_[A-Z]+_FORMULA$"))
+          errors.Add("HeldMarketDefenseProperty must identify a numeric GLOBAL formula in PAIRS.");
+        HashSet<int> levels = new HashSet<int>();
+        foreach (HeldMarketDefenseRule rule in settings.HeldMarketDefense)
+        {
+          if (rule == null || rule.Level < 1 || rule.Level > 2 || !levels.Add(rule.Level))
+          {
+            errors.Add("HeldMarketDefense requires distinct levels 1 or 2.");
+            continue;
+          }
+          if (rule.Triggers == null || rule.Triggers.Count == 0)
+            errors.Add("HeldMarketDefense level " + rule.Level + " requires market evidence.");
+          else
+            ValidateTriggers(rule.Triggers, rule.TriggerConnection, "HeldMarketDefense level " + rule.Level, true, trends, errors);
+        }
+      }
+
       if (settings.SingleMarketSettings == null)
       {
         errors.Add("SingleMarketSettings is required (use an empty array when unused).");
@@ -141,6 +161,10 @@ namespace Core.Helper
             true, "GlobalSetting '" + setting.SettingName + "'", warnings);
         }
       }
+      foreach (HeldMarketDefenseRule rule in settings.HeldMarketDefense ?? new List<HeldMarketDefenseRule>())
+        foreach (Trigger trigger in rule?.Triggers ?? new List<Trigger>())
+          if (trigger != null) AddMetricWarning(settings, trigger.MarketTrendName, trigger.Metric, true,
+            "HeldMarketDefense level " + rule.Level, warnings);
       foreach (SingleMarketSetting setting in settings.SingleMarketSettings ?? new List<SingleMarketSetting>())
       {
         if (setting == null) continue;
@@ -229,7 +253,10 @@ namespace Core.Helper
       {
         if (!Double.IsFinite(value) || value < 0) errors.Add(context + field + " must be finite and nonnegative.");
       }
-      if (Enabled(MarketTrendMetrics.ATRP, MarketTrendMetrics.MedianATRP, MarketTrendMetrics.VolatilityBreadth))
+      if (Enabled(MarketTrendMetrics.ATRP, MarketTrendMetrics.MedianATRP, MarketTrendMetrics.VolatilityBreadth,
+          MarketTrendMetrics.ReturnInATR, MarketTrendMetrics.RelativeStrengthInATR, MarketTrendMetrics.MedianReturnInATR,
+          MarketTrendMetrics.MedianReturnInPriorATR,
+          MarketTrendMetrics.DrawdownSizeInATR, MarketTrendMetrics.RallySizeInATR))
         Range("ATRPeriod", trend.ATRPeriod, 1);
       if (Enabled(MarketTrendMetrics.VolumeExpansion, MarketTrendMetrics.MedianVolumeExpansion,
         MarketTrendMetrics.VolumeExpansionBreadth, MarketTrendMetrics.StrongVolumeExpansionBreadth))
