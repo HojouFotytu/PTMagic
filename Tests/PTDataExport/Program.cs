@@ -205,6 +205,48 @@ internal static class Program
       var result = await Run(c => Json(Rows(0, 12)));
       Check(result.Error("buys") == "history_page_size_mismatch" && result.Rows("buys").GetArrayLength() == 12, "no invented pagination offset");
     });
+    await Test("custom day week month periods and invalid ranges", () =>
+    {
+      DateTime end = new DateTime(2026, 3, 31, 12, 0, 0, DateTimeKind.Utc);
+      Check(ExportHistoryPeriod.TryFromInput(4, "days", end, out string code, out DateTime? start)
+        && code == "4d" && start == end.AddDays(-4), "custom days");
+      Check(ExportHistoryPeriod.TryFromInput(2, "weeks", end, out code, out start)
+        && code == "2w" && start == end.AddDays(-14), "custom weeks");
+      Check(ExportHistoryPeriod.TryFromInput(1, "months", end, out code, out start)
+        && code == "1m" && start == new DateTime(2026, 2, 28, 12, 0, 0, DateTimeKind.Utc), "calendar month");
+      Check(ExportHistoryPeriod.TryFromInput(0, "all", end, out code, out start)
+        && code == "all" && start == null, "all history");
+      Check(!ExportHistoryPeriod.TryFromInput(0, "days", end, out _, out _), "zero invalid");
+      Check(!ExportHistoryPeriod.TryFromInput(-1, "weeks", end, out _, out _), "negative invalid");
+      Check(!ExportHistoryPeriod.TryFromInput(1, "years", end, out _, out _), "unknown unit invalid");
+      Check(!ExportHistoryPeriod.TryFromCode("0m", end, out _), "zero months invalid");
+      Check(!ExportHistoryPeriod.TryFromCode("2147483647m", end, out _), "overflow months invalid");
+      Check(ExportHistoryPeriod.TryFromCode("7d", end, out start) && start == end.AddDays(-7),
+        "legacy ranges still accepted");
+      return Task.CompletedTask;
+    });
+    await Test("log ZIP file filtering uses dated files and modification fallback", () =>
+    {
+      DateTime end = new DateTime(2026, 3, 31, 12, 0, 0, DateTimeKind.Utc);
+      DateTime start = end.AddDays(-7);
+      Check(LogArchiveDateFilter.Includes("2026-03-31.txt", start, end), "current dated log");
+      Check(LogArchiveDateFilter.Includes("2026-03-24.txt", start, end), "boundary dated log");
+      Check(!LogArchiveDateFilter.Includes("2026-03-20.txt", start, end), "old dated log excluded");
+      Check(LogArchiveDateFilter.Includes("2026-03-20.txt", null, end), "all available includes old logs");
+      string folder = Path.Combine(Path.GetTempPath(), "ptm-log-filter-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(folder);
+      try
+      {
+        string unknown = Path.Combine(folder, "legacy-log.txt");
+        File.WriteAllText(unknown, "test");
+        File.SetLastWriteTimeUtc(unknown, start.AddHours(-1));
+        Check(!LogArchiveDateFilter.Includes(unknown, start, end), "old unknown-name log excluded");
+        File.SetLastWriteTimeUtc(unknown, end.AddHours(-1));
+        Check(LogArchiveDateFilter.Includes(unknown, start, end), "recent unknown-name log included");
+      }
+      finally { Directory.Delete(folder, true); }
+      return Task.CompletedTask;
+    });
     await Test("UTC windows accept seconds, milliseconds, strings and ISO timestamps", async () =>
     {
       DateTimeOffset recent = DateTimeOffset.UtcNow.AddHours(-1);
