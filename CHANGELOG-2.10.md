@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 25, 2026 — Configurable PT Data and PTMagic log ZIP periods (validation pending)
+
+Add a numeric count and days/weeks/months selector to PT Data trade-history exports and PTMagic/Monitor log ZIP downloads. Both support All available, including the existing all-history PT export default; calendar months use AddMonths. Server-side validation prevents invalid durations. PT Data retains original pagination, history manifests, source payloads, current snapshots and funding behavior, with a new shared parser accepting legacy range codes. The log ZIP filters complete dated daily log files (including the boundary day), with modification-time fallback for undated filenames, without filtering the live log viewer or altering the complete _data ZIP download. Regression tests cover range arithmetic, invalid input, legacy range codes, and dated/undated log selection. Native build, regression execution and browser verification pending.
+
 ## November 24, 2026 — Normalize settings base path for migration regression (retest pending)
 
 Fix PTMagicConfiguration constructors to normalize base path separators once, ensuring WriteGeneralSettings and WriteAnalyzerSettings create backups and write files inside the requested instance directory even when the caller omits the trailing path separator. A real Windows .NET build succeeded and the first ten DecisionHistory regression checks passed; the following migration test exposed this save-path error. Extend the migration fixture to verify both backup paths and no accidentally concatenated sibling filenames. No Analyzer logic, retention policy or settings data are changed. Native regression rerun pending.
