@@ -1120,7 +1120,11 @@ namespace Core.Main
               this.Log.DoLogInfo("+ Time spent: " + SystemHelper.GetProperDurationTime(elapsedSeconds));
               this.Log.DoLogInfo("+ Selected setting: " + _desiredGlobalSettingName);
               this.Log.DoLogInfo("+ Confirmed PT setting: " + (String.IsNullOrWhiteSpace(this.LastRuntimeSummary.AppliedGlobalSettingName) ? "unknown" : this.LastRuntimeSummary.AppliedGlobalSettingName));
-              this.Log.DoLogInfo("+ Configuration delivery: " + _raidDelivery.Status);
+              string deliverySummary = "+ Configuration delivery: " + _raidDelivery.Status;
+              if (_raidDelivery.Attempted && !_raidDelivery.Succeeded)
+                this.Log.DoLogWarn(deliverySummary);
+              else
+                this.Log.DoLogInfo(deliverySummary);
               this.Log.DoLogInfo("+ Startup global SOM: " + _startupGuardStatus
                 + (this.PTMagicConfiguration.GeneralSettings.Application.TestMode ? " (TestMode preview)" : ""));
               if (this.ShouldShowStartupSomNotice())
