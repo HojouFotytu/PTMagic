@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../Monitor/_Internal/PTDataExportService.cs" Link="PTDataExportService.cs" />
+    <Compile Include="../../Monitor/_Internal/ExportHistoryPeriod.cs" Link="ExportHistoryPeriod.cs" />
   </ItemGroup>
 </Project>
