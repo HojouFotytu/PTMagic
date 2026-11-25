@@ -7,7 +7,8 @@ namespace Monitor.Pages
 {
   public class PTDataModel : _Internal.BasePageModelSecure
   {
-    [BindProperty] public string HistoryRange { get; set; } = "all";
+    [BindProperty] public int HistoryCount { get; set; } = 7;
+    [BindProperty] public string HistoryUnit { get; set; } = "all";
     [BindProperty] public bool IncludeBuys { get; set; } = true;
     [BindProperty] public bool IncludeSales { get; set; } = true;
     [BindProperty] public bool IncludeCurrentPositions { get; set; } = true;
@@ -31,9 +32,15 @@ namespace Monitor.Pages
       // Return HTTP 403 directly rather than invoking an unregistered forbid handler.
       if (!ExportEnabled) return StatusCode(403);
 
+      if (!_Internal.ExportHistoryPeriod.TryFromInput(HistoryCount, HistoryUnit, DateTime.UtcNow,
+        out string historyRange, out _))
+      {
+        ValidationMessage = "Choose a positive whole number of days, weeks, or months.";
+        return Page();
+      }
       var selection = new _Internal.PTDataExportSelection
       {
-        HistoryRange = HistoryRange,
+        HistoryRange = historyRange,
         IncludeBuys = IncludeBuys,
         IncludeSales = IncludeSales,
         IncludeCurrentPositions = IncludeCurrentPositions,
