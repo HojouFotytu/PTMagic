@@ -40,16 +40,22 @@
         }
         <form method="post" asp-page-handler="Download" id="pt-data-export-form">
           <div class="form-group row">
-            <label class="col-md-4 col-form-label" for="HistoryRange">Trade history period</label>
+            <label class="col-md-4 col-form-label" for="HistoryCount">Trade history period</label>
             <div class="col-md-8">
-              <select id="HistoryRange" name="HistoryRange" class="form-control">
-                <option value="7d" selected="@(Model.HistoryRange == "7d")">Past 7 days</option>
-                <option value="1m" selected="@(Model.HistoryRange == "1m")">Past 1 month</option>
-                <option value="3m" selected="@(Model.HistoryRange == "3m")">Past 3 months</option>
-                <option value="6m" selected="@(Model.HistoryRange == "6m")">Past 6 months</option>
-                <option value="all" selected="@(Model.HistoryRange == "all")">All available history</option>
-              </select>
-              <span class="help-block"><small>UTC rolling periods ending when export starts. Buys and sales are retrieved newest first across PT API pages until the cutoff or end of available history. Funding is separate; current positions are snapshots.</small></span>
+              <div class="form-row">
+                <div class="col-4">
+                  <input id="HistoryCount" name="HistoryCount" type="number" min="1" step="1" required class="form-control" value="@Model.HistoryCount" />
+                </div>
+                <div class="col-8">
+                  <select id="HistoryUnit" name="HistoryUnit" class="form-control">
+                    <option value="days" selected="@(Model.HistoryUnit == "days")">Days</option>
+                    <option value="weeks" selected="@(Model.HistoryUnit == "weeks")">Weeks</option>
+                    <option value="months" selected="@(Model.HistoryUnit == "months")">Months</option>
+                    <option value="all" selected="@(Model.HistoryUnit == "all")">All available</option>
+                  </select>
+                </div>
+              </div>
+              <span class="help-block"><small>UTC rolling periods ending when export starts; months are calendar months. Buys and sales are retrieved newest first across PT API pages until the cutoff or end of available history. Funding is separate; current positions are snapshots.</small></span>
             </div>
           </div>
 
@@ -98,6 +104,12 @@
 @section Scripts {
   <script type="text/javascript">
     $(document).ready(function () {
+      function updateHistoryCount() {
+        var all = $('#HistoryUnit').val() === 'all';
+        $('#HistoryCount').prop('disabled', all);
+      }
+      $('#HistoryUnit').on('change', updateHistoryCount);
+      updateHistoryCount();
       $('#pt-data-export-form').on('submit', function () {
         $('#pt-data-download').prop('disabled', true).text('Generating ZIP...');
       });
