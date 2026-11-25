@@ -16,6 +16,7 @@ namespace Core.MarketAnalyzer.MarketData
     public string SourceDataFamily { get; init; } = "NormalizedOHLCV";
     public string Basis { get; init; } = "";
     public long CalculationWindowMinutes { get; init; }
+    public long? FundingWindowMinutes { get; init; }
     public long MinimumClosedSourceCandles { get; init; }
     public long RequiredStoredSourceCandles { get; init; }
     public int RequiredStoreDataMaxHours { get; init; }
@@ -53,20 +54,27 @@ namespace Core.MarketAnalyzer.MarketData
         .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase))
       {
         if (!MarketTrendMetrics.IsKnown(metric)) continue;
-        if (FuturesFundingFeatureEngine.IsMetric(metric) || FuturesFundingFeatureEngine.IsGlobalMetric(metric))
+        bool projectedFunding = ContextualMarketMetrics.IsProjectedFunding(metric);
+        long? fundingWindow = null;
+        if (ContextualMarketMetrics.IsFunding(metric) || FuturesFundingFeatureEngine.IsMetric(metric) || FuturesFundingFeatureEngine.IsGlobalMetric(metric))
+          fundingWindow = (long)(ContextualMarketMetrics.IsFunding(metric)
+            ? ContextualMarketMetrics.FundingHistoryMinutes(trend.TrendMinutes, metric) : trend.TrendMinutes)
+            + (deltaNames.Contains(metric) ? trend.TrendMinutes : 0);
+        if (fundingWindow.HasValue && !projectedFunding)
         {
-          bool historical = deltaNames.Contains(metric);
           result.Add(new MarketTrendHistoryRequirement
           {
             Metric = metric, SourceDataFamily = "BinanceFuturesFunding",
-            Basis = (FuturesFundingFeatureEngine.IsGlobalMetric(metric)
+            Basis = ContextualMarketMetrics.IsFunding(metric)
+              ? "Latest regular settlement daily-equivalent rate versus prior regular settlements with actual elapsed intervals. Verified funding history covers twice the trend window, plus one for Delta."
+              : (FuturesFundingFeatureEngine.IsGlobalMetric(metric)
               ? "Global market aggregate of each selected market's latest Regular settlement; " +
                 "at least 90% of the frozen global population requires valid latest rates. "
               : "") + "Fully paginated historical regular funding settlements from the exact " +
               trend.TrendMinutes + " minute MarketTrend window, with the provider's own " +
               "settlement timestamps and variable funding schedule. A complete provider " +
               "query is required; no hardcoded 8h interval or separate retention hours.",
-            CalculationWindowMinutes = historical ? checked((long)trend.TrendMinutes * 2) : trend.TrendMinutes,
+            CalculationWindowMinutes = fundingWindow.Value, FundingWindowMinutes = fundingWindow,
             MinimumClosedSourceCandles = 0, RequiredStoredSourceCandles = 0,
             RequiredStoreDataMaxHours = 0, RecommendedStoreDataMaxHours = 0,
             ConfiguredStoreDataMaxHours = null, HasCurrentRaidCapacity = null,
@@ -98,14 +106,23 @@ namespace Core.MarketAnalyzer.MarketData
             "requires synchronized quote/USDT conversion closes; global median " +
             "requires at least 90% valid source-verified eligible assets.";
         }
-        else if (metric == MarketTrendMetrics.MedianReturnInPriorATR)
+        else if (MarketContextComparisons.IsMetric(metric))
+        {
+          MarketContextComparisons.Describe(trend, metric, out windowPeriods, out alignedTrendPeriods, out bool referenceClose);
+          minimumSourceCount = windowPeriods * trendSourceCount + (referenceClose ? 1 : 0);
+          basis = "Current observation ranked against 24 strictly preceding comparable periods, with the source metric lookback for each.";
+        }
+        else if (MarketTrendAnalyticsEngine.IsPreMoveRiskMetric(metric) || projectedFunding)
         {
           alignedTrendPeriods = true;
           // Current rolling return plus N+1 whole periods for ATR at its reference close.
-          windowPeriods = (long)trend.ATRPeriod + 2;
+          windowPeriods = (long)trend.ATRPeriod + (metric == MarketTrendMetrics.PreviousMedianReturnInPriorATR ? 3 : 2);
           minimumSourceCount = windowPeriods * trendSourceCount;
-          basis = "Rolling median return against the frozen cohort's median ATRP at the start of the return. "
+          basis = "Prior-range risk measurement with frozen membership, non-overlapping returns and ATR from before the measured move. "
             + "The prior Wilder ATR requires " + (trend.ATRPeriod + 1) + " complete UTC trend periods ending at or before the return reference close.";
+          if (projectedFunding)
+            basis = "Each contract requires positive ATRP as of the start of the horizon and verified, regular settled funding over "
+              + fundingWindow + " minutes. The latest observed cadence and rate estimate the cost in the next horizon.";
         }
         else if (metric == MarketTrendMetrics.ATRP || metric == MarketTrendMetrics.MedianATRP ||
           metric == MarketTrendMetrics.VolatilityBreadth || metric == MarketTrendMetrics.MedianReturnInATR ||
@@ -122,7 +139,7 @@ namespace Core.MarketAnalyzer.MarketData
             basis += " The signed rolling return requires the exact current and TrendMinutes-earlier source closes.";
         }
         else if (metric == MarketTrendMetrics.VolumeExpansion || metric == MarketTrendMetrics.MedianVolumeExpansion ||
-          metric == MarketTrendMetrics.VolumeExpansionBreadth || metric == MarketTrendMetrics.StrongVolumeExpansionBreadth)
+          metric == ContextualMarketMetrics.MeanVolumeExpansionExcess || metric == MarketTrendMetrics.VolumeExpansionBreadth || metric == MarketTrendMetrics.StrongVolumeExpansionBreadth)
         {
           alignedTrendPeriods = true;
           windowPeriods = (long)trend.VolumeExpansionLookback + 1;
@@ -145,7 +162,7 @@ namespace Core.MarketAnalyzer.MarketData
           minimumSourceCount = trendSourceCount;
           basis = "One complete UTC trend period of quote volume for every selected global market.";
         }
-        else if (TakerFlowFeatureEngine.IsMetric(metric) ||
+        else if (ContextualMarketMetrics.IsTaker(metric) || TakerFlowFeatureEngine.IsMetric(metric) ||
           TakerFlowFeatureEngine.IsGlobalMetric(metric))
         {
           alignedTrendPeriods = true;
@@ -206,7 +223,7 @@ namespace Core.MarketAnalyzer.MarketData
 
         result.Add(new MarketTrendHistoryRequirement
         {
-          Metric = metric, Basis = basis, CalculationWindowMinutes =
+          Metric = metric, Basis = basis, FundingWindowMinutes = fundingWindow, CalculationWindowMinutes =
             checked(windowPeriods * trend.TrendMinutes + (deltaNames.Contains(metric) ? (long)trend.TrendMinutes : 0L)),
           MinimumClosedSourceCandles = minimumSourceCount, RequiredStoredSourceCandles = required,
           RequiredStoreDataMaxHours = requiredHours, RecommendedStoreDataMaxHours = recommendedHours,

@@ -11,7 +11,7 @@ namespace Core.MarketAnalyzer.MarketData
   /// TrendMinutes supplies the return horizon. The caller supplies the exact global
   /// and asset universes selected by PTMagic's existing MarketTrend pipeline.
   /// </summary>
-  public static class MarketTrendAnalyticsEngine
+  public static partial class MarketTrendAnalyticsEngine
   {
     public static MarketTrendAnalysisSnapshot Calculate(
       MarketTrend marketTrend,
@@ -46,7 +46,8 @@ namespace Core.MarketAnalyzer.MarketData
       IReadOnlyCollection<string> enabledMetrics = selectedMetrics ?? MarketTrendMetrics.ParseEnabled(marketTrend);
 
       bool Requested(string metric) => enabledMetrics.Contains(metric, StringComparer.OrdinalIgnoreCase);
-      bool medianReturnInPriorAtr = Requested(MarketTrendMetrics.MedianReturnInPriorATR);
+      bool preMoveReturns = NeedsPreMoveRisk(enabledMetrics);
+      bool preMoveAsset = Requested(MarketTrendMetrics.ReturnInPriorATR) || Requested(MarketTrendMetrics.RelativeStrengthInPriorATR);
       bool medianReturnInAtr = Requested(MarketTrendMetrics.MedianReturnInATR);
       bool assetReturnInAtr = Requested(MarketTrendMetrics.ReturnInATR);
       bool relativeReturnInAtr = Requested(MarketTrendMetrics.RelativeStrengthInATR);
@@ -55,7 +56,7 @@ namespace Core.MarketAnalyzer.MarketData
       bool needsMeanPriceTrend = enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.Dispersion, StringComparer.OrdinalIgnoreCase);
-      bool needsMedianPriceTrend = medianReturnInPriorAtr || medianReturnInAtr || relativeReturnInAtr || enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase)
+      bool needsMedianPriceTrend = preMoveReturns || medianReturnInAtr || relativeReturnInAtr || enabledMetrics.Contains(MarketTrendMetrics.MedianPriceTrend, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.MeanMedianSpread, StringComparer.OrdinalIgnoreCase)
         || enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
       bool needsBreadth = enabledMetrics.Contains(MarketTrendMetrics.Breadth, StringComparer.OrdinalIgnoreCase);
@@ -64,7 +65,7 @@ namespace Core.MarketAnalyzer.MarketData
       bool needsRelativeStrengthMarket = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthMarket, StringComparer.OrdinalIgnoreCase);
       bool needsRelativeStrengthBTC = enabledMetrics.Contains(MarketTrendMetrics.RelativeStrengthBTC, StringComparer.OrdinalIgnoreCase);
       bool needsGlobalReturns = needsMeanPriceTrend || needsMedianPriceTrend || needsBreadth || needsConcentration || rankedBreadth;
-      bool needsAssetReturns = assetReturnInAtr || relativeReturnInAtr || needsRelativeStrengthMarket || needsRelativeStrengthBTC
+      bool needsAssetReturns = preMoveAsset || assetReturnInAtr || relativeReturnInAtr || needsRelativeStrengthMarket || needsRelativeStrengthBTC
         || enabledMetrics.Contains(MarketTrendMetrics.PriceTrend, StringComparer.OrdinalIgnoreCase);
 
       HashSet<string> symbolsToCalculate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -145,16 +146,6 @@ namespace Core.MarketAnalyzer.MarketData
           globalReturns.Count,
           calculatedAtUtc,
           marketTrend.TrendMinutes), globalReturns.Count, globalUniverse.Length, calculatedAtUtc);
-      }
-      if (medianReturnInPriorAtr)
-      {
-        // The most recent *complete* UTC trend period at the rolling return's reference
-        // close supplies the last range in the baseline. No current-return candle enters it.
-        var referenceAsOf = calculatedAtUtc.AddMinutes(-marketTrend.TrendMinutes);
-        var prior = MarketTrendPhase1CEngine.Calculate(marketTrend, new[] { MarketTrendMetrics.MedianATRP },
-          globalUniverse, Array.Empty<string>(), store, interval, referenceAsOf, quote);
-        marketMetrics[MarketTrendMetrics.MedianReturnInPriorATR] = InAtrUnits(medianPriceTrend,
-          prior.GlobalMetrics[MarketTrendMetrics.MedianATRP], calculatedAtUtc, fiatConversionSymbol != null);
       }
       if (needsBreadth)
       {
@@ -286,7 +277,7 @@ namespace Core.MarketAnalyzer.MarketData
       // Phase 1C runs only for explicitly enabled metrics, sharing the exact
       // frozen MarketTrend populations and the existing normalized OHLCV store.
       var ohlcvMetrics = new HashSet<string>(enabledMetrics, StringComparer.OrdinalIgnoreCase);
-      if (medianReturnInAtr || Requested(MarketTrendMetrics.DrawdownSizeInATR) || Requested(MarketTrendMetrics.RallySizeInATR))
+      if (medianReturnInAtr || Requested(MarketTrendMetrics.MedianATRPRatioToPrior) || Requested(MarketTrendMetrics.DrawdownSizeInATR) || Requested(MarketTrendMetrics.RallySizeInATR))
         ohlcvMetrics.Add(MarketTrendMetrics.MedianATRP);
       if (assetReturnInAtr || relativeReturnInAtr) ohlcvMetrics.Add(MarketTrendMetrics.ATRP);
       if (MarketTrendPhase1CEngine.HasMetrics(ohlcvMetrics))
@@ -401,7 +392,7 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      bool phase3Global = FlowPriceConfirmationEngine.HasGlobalMetrics(enabledMetrics);
+      bool phase3Global = FlowPriceConfirmationEngine.HasGlobalMetrics(enabledMetrics) || ContextualMarketMetrics.NeedsTaker(enabledMetrics);
       bool phase3Asset = FlowPriceConfirmationEngine.HasAssetMetrics(enabledMetrics);
       Dictionary<string, AlignedTakerFlowPeriod> phase3Periods =
         phase3Global || phase3Asset
@@ -450,6 +441,39 @@ namespace Core.MarketAnalyzer.MarketData
           foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
           assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
         }
+      }
+
+      void Publish(IReadOnlyDictionary<string, FeatureValueSnapshot> globalValues,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetValues)
+      {
+        foreach (var feature in globalValues) marketMetrics[feature.Key] = feature.Value;
+        foreach (var asset in assetValues)
+        {
+          var merged = assetMetrics.TryGetValue(asset.Key, out var existing)
+            ? new Dictionary<string, FeatureValueSnapshot>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
+          foreach (var feature in asset.Value) merged[feature.Key] = feature.Value;
+          assetMetrics[asset.Key] = new ReadOnlyDictionary<string, FeatureValueSnapshot>(merged);
+        }
+      }
+      if (preMoveReturns)
+      {
+        marketMetrics.TryGetValue(MarketTrendMetrics.MedianATRP, out var currentAtr);
+        var risk = CalculatePreMoveRisk(marketTrend, enabledMetrics, globalUniverse, assetUniverse, store, interval,
+          calculatedAtUtc, quote, fiatConversionSymbol != null, medianPriceTrend, currentAtr, returns);
+        Publish(risk.GlobalMetrics, risk.AssetMetrics);
+      }
+      if (enabledMetrics.Any(ContextualMarketMetrics.IsMetric))
+      {
+        var context = ContextualMarketMetrics.Calculate(marketTrend, enabledMetrics, globalUniverse, assetUniverse,
+          store, interval, calculatedAtUtc, exchangeName, fundingData, phase3Periods, assetMetrics);
+        Publish(context.GlobalMetrics, context.AssetMetrics);
+      }
+      if (enabledMetrics.Any(MarketContextComparisons.IsMetric))
+      {
+        var ranks = MarketContextComparisons.Calculate(marketTrend, enabledMetrics, globalUniverse, assetUniverse,
+          store, interval, calculatedAtUtc, benchmarkSymbol, fiatConversionSymbol != null);
+        Publish(ranks.GlobalMetrics, ranks.AssetMetrics);
       }
 
       Dictionary<string, int> globalIssues = needsGlobalReturns

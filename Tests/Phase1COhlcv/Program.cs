@@ -43,6 +43,7 @@ internal static class Program
       TestPathEfficiencyFiatAndValidity();
       TestCurrentLegAndCandidateBreadth();
       TestMedianReturnInPriorATR();
+      TestContextualRisk();
       TestMarketTrendDelta();
       TestMarketTrendDeltaCoverageAndTime();
       Console.WriteLine("Phase 1C OHLCV metric tests passed: " + _passed + ".");
@@ -1017,7 +1018,7 @@ internal static class Program
     var turn = new[] { 80d, 90d, 95d, 105d };
     var trend = new MarketTrend { Name = "Leg", TrendMinutes = 10, ATRPeriod = 1, Metrics =
       "DrawdownSizeInATR,DrawdownRecoveryPercent,DrawdownParticipationRecoveryPercent,DrawdownLeaderOverlapPercent,"
-      + "RallySizeInATR,RallyRetracementPercent,RallyParticipationReversalPercent,RallyLeaderOverlapPercent,"
+      + "RallySizeInATR,RallyRetracementPercent,RallyParticipationReversalPercent,RallyLeaderOverlapPercent,DrawdownLeaderOverlapExcess,RallyLeaderOverlapExcess,"
       + "MedianReturnInATR,ReturnInATR,RelativeStrengthInATR" };
     MarketTrendAnalysisSnapshot Build(double[] end, bool mirror = false, bool gap = false)
     {
@@ -1032,6 +1033,8 @@ internal static class Program
     }
     var recovered = new[] { 95d, 95d, 94d, 101d };
     var down = Build(recovered);
+    Near(down.MarketMetrics["DrawdownLeaderOverlapExcess"], 75, "observed 100% overlap minus actual 25% marginal incidence");
+    Near(Build(recovered, true).MarketMetrics["RallyLeaderOverlapExcess"], 75, "mirrored matched leader incidence");
     Near(down.MarketMetrics["DrawdownRecoveryPercent"], 50, "exact 50% of the common originating decline recovered");
     Near(down.MarketMetrics["DrawdownParticipationRecoveryPercent"], 200.0 / 3, "two advancing vs three originally declining");
     Near(down.MarketMetrics["DrawdownLeaderOverlapPercent"], 100, "largest responding symbol also led original decline");
@@ -1049,6 +1052,12 @@ internal static class Program
       "equal market recovery with a different leader");
     Near(Build(turn).MarketMetrics["DrawdownRecoveryPercent"], 0, "fresh extreme has observed zero recovery");
     Invalid(Build(recovered, gap: true).MarketMetrics["DrawdownRecoveryPercent"], "three complete paths out of four fail coverage");
+
+    turn[1] = 80;
+    Near(Build(recovered).MarketMetrics["DrawdownLeaderOverlapExcess"], 50,
+      "two tied origin leaders among four make incidental overlap 50 percent");
+    Near(Build(recovered, true).MarketMetrics["RallyLeaderOverlapExcess"], 50,
+      "the measured tied origin incidence also applies to rallies");
 
     // A fresh, smaller excursion after complete recovery replaces the prior large decline.
     var recoveredMarket = NewStore();
@@ -1122,6 +1131,43 @@ internal static class Program
     var req = MarketTrendHistoryRequirements.Describe(trend, new[] { metric }, Interval, asOf, 168, new[] { metric }).Single();
     Assert(req.MinimumClosedSourceCandles == 8 && req.RequiredStoredSourceCandles == 10 && req.HasAllAlignmentCapacity == true,
       "history includes prior ATR, current return, requested Delta, UTC skew and forming candle");
+    _passed++;
+  }
+
+  private static void TestContextualRisk()
+  {
+    var two = new[] { "AUSDT", "BUSDT" };
+    const string metrics = "MarketReversalStrength,PreviousMedianReturnInPriorATR,MedianReturnInPriorATR,MedianATRPRatioToPrior,ReturnInPriorATR,RelativeStrengthInPriorATR";
+    var trend = new MarketTrend { Name = "Risk", TrendMinutes = 5, ATRPeriod = 1, Metrics = metrics };
+    MarketTrendAnalysisSnapshot Build(double endA, double endB, double amplitude)
+    {
+      var store = NewStore();
+      foreach (var symbol in two)
+      {
+        var closes = new[] { 100d, 100d, 100d, 100d, 98d, symbol == two[0] ? endA : endB };
+        for (int i = 0; i < closes.Length; i++)
+        {
+          var close = closes[i];
+          var spread = i == closes.Length - 1 ? amplitude : 1;
+          store.UpsertCandle(new MarketCandle { Symbol = symbol, Interval = Interval,
+            OpenTimeUtc = Start.AddMinutes(5 * i), CloseTimeUtc = Start.AddMinutes(5 * (i+1)).AddMilliseconds(-1),
+            Open = close, High = close + spread, Low = close - spread, Close = close, QuoteVolume = 1, BaseVolume = 1,
+            TradeCount = 1, IsClosed = true });
+        }
+      }
+      return MarketTrendAnalyticsEngine.Calculate(trend, two, two, store, Interval, Start.AddMinutes(30));
+    }
+    var low = Build(100, 102, 1); var wide = Build(100, 102, 10);
+    Near(low.MarketMetrics["PreviousMedianReturnInPriorATR"], -1, "previous leg uses its own historical baseline");
+    Near(low.MarketMetrics["MarketReversalStrength"], 1, "reversal recovers the larger of the previous leg and its pre-move range");
+    Near(low.AssetMetrics[two[0]]["ReturnInPriorATR"], 2d/3, "own adverse or favorable move uses prior own ATRP");
+    Near(low.AssetMetrics[two[0]]["RelativeStrengthInPriorATR"], -1d/3, "directional excess versus broad median in own prior ATR");
+    Near(wide.MarketMetrics["MarketReversalStrength"], 1, "current range widening cannot dilute a reversal");
+    Near(wide.AssetMetrics[two[0]]["ReturnInPriorATR"], 2d/3, "current high/low cannot move prior asset scale");
+    Assert(wide.MarketMetrics["MedianATRPRatioToPrior"].Value > low.MarketMetrics["MedianATRPRatioToPrior"].Value,
+      "current expansion relative to starting ATR is observable independently");
+    Near(Build(94, 96, 1).MarketMetrics["MarketReversalStrength"], 0, "continuation has no reversal score");
+    Assert(Build(110, 112, 1).MarketMetrics["MarketReversalStrength"].Value > 3, "larger reversal has no upper gate");
     _passed++;
   }
 

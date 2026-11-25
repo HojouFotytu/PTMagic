@@ -19,6 +19,25 @@ namespace Core.MarketAnalyzer.MarketData
   /// </summary>
   public static class MarketTrendMetrics
   {
+    public const string PreviousMedianReturnInPriorATR = "PreviousMedianReturnInPriorATR";
+    public const string MarketReversalStrength = "MarketReversalStrength";
+    public const string MedianATRPRatioToPrior = "MedianATRPRatioToPrior";
+    public const string DrawdownLeaderOverlapExcess = "DrawdownLeaderOverlapExcess";
+    public const string RallyLeaderOverlapExcess = "RallyLeaderOverlapExcess";
+    public const string ReturnInPriorATR = "ReturnInPriorATR";
+    public const string RelativeStrengthInPriorATR = "RelativeStrengthInPriorATR";
+    public const string VolumeExpansionBreadthChangePercentile = "VolumeExpansionBreadthChangePercentile";
+    public const string BreadthChangePercentile = "BreadthChangePercentile";
+    public const string MedianCorrelationToBTCPercentile = "MedianCorrelationToBTCPercentile";
+    public const string MedianCorrelationToBTCChangePercentile = "MedianCorrelationToBTCChangePercentile";
+    public const string MedianPricePathEfficiencyPercentile = "MedianPricePathEfficiencyPercentile";
+    public const string MedianPricePathEfficiencyChangePercentile = "MedianPricePathEfficiencyChangePercentile";
+    public const string SellerFlowPriceConfirmationVolumeSharePercentile = "SellerFlowPriceConfirmationVolumeSharePercentile";
+    public const string BuyerFlowPriceConfirmationVolumeSharePercentile = "BuyerFlowPriceConfirmationVolumeSharePercentile";
+    public const string MedianVolumeExpansionPercentile = "MedianVolumeExpansionPercentile";
+    public const string TakerImbalancePercentile = "TakerImbalancePercentile";
+    public const string TakerImbalanceChangePercentile = "TakerImbalanceChangePercentile";
+    public const string PricePathEfficiencyChangePercentile = "PricePathEfficiencyChangePercentile";
     public const string Top50Breadth = "Top50Breadth";
     public const string Top75Breadth = "Top75Breadth";
     public const string Top100Breadth = "Top100Breadth";
@@ -85,6 +104,36 @@ namespace Core.MarketAnalyzer.MarketData
     private static readonly Dictionary<string, MarketTrendMetricScope> KnownMetrics =
       new Dictionary<string, MarketTrendMetricScope>(StringComparer.OrdinalIgnoreCase)
       {
+        [PreviousMedianReturnInPriorATR] = MarketTrendMetricScope.Global,
+        [MarketReversalStrength] = MarketTrendMetricScope.Global,
+        [MedianATRPRatioToPrior] = MarketTrendMetricScope.Global,
+        [DrawdownLeaderOverlapExcess] = MarketTrendMetricScope.Global,
+        [RallyLeaderOverlapExcess] = MarketTrendMetricScope.Global,
+        [VolumeExpansionBreadthChangePercentile] = MarketTrendMetricScope.Global,
+        [BreadthChangePercentile] = MarketTrendMetricScope.Global,
+        [MedianCorrelationToBTCPercentile] = MarketTrendMetricScope.Global,
+        [MedianCorrelationToBTCChangePercentile] = MarketTrendMetricScope.Global,
+        [MedianPricePathEfficiencyPercentile] = MarketTrendMetricScope.Global,
+        [MedianPricePathEfficiencyChangePercentile] = MarketTrendMetricScope.Global,
+        [SellerFlowPriceConfirmationVolumeSharePercentile] = MarketTrendMetricScope.Global,
+        [BuyerFlowPriceConfirmationVolumeSharePercentile] = MarketTrendMetricScope.Global,
+        [MedianVolumeExpansionPercentile] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.NetConfirmedFlowPressure] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.MedianProjectedFundingCostInPriorATR] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.ProjectedFundingCostInPriorATR] = MarketTrendMetricScope.Asset,
+        [ContextualMarketMetrics.BuyingPressureOnDeclines] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.BuyingPressureOnAdvances] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.MeanBuyerImbalanceExcess] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.MeanVolumeExpansionExcess] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.MedianFundingRateVsHistory] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.PositiveFundingPressure] = MarketTrendMetricScope.Global,
+        [ContextualMarketMetrics.NegativeFundingPressure] = MarketTrendMetricScope.Global,
+        [ReturnInPriorATR] = MarketTrendMetricScope.Asset,
+        [RelativeStrengthInPriorATR] = MarketTrendMetricScope.Asset,
+        [TakerImbalancePercentile] = MarketTrendMetricScope.Asset,
+        [TakerImbalanceChangePercentile] = MarketTrendMetricScope.Asset,
+        [PricePathEfficiencyChangePercentile] = MarketTrendMetricScope.Asset,
+        [ContextualMarketMetrics.FundingRateVsHistory] = MarketTrendMetricScope.Asset,
         [Top50Breadth] = MarketTrendMetricScope.Global,
         [Top75Breadth] = MarketTrendMetricScope.Global,
         [Top100Breadth] = MarketTrendMetricScope.Global,

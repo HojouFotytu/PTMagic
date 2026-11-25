@@ -1128,6 +1128,41 @@ internal static class Program
           !fixture.Bot.PairsLines.Contains("BTC_sell_only_mode_enabled = false") &&
           !fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = true"));
       });
+      Check("missing strong severity admits only its named confirmed fallback and retains prior severe tier", () =>
+      {
+        foreach (bool confirmedSevere in new[] { false, true })
+        {
+          using var fixture = new Fixture();
+          fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
+          fixture.RecentVolume(100);
+          var strong = fixture.Sms;
+          strong.StopProcessWhenTriggered = true;
+          strong.IndeterminateFallbackSetting = "EarlyVeto";
+          if (confirmedSevere)
+          {
+            strong.Triggers = new List<Trigger> { new Trigger { Min24hVolume = 10 } };
+            Call(fixture.Bot, "ApplySingleMarketSettings");
+            Call(fixture.Bot, "SaveProfitTrailerProperties");
+            fixture.BeforeRaid(); fixture.CompileClean();
+          }
+          strong.Triggers = new List<Trigger> { new Trigger { MarketTrendName = "NoSeverity", Metric = "ATRP", MinChange = 1 } };
+          fixture.Configuration.AnalyzerSettings.SingleMarketSettings.Add(new SingleMarketSetting
+          {
+            SettingName = "EarlyVeto", StopProcessWhenTriggered = true,
+            Triggers = new List<Trigger> { new Trigger { Min24hVolume = 10 } },
+            PairsProperties = new Dictionary<string, object> { ["sell_only_mode_enabled"] = true }
+          });
+          fixture.Configuration.AnalyzerSettings.SingleMarketSettings.Add(new SingleMarketSetting
+          {
+            SettingName = "LaterPermission", Triggers = new List<Trigger> { new Trigger { Min24hVolume = 1 } }
+          });
+          Call(fixture.Bot, "ApplySingleMarketSettings");
+          var selected = fixture.Bot.TriggeredSingleMarketSettings["BTCUSDT"];
+          Require(selected.Count == 1 && selected[0].SettingName == (confirmedSevere ? strong.SettingName : "EarlyVeto"));
+          Require(fixture.Bot.PairsLines.Contains("BTC_sell_only_mode_enabled = true")
+            && fixture.Bot.PairsLines.Contains("BTC_DCA_enabled = false"));
+        }
+      });
       Check("last SMS removal on clean rebuilt properties still sends removal", () =>
       {
         using var fixture = new Fixture(); fixture.Bot.MarketList = new List<string> { "BTCUSDT" }; fixture.RecentVolume(100);

@@ -60,6 +60,22 @@ internal static class Program
         var source = Baseline();
         Equal(source, AnalyzerSettingsForm.Apply(source, Form(source)));
       });
+      Check("form roundtrip preserves a paired terminal market fallback and strict positive boundary", () =>
+      {
+        var source = Baseline();
+        var strong = source.SingleMarketSettings[0];
+        strong.StopProcessWhenTriggered = true;
+        strong.OffTriggers.Clear();
+        strong.IndeterminateFallbackSetting = "Early";
+        strong.Triggers[0].MinChange = double.Epsilon;
+        var early = JsonConvert.DeserializeObject<SingleMarketSetting>(JsonConvert.SerializeObject(strong))!;
+        early.SettingName = "Early";
+        early.IndeterminateFallbackSetting = null;
+        source.SingleMarketSettings.Add(early);
+        var saved = AnalyzerSettingsForm.Apply(source, Form(source));
+        Require(saved.SingleMarketSettings[0].IndeterminateFallbackSetting == "Early");
+        Require(saved.SingleMarketSettings[0].Triggers[0].MinChange == double.Epsilon);
+      });
       Check("same-trend global row edits only its own metric", () =>
       {
         var source = Baseline(); var form = Form(source);

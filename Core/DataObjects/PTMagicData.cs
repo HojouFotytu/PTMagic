@@ -250,6 +250,7 @@ namespace Core.Main.DataObjects.PTMagicData
 
     [DefaultValue(false)]
     public bool StopProcessWhenTriggered { get; set; } = false;
+    public string IndeterminateFallbackSetting { get; set; }
     public List<Trigger> Triggers { get; set; } = new List<Trigger>();
     public List<OffTrigger> OffTriggers { get; set; } = new List<OffTrigger>();
     public Dictionary<string, object> PairsProperties { get; set; } = new Dictionary<string, object>();

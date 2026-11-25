@@ -94,11 +94,33 @@ internal static class Program
       Invalid("active threshold must be finite", settings => { settings.MarketAnalyzer.MarketTrends[0].Metrics += ",VolatilityBreadth"; settings.MarketAnalyzer.MarketTrends[0].ATRPBreadthThreshold = Double.NaN; }, "ATRPBreadthThreshold");
       Invalid("active expansion threshold must be nonnegative", settings => { settings.MarketAnalyzer.MarketTrends[0].Metrics += ",VolumeExpansionBreadth"; settings.MarketAnalyzer.MarketTrends[0].VolumeExpansionBreadthThreshold = -1; }, "VolumeExpansionBreadthThreshold");
       Valid("unused parameters do not invalidate legacy configuration", settings => { settings.MarketAnalyzer.MarketTrends[0].CorrelationLookback = 1; settings.MarketAnalyzer.MarketTrends[0].ATRPeriod = 0; });
+      TerminalFallbackTests();
       HeldDefenseTests();
       Console.WriteLine("Trigger configuration validation checks passed: " + _passed + ".");
       return 0;
     }
     catch (Exception ex) { Console.Error.WriteLine("Trigger configuration validation FAILED: " + ex); return 1; }
+  }
+
+  private static void TerminalFallbackTests()
+  {
+    static void Pair(AnalyzerSettings settings)
+    {
+      var stronger = settings.SingleMarketSettings[0];
+      stronger.StopProcessWhenTriggered = true;
+      stronger.OffTriggers.Clear();
+      stronger.IndeterminateFallbackSetting = "Early";
+      settings.SingleMarketSettings.Add(new SingleMarketSetting
+      {
+        SettingName = "Early", StopProcessWhenTriggered = true,
+        Triggers = new List<Trigger> { new Trigger { MarketTrendName = "SharedTrend", Tag = "Early" } }
+      });
+    }
+    Valid("same-scope terminal SMS fallback admitted", Pair);
+    Invalid("fallback cannot cross a Global allowlist", s => { Pair(s); s.SingleMarketSettings[1].AllowedGlobalSettings = "RiskOff"; }, "IndeterminateFallbackSetting");
+    Invalid("fallback cannot skip rows", s => { Pair(s); s.SingleMarketSettings[0].IndeterminateFallbackSetting = "Elsewhere"; }, "IndeterminateFallbackSetting");
+    Invalid("fallback cannot persist via a separate off-trigger", s => { Pair(s); s.SingleMarketSettings[1].OffTriggers = new List<OffTrigger> { new OffTrigger { HoursSinceTriggered = 2 } }; }, "IndeterminateFallbackSetting");
+    Invalid("projected carry requires a valid ATR period", s => { s.MarketAnalyzer.MarketTrends[0].Metrics += ",ProjectedFundingCostInPriorATR"; s.MarketAnalyzer.MarketTrends[0].ATRPeriod = 0; }, "ATRPeriod");
   }
 
   private static void HeldDefenseTests()

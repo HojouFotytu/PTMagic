@@ -14,10 +14,10 @@ namespace Core.MarketAnalyzer.MarketData
   {
     private static readonly string[] Drawdown = { MarketTrendMetrics.DrawdownSizeInATR,
       MarketTrendMetrics.DrawdownRecoveryPercent, MarketTrendMetrics.DrawdownParticipationRecoveryPercent,
-      MarketTrendMetrics.DrawdownLeaderOverlapPercent };
+      MarketTrendMetrics.DrawdownLeaderOverlapPercent, MarketTrendMetrics.DrawdownLeaderOverlapExcess };
     private static readonly string[] Rally = { MarketTrendMetrics.RallySizeInATR,
       MarketTrendMetrics.RallyRetracementPercent, MarketTrendMetrics.RallyParticipationReversalPercent,
-      MarketTrendMetrics.RallyLeaderOverlapPercent };
+      MarketTrendMetrics.RallyLeaderOverlapPercent, MarketTrendMetrics.RallyLeaderOverlapExcess };
 
     internal static bool IsMetric(string metric) => Drawdown.Contains(metric, StringComparer.OrdinalIgnoreCase)
       || Rally.Contains(metric, StringComparer.OrdinalIgnoreCase);
@@ -120,7 +120,7 @@ namespace Core.MarketAnalyzer.MarketData
       double distance = direction * (index[turn] - index[start]);
       double size = 100.0 * distance / index[start]; // converted to ATR units by caller
       double recovered = 100.0 * -direction * (index[end] - index[turn]) / distance;
-      if (end == turn) return new[] { size, 0.0, 0.0, 0.0 };
+      if (end == turn) return new[] { size, 0.0, 0.0, 0.0, double.NaN };
 
       var origin = new double[paths.Count];
       var response = new double[paths.Count];
@@ -139,6 +139,7 @@ namespace Core.MarketAnalyzer.MarketData
       int cutoff = (paths.Count - 1) / 4;
       double originalCut = origin.OrderByDescending(value => value).ElementAt(cutoff);
       double responseCut = response.OrderByDescending(value => value).ElementAt(cutoff);
+      int originalLeaders = origin.Count(value => value > 0 && value >= originalCut);
       int leaders = 0, shared = 0;
       for (int i = 0; i < response.Length; i++)
       {
@@ -147,7 +148,8 @@ namespace Core.MarketAnalyzer.MarketData
         if (origin[i] > 0 && origin[i] >= originalCut) shared++;
       }
       double overlap = leaders == 0 ? 0 : 100.0 * shared / leaders;
-      return new[] { size, recovered, participation, overlap };
+      double excess = leaders == 0 ? double.NaN : overlap - 100.0 * originalLeaders / paths.Count;
+      return new[] { size, recovered, participation, overlap, excess };
     }
   }
 }

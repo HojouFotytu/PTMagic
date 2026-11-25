@@ -145,6 +145,11 @@ namespace Core.MarketAnalyzer.MarketData
     public static string GetUnit(string metric)
     {
       string metricName = MarketTrendMetrics.Normalize(metric);
+      if (ContextualMarketMetrics.IsProjectedFunding(metricName)) return "x";
+      if (ContextualMarketMetrics.IsFunding(metricName)) return " pp/day";
+      if (metricName == ContextualMarketMetrics.MeanBuyerImbalanceExcess || metricName == ContextualMarketMetrics.MeanVolumeExpansionExcess) return "";
+      if (metricName == MarketTrendMetrics.DrawdownLeaderOverlapExcess || metricName == MarketTrendMetrics.RallyLeaderOverlapExcess) return " pp";
+      if (MarketTrendAnalyticsEngine.IsPreMoveRiskMetric(metricName)) return "x";
       if (TakerFlowFeatureEngine.IsMetric(metricName) ||
           metricName == MarketTrendMetrics.MedianTakerBuyRatio ||
           metricName == MarketTrendMetrics.TakerImbalanceDispersion) return "";

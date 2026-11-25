@@ -91,8 +91,10 @@ namespace Core.Helper
       else
       {
         HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (SingleMarketSetting setting in settings.SingleMarketSettings)
+        for (int i = 0; i < settings.SingleMarketSettings.Count; i++)
         {
+          var setting = settings.SingleMarketSettings[i];
+          if (setting != null) ValidateFallback(setting, settings.SingleMarketSettings.ElementAtOrDefault(i + 1), errors);
           if (!CheckSettingName(setting?.SettingName, "SingleMarketSetting", names, errors)) continue;
           string context = "SingleMarketSetting '" + setting.SettingName + "'";
           if (setting.Triggers == null)
@@ -132,6 +134,20 @@ namespace Core.Helper
         }
       }
       return errors.AsReadOnly();
+    }
+
+    private static void ValidateFallback(SingleMarketSetting setting, SingleMarketSetting next, List<string> errors)
+    {
+      if (String.IsNullOrWhiteSpace(setting.IndeterminateFallbackSetting)) return;
+      if (!setting.StopProcessWhenTriggered || next == null || !next.StopProcessWhenTriggered
+        || !String.Equals(next.SettingName, setting.IndeterminateFallbackSetting, StringComparison.OrdinalIgnoreCase)
+        || !String.IsNullOrWhiteSpace(next.IndeterminateFallbackSetting)
+        || (setting.OffTriggers?.Count ?? 0) != 0 || (next.OffTriggers?.Count ?? 0) != 0
+        || !String.Equals(setting.AllowedMarkets, next.AllowedMarkets, StringComparison.OrdinalIgnoreCase)
+        || !String.Equals(setting.IgnoredMarkets, next.IgnoredMarkets, StringComparison.OrdinalIgnoreCase)
+        || !String.Equals(setting.AllowedGlobalSettings, next.AllowedGlobalSettings, StringComparison.OrdinalIgnoreCase)
+        || !String.Equals(setting.IgnoredGlobalSettings, next.IgnoredGlobalSettings, StringComparison.OrdinalIgnoreCase))
+        errors.Add("IndeterminateFallbackSetting on '" + setting.SettingName + "' requires the immediately following same-scope terminal SMS, with no persistent off-triggers or further fallback.");
     }
 
     public static void ThrowIfInvalid(AnalyzerSettings settings)
@@ -255,17 +271,21 @@ namespace Core.Helper
       }
       if (Enabled(MarketTrendMetrics.ATRP, MarketTrendMetrics.MedianATRP, MarketTrendMetrics.VolatilityBreadth,
           MarketTrendMetrics.ReturnInATR, MarketTrendMetrics.RelativeStrengthInATR, MarketTrendMetrics.MedianReturnInATR,
-          MarketTrendMetrics.MedianReturnInPriorATR,
+          MarketTrendMetrics.MedianReturnInPriorATR, MarketTrendMetrics.PreviousMedianReturnInPriorATR, MarketTrendMetrics.MarketReversalStrength,
+          MarketTrendMetrics.MedianATRPRatioToPrior, MarketTrendMetrics.ReturnInPriorATR, MarketTrendMetrics.RelativeStrengthInPriorATR,
+          ContextualMarketMetrics.ProjectedFundingCostInPriorATR, ContextualMarketMetrics.MedianProjectedFundingCostInPriorATR,
           MarketTrendMetrics.DrawdownSizeInATR, MarketTrendMetrics.RallySizeInATR))
         Range("ATRPeriod", trend.ATRPeriod, 1);
       if (Enabled(MarketTrendMetrics.VolumeExpansion, MarketTrendMetrics.MedianVolumeExpansion,
-        MarketTrendMetrics.VolumeExpansionBreadth, MarketTrendMetrics.StrongVolumeExpansionBreadth))
+        MarketTrendMetrics.VolumeExpansionBreadth, MarketTrendMetrics.StrongVolumeExpansionBreadth, ContextualMarketMetrics.MeanVolumeExpansionExcess,
+        MarketTrendMetrics.MedianVolumeExpansionPercentile, MarketTrendMetrics.VolumeExpansionBreadthChangePercentile))
         Range("VolumeExpansionLookback", trend.VolumeExpansionLookback, 1);
       if (Enabled(MarketTrendMetrics.TopNVolumeShare)) Range("TopNVolumeCount", trend.TopNVolumeCount, 1);
-      if (Enabled(MarketTrendMetrics.CorrelationToBTC, MarketTrendMetrics.MeanCorrelationToBTC, MarketTrendMetrics.MedianCorrelationToBTC))
+      if (Enabled(MarketTrendMetrics.CorrelationToBTC, MarketTrendMetrics.MeanCorrelationToBTC, MarketTrendMetrics.MedianCorrelationToBTC,
+        MarketTrendMetrics.MedianCorrelationToBTCPercentile, MarketTrendMetrics.MedianCorrelationToBTCChangePercentile))
         Range("CorrelationLookback", trend.CorrelationLookback, 3);
       if (Enabled(MarketTrendMetrics.VolatilityBreadth)) Threshold("ATRPBreadthThreshold", trend.ATRPBreadthThreshold);
-      if (Enabled(MarketTrendMetrics.VolumeExpansionBreadth)) Threshold("VolumeExpansionBreadthThreshold", trend.VolumeExpansionBreadthThreshold);
+      if (Enabled(MarketTrendMetrics.VolumeExpansionBreadth, MarketTrendMetrics.VolumeExpansionBreadthChangePercentile)) Threshold("VolumeExpansionBreadthThreshold", trend.VolumeExpansionBreadthThreshold);
       if (Enabled(MarketTrendMetrics.StrongVolumeExpansionBreadth)) Threshold("StrongVolumeExpansionThreshold", trend.StrongVolumeExpansionThreshold);
     }
 

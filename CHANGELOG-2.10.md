@@ -1,5 +1,13 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Contextual comparisons and graded single-market defense
+
+Analyzer rules can compare the magnitude of a reversal to its preceding leg and to volatility observed before the move, and compare leader overlap to the actual incidence of origin leaders, including ties. Historical percentile metrics compare current market or contract data with 24 preceding comparable windows. Buyer and seller pressure can be compared directly. Participation intensity uses the amount of volume expansion or buying imbalance for each contract.
+
+New funding metrics compare regular settlements with each contract’s preceding history using observed payment intervals. A separate signed carry estimate counts payments expected during the next trend horizon at the latest observed regular cadence and rate, then divides by the contract’s pre-move ATR percentage. A missing settlement history, overdue schedule or unavailable range produces an unavailable estimate.
+
+A terminal single-market setting can name its immediately following, independently confirmed fallback for a first encounter with unavailable severity evidence. Previously applied stronger protection survives indeterminate evidence. Configuration validation checks the relationship. Existing configurations can omit all new fields and metrics.
+
 ## November 26, 2026 — Measured market legs, liquid-cohort breadth and independent held-market defense
 
 Analyzer presets can opt into `HeldMarketDefense` with a numeric `HeldMarketDefenseProperty` in PAIRS. Fresh market evidence can raise that property's compiled Global floor to 1 or 2 before single-market settings run. An unavailable rule retains previously acknowledged protection only while the evidence still permits that level. Failed delivery, destination changes and test mode retain the existing acknowledgement boundaries. Decision history records desired and confirmed levels.

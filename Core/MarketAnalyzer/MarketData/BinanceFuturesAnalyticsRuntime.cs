@@ -229,7 +229,8 @@ namespace Core.MarketAnalyzer.MarketData
           && (TakerFlowFeatureEngine.HasAnyMetrics(MarketTrendMetricSelection.Select(
             trend, systemConfiguration.AnalyzerSettings)) ||
             FlowPriceConfirmationEngine.HasAnyMetrics(MarketTrendMetricSelection.Select(
-              trend, systemConfiguration.AnalyzerSettings))))
+              trend, systemConfiguration.AnalyzerSettings)) ||
+            ContextualMarketMetrics.NeedsTaker(MarketTrendMetricSelection.Select(trend, systemConfiguration.AnalyzerSettings))))
         .Select(trend => trend.TrendMinutes).Where(minutes => minutes > 0)
         .Distinct().ToArray();
       int concurrency = String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
@@ -454,8 +455,8 @@ namespace Core.MarketAnalyzer.MarketData
       var trends = (configuration.AnalyzerSettings?.MarketAnalyzer?.MarketTrends
         ?? new List<MarketTrend>()).Where(t => t != null &&
           String.Equals(t.Platform, "Exchange", StringComparison.OrdinalIgnoreCase) &&
-          FuturesFundingFeatureEngine.HasAnyMetrics(MarketTrendMetricSelection.Select(
-            t, configuration.AnalyzerSettings))).ToArray();
+          (FuturesFundingFeatureEngine.HasAnyMetrics(MarketTrendMetricSelection.Select(t, configuration.AnalyzerSettings))
+           || ContextualMarketMetrics.NeedsFunding(MarketTrendMetricSelection.Select(t, configuration.AnalyzerSettings)))).ToArray();
       if (trends.Length == 0) return;
       if (!String.Equals(configuration.GeneralSettings?.Application?.Exchange, "BinanceFutures",
         StringComparison.OrdinalIgnoreCase))
@@ -482,6 +483,8 @@ namespace Core.MarketAnalyzer.MarketData
       foreach (MarketTrend trend in enabled)
       {
         var prior = MarketTrendDeltaSelection.Select(trend, configuration.AnalyzerSettings);
+        foreach (string metric in prior.Where(ContextualMarketMetrics.IsFunding))
+          horizon = Math.Max(horizon, checked(trend.TrendMinutes + ContextualMarketMetrics.FundingHistoryMinutes(trend.TrendMinutes, metric)));
         if (prior.Any(metric => FuturesFundingFeatureEngine.IsMetric(metric) ||
           FuturesFundingFeatureEngine.IsGlobalMetric(metric)))
           horizon = Math.Max(horizon, checked(trend.TrendMinutes * 2));
@@ -495,9 +498,9 @@ namespace Core.MarketAnalyzer.MarketData
           universe, universe.MainMarket, DataServiceInstance.Store, BaseInterval, pin.Value);
         IReadOnlyCollection<string> selected = MarketTrendMetricSelection.Select(
           trend, configuration.AnalyzerSettings);
-        if (FuturesFundingFeatureEngine.HasMetrics(selected))
+        if (FuturesFundingFeatureEngine.HasMetrics(selected) || selected.Any(metric => ContextualMarketMetrics.IsFunding(metric) && !ContextualMarketMetrics.IsGlobalFunding(metric)))
           assets.UnionWith(population.AssetSymbols);
-        if (FuturesFundingFeatureEngine.HasGlobalMetrics(selected))
+        if (FuturesFundingFeatureEngine.HasGlobalMetrics(selected) || selected.Any(ContextualMarketMetrics.IsGlobalFunding))
           assets.UnionWith(population.GlobalSymbols);
       }
 

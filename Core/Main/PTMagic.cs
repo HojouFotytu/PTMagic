@@ -1968,6 +1968,7 @@ namespace Core.Main
           string market = marketPair.Replace(mainMarket, "");
 
           bool stopTriggers = false;
+          string permittedFallback = null;
 
           // Loop through single market settings
           foreach (var marketSettingFilter in marketSettingFilters)
@@ -2146,7 +2147,8 @@ namespace Core.Main
             }
 
             // Do we have triggers 
-            if (marketSetting.Triggers.Count > 0 && !stopTriggers)
+            if (marketSetting.Triggers.Count > 0 && (!stopTriggers ||
+                String.Equals(marketSetting.SettingName, permittedFallback, StringComparison.OrdinalIgnoreCase)))
             {
               #region Checking Triggers
 
@@ -2338,7 +2340,13 @@ namespace Core.Main
                   TrackUnavailableSms(marketPair, marketSetting, "activation");
                   // A possibly true StopProcess policy must also prevent
                   // later SMS activation on this particular market.
-                  if (marketSetting.StopProcessWhenTriggered) stopTriggers = true;
+                  if (marketSetting.StopProcessWhenTriggered)
+                  {
+                    stopTriggers = true;
+                    // Keep an already applied stronger rule on unknown. For a fresh
+                    // candidate allow only its explicitly paired lower tier to qualify.
+                    permittedFallback = smss == null ? marketSetting.IndeterminateFallbackSetting : null;
+                  }
                 }
               }
               catch (Exception ex)
