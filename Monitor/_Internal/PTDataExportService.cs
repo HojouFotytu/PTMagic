@@ -17,13 +17,9 @@ namespace Monitor._Internal
   public sealed class PTDataExportSelection
   {
     public string HistoryRange { get; set; } = "all";
-    public bool ValidHistoryRange => HistoryRange == "all" || HistoryRange == "7d"
-      || HistoryRange == "1m" || HistoryRange == "3m" || HistoryRange == "6m";
-    public DateTime? HistoryStartUtc(DateTime end) => HistoryRange switch
-    {
-      "7d" => end.AddDays(-7), "1m" => end.AddMonths(-1),
-      "3m" => end.AddMonths(-3), "6m" => end.AddMonths(-6), _ => null
-    };
+    public bool ValidHistoryRange => ExportHistoryPeriod.TryFromCode(HistoryRange, DateTime.UtcNow, out _);
+    public DateTime? HistoryStartUtc(DateTime end) =>
+      ExportHistoryPeriod.TryFromCode(HistoryRange, end, out DateTime? start) ? start : null;
     public bool IncludeBuys { get; set; }
     public bool IncludeSales { get; set; }
     public bool IncludeCurrentPositions { get; set; }
