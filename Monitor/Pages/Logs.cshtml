@@ -10,14 +10,32 @@
       <p>Read the Analyzer and Monitor application logs as they are written. Only recent entries are retained in this browser. The viewer does not change application logging or trading settings.</p>
       @if (Model.LogsEnabled)
       {
-        <div class="mb-3">
-          <a id="log-download" class="btn btn-secondary mr-2 mb-1" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=Download" title="Download all available PTMagic and Monitor log files, not just the displayed lines">
-            <i class="fa fa-download"></i> Download Logs ZIP
-          </a>
-          <a id="data-download" class="btn btn-secondary mb-1" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=DownloadData" title="Download the complete PTMagic _data folder, including subfolders">
-            <i class="fa fa-download"></i> Download _data ZIP
-          </a>
-        </div>
+        <form class="mb-3" method="get" action="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs">
+          <input type="hidden" name="handler" value="Download" />
+          <div class="form-row align-items-end">
+            <div class="form-group col-md-2">
+              <label for="log-history-count">Log history period</label>
+              <input id="log-history-count" class="form-control" type="number" name="historyCount" min="1" step="1" value="7" required />
+            </div>
+            <div class="form-group col-md-3">
+              <label for="log-history-unit">Unit</label>
+              <select id="log-history-unit" class="form-control" name="historyUnit">
+                <option value="days" selected>Days</option>
+                <option value="weeks">Weeks</option>
+                <option value="months">Months</option>
+                <option value="all">All available</option>
+              </select>
+            </div>
+            <div class="form-group col-md-7">
+              <button id="log-download" class="btn btn-secondary mr-2 mb-1" type="submit" title="Download PTMagic and Monitor source log files for the selected history period">
+                <i class="fa fa-download"></i> Download Logs ZIP
+              </button>
+              <a id="data-download" class="btn btn-secondary mb-1" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=DownloadData" title="Download the complete PTMagic _data folder, including subfolders">
+                <i class="fa fa-download"></i> Download _data ZIP
+              </a>
+            </div>
+          </div>
+        </form>
       }
       @if (!Model.LogsEnabled)
       {
@@ -83,6 +101,14 @@
 (function () {
   'use strict';
   var root = '@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)';
+  var logHistoryUnit = document.getElementById('log-history-unit');
+  var logHistoryCount = document.getElementById('log-history-count');
+  function updateLogHistoryCount() {
+    logHistoryCount.disabled = logHistoryUnit.value === 'all';
+  }
+  logHistoryUnit.addEventListener('change', updateLogHistoryCount);
+  updateLogHistoryCount();
+
   var source = document.getElementById('log-source');
   var level = document.getElementById('log-level');
   var search = document.getElementById('log-search');
