@@ -72,7 +72,12 @@ namespace Core.MarketAnalyzer.MarketData
         foreach (MarketTrendAnalysisSnapshot analysis in validAnalyses
           .OrderBy(analysis => analysis.MarketTrendName, StringComparer.OrdinalIgnoreCase))
         {
-          monitorSnapshot.Trends[analysis.MarketTrendName] = ToMonitorTrend(analysis);
+          var item = ToMonitorTrend(analysis);
+          if (BinanceFuturesAnalyticsRuntime.CurrentDeltaAnalyses.TryGetValue(analysis.MarketTrendName, out var delta) &&
+              delta.PreviousAsOfUtc == analysis.CalculatedAtUtc.AddMinutes(-analysis.TrendMinutes))
+            item.VolumeDeltas = delta.MarketMetrics.Where(pair => VolumeDistributionCoverage.IsMetric(pair.Key))
+              .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+          monitorSnapshot.Trends[analysis.MarketTrendName] = item;
         }
 
         string snapshotPath = GetSnapshotPath();

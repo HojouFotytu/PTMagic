@@ -77,13 +77,31 @@ namespace Core.MarketAnalyzer.MarketData
       var global = new Dictionary<string, MetricDeltaObservation>(StringComparer.OrdinalIgnoreCase);
       var assets = new Dictionary<string, IReadOnlyDictionary<string, MetricDeltaObservation>>(StringComparer.OrdinalIgnoreCase);
 
+      string[] eligible = current.GlobalSymbols.ToArray();
+      var volumeMetrics = requested.Where(VolumeDistributionCoverage.IsMetric).ToArray();
+      if (volumeMetrics.Length > 0)
+      {
+        var now = VolumeDistributionCoverage.Read(eligible, trend, store, interval, current.CalculatedAtUtc);
+        var prior = VolumeDistributionCoverage.Read(eligible, trend, store, interval, previousAsOfUtc);
+        var matched = new HashSet<string>(eligible.Where(s => VolumeDistributionCoverage.Usable(now[s]) &&
+          VolumeDistributionCoverage.Usable(prior[s])), StringComparer.OrdinalIgnoreCase);
+        var nowReferences = VolumeDistributionCoverage.References(eligible, now, matched, trend, store, interval, current.CalculatedAtUtc);
+        var priorReferences = VolumeDistributionCoverage.References(eligible, prior, matched, trend, store, interval, previousAsOfUtc);
+        string quote = benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase) ? benchmarkSymbol.Substring(3) : "USDT";
+        foreach (string metric in volumeMetrics)
+          global[metric] = Compare(
+            VolumeDistributionCoverage.Calculate(metric, trend, eligible, now, matched, nowReferences, current.CalculatedAtUtc, quote),
+            VolumeDistributionCoverage.Calculate(metric, trend, eligible, prior, matched, priorReferences, previousAsOfUtc, quote),
+            current.CalculatedAtUtc);
+      }
+
       foreach (string metric in requested)
       {
         if (!MarketTrendMetrics.TryGetScope(metric, out MarketTrendMetricScope scope))
           continue;
         if (scope == MarketTrendMetricScope.Global || scope == MarketTrendMetricScope.Both)
         {
-          global[metric] = Compare(
+          if (!VolumeDistributionCoverage.IsMetric(metric)) global[metric] = Compare(
             GetFeature(current, metric, null), GetFeature(previous, metric, null),
             current.CalculatedAtUtc);
         }
@@ -157,6 +175,8 @@ namespace Core.MarketAnalyzer.MarketData
           SampleCount = current?.SampleCount ?? 0,
           EligibleSampleCount = current?.EligibleSampleCount,
           CoveragePercent = current?.CoveragePercent,
+          VolumeCoverage = current?.VolumeCoverage,
+          PreviousVolumeCoverage = previous?.VolumeCoverage,
           InvalidReason = invalid
         }
       };

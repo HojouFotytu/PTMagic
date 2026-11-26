@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## Dev 18 — PTM-VOLUME-COVERAGE-01
+
+VolumeConcentration, TopNVolumeShare, BTCVolumeShare and BTCETHVolumeShare now require 90% valid eligible markets and 90% estimated quote volume. Missing observations use only the immediately preceding verified equal-duration period for coverage estimation; missing history is unavailable. Actual denominator uses verified observations only. Delta recalculates both endpoints on their common valid population, validating economic coverage independently; excluded observed volume uses its actual value in coverage estimation only. BTC/ETH benchmark validity remains mandatory. Retention adds one period to Absolute and Delta requirements. Coverage metadata is exported to Monitor JSON, trigger DecisionHistory and partial Absolute raid INFO. No strategy or FAILSAFE changes. Thresholds are engineering tolerances, not empirically calibrated. Native build, regression execution, runtime and financial validation pending. Monitor visual display and full matched Delta raid reporting require follow-up.
+
+
 ## November 26–27, 2026 — Dev 17 closing checkpoint (source and evidence reconciliation)
 
 Functional branch: `phase1/market-data-foundation`; latest executable/UI source `a89b7b905e38f93664b5bd64a0b0f3f42727f9a5`. Commits: `2d502796` Global/freshness/provisional delivery; `df260227` historical Delta diagnostics and lifecycle tests; `bf6d25d3` startup SOM regression expectation correction; `b3c8bf9f` DecisionHistory large-record support; `a89b7b90` health ticker tooltip and spinning cog. Source-only changes do not establish a successful deployed build.

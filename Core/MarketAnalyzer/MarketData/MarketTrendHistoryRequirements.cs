@@ -159,8 +159,9 @@ namespace Core.MarketAnalyzer.MarketData
           metric == MarketTrendMetrics.BTCVolumeShare || metric == MarketTrendMetrics.BTCETHVolumeShare)
         {
           alignedTrendPeriods = true;
-          minimumSourceCount = trendSourceCount;
-          basis = "One complete UTC trend period of quote volume for every selected global market.";
+          windowPeriods = 2;
+          minimumSourceCount = 2 * trendSourceCount;
+          basis = "One complete UTC quote-volume period plus one immediately preceding comparable period for missing-volume coverage estimation (90% count and economic coverage).";
         }
         else if (ContextualMarketMetrics.IsTaker(metric) || TakerFlowFeatureEngine.IsMetric(metric) ||
           TakerFlowFeatureEngine.IsGlobalMetric(metric))

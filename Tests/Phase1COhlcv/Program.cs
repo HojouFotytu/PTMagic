@@ -28,6 +28,7 @@ internal static class Program
       TestVolumeExpansionBreadthAndCoverage();
       TestVolumeConcentration();
       TestIncompleteVolumePopulation();
+      TestEconomicVolumeCoverage();
       TestRegistryScopesAndSharedIntegration();
       TestTakerFlowAndMissingHistory();
       TestTakerFailureReasonCategories();
@@ -294,9 +295,34 @@ internal static class Program
       trend, MarketTrendMetrics.ParseEnabled(trend), symbols, Array.Empty<string>(),
       store, Interval, Start.AddMinutes(10).AddSeconds(1));
     Invalid(result.GlobalMetrics[MarketTrendMetrics.TopNVolumeShare],
-      "Volume concentration must require 100% eligible quote volumes");
+      "Missing volume without comparable history remains unavailable");
     Invalid(result.GlobalMetrics[MarketTrendMetrics.VolumeConcentration],
-      "HHI must require 100% eligible quote volumes");
+      "HHI without missing-volume estimation history remains unavailable");
+    _passed++;
+  }
+
+  private static void TestEconomicVolumeCoverage()
+  {
+    var store = NewStore();
+    string[] symbols = new[] { "BTCUSDT", "ETHUSDT" }.Concat(
+      Enumerable.Range(0, 8).Select(i => "ALT" + i + "USDT")).ToArray();
+    var trend = new MarketTrend { Name = "Coverage", TrendMinutes = 10, TopNVolumeCount = 3,
+      Metrics = "VolumeConcentration,TopNVolumeShare,BTCVolumeShare,BTCETHVolumeShare" };
+    var metrics = MarketTrendMetrics.ParseEnabled(trend);
+    foreach (string s in symbols.Take(9)) AddBars(store, s, 3);
+    AddBars(store, symbols[9], 2, baseSourceQuote: 1);
+    var at = Start.AddMinutes(30).AddSeconds(1);
+    var current = MarketTrendAnalyticsEngine.Calculate(trend, symbols, Array.Empty<string>(), store, Interval, at, metrics);
+    var hhi = current.MarketMetrics[MarketTrendMetrics.VolumeConcentration];
+    Near(hhi, 100.0 / 9, "Negligible missing volume accepted");
+    Assert(hhi.VolumeCoverage.IsPartial && hhi.SampleCount == 9 && hhi.EligibleSampleCount == 10 &&
+      hhi.VolumeCoverage.ActualQuoteVolumeDenominator == 180, "Partial denominator and counts preserved");
+    var delta = MarketTrendDeltaEngine.Calculate(trend, metrics, current, store, Interval);
+    Near(delta.MarketMetrics[MarketTrendMetrics.VolumeConcentration].Delta, 0, "Matched Delta ignores population-only change");
+    Near(delta.MarketMetrics[MarketTrendMetrics.TopNVolumeShare].Delta, 0, "Matched TopN Delta");
+    AddBars(store, symbols[9], 2, baseSourceQuote: 100);
+    current = MarketTrendAnalyticsEngine.Calculate(trend, symbols, Array.Empty<string>(), store, Interval, at, metrics);
+    Invalid(current.MarketMetrics[MarketTrendMetrics.VolumeConcentration], "Dominant missing asset rejected");
     _passed++;
   }
 

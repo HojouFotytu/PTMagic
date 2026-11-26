@@ -16,6 +16,8 @@ namespace Core.MarketAnalyzer.MarketData
     // Set for cross-sectional metrics; SampleCount is the valid numerator.
     public int? EligibleSampleCount { get; init; }
     public double? CoveragePercent { get; init; }
+    public VolumeCoverageDiagnostics VolumeCoverage { get; init; }
+    public VolumeCoverageDiagnostics PreviousVolumeCoverage { get; init; }
     public bool IsValid { get; init; }
     public bool IsStale { get; init; }
     // A complete, source-verified no-trade interval; no ratio value exists.

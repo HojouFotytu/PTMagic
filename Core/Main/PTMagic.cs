@@ -1222,6 +1222,15 @@ namespace Core.Main
                   this.Log.DoLogInfo(flatPathInfo);
                 foreach (string newMarketInfo in this._raidMetricWarnings.BuildNewMarketInfoLines(newMarketHistory))
                   this.Log.DoLogInfo(newMarketInfo);
+                foreach (var analysis in analyses.Values)
+                  foreach (var metric in analysis.MarketMetrics.Where(m => m.Value?.VolumeCoverage?.IsPartial == true))
+                  {
+                    var coverage = metric.Value.VolumeCoverage;
+                    this.Log.DoLogInfo("+ Volume coverage: " + analysis.MarketTrendName + "/" + metric.Key +
+                      " " + metric.Value.SampleCount + "/" + metric.Value.EligibleSampleCount +
+                      ", economic=" + (coverage.EstimatedVolumeWeightedCoveragePercent?.ToString("0.##") ?? "unknown") +
+                      "%, valid=" + metric.Value.IsValid + ", excluded=" + String.Join(",", coverage.ExcludedAssets));
+                  }
                 if (warnings.Count > 0)
                 {
                   foreach (string warning in warnings)
@@ -3171,10 +3180,19 @@ namespace Core.Main
       string name = MarketTrendMetrics.Normalize(metric);
       BinanceFuturesAnalyticsRuntime.TryGetMetric(trend?.Name, name, symbol, out FeatureValueSnapshot feature);
       DateTimeOffset? previousSourceTime = null;
+      double? currentMatchedValue = null, previousMatchedValue = null;
       if (MarketTrendDeltaSelection.IsDelta(relation) &&
           BinanceFuturesAnalyticsRuntime.TryGetDelta(trend?.Name, name, symbol,
             out MetricDeltaObservation comparison))
+      {
         previousSourceTime = comparison?.PreviousSourceDataTimestampUtc;
+        feature = comparison?.Delta;
+        if (VolumeDistributionCoverage.IsMetric(name))
+        {
+          currentMatchedValue = comparison?.Current?.Value;
+          previousMatchedValue = comparison?.Previous?.Value;
+        }
+      }
       string key = scope + "|" + settingName + "|" + triggerId + "|" + (trend?.Name ?? "")
         + "|" + name + "|" + (symbol ?? "") + "|" + (relation ?? "");
       _decisionInputs[key] = new DecisionMetricInput
@@ -3185,7 +3203,11 @@ namespace Core.Main
         Available = value.HasValue && double.IsFinite(value.Value), Reason = reason ?? "",
         SourceDataTimestampUtc = feature?.SourceDataTimestampUtc,
         PreviousSourceDataTimestampUtc = previousSourceTime,
-        CoveragePercent = feature?.CoveragePercent
+        CoveragePercent = feature?.CoveragePercent,
+        VolumeCoverage = feature?.VolumeCoverage,
+        PreviousVolumeCoverage = feature?.PreviousVolumeCoverage,
+        CurrentMatchedValue = currentMatchedValue,
+        PreviousMatchedValue = previousMatchedValue
       };
     }
 

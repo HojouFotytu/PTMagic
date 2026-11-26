@@ -24,6 +24,7 @@ namespace Core.MarketAnalyzer.MarketData
     public Dictionary<string, int> AssetInvalidReturnReasons { get; set; } = new Dictionary<string, int>();
     public List<string> GlobalSymbols { get; set; } = new List<string>();
     public List<string> AssetSymbols { get; set; } = new List<string>();
+    public Dictionary<string, MetricDeltaObservation> VolumeDeltas { get; set; } = new Dictionary<string, MetricDeltaObservation>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, FeatureValueSnapshot> MarketMetrics { get; set; } =
       new Dictionary<string, FeatureValueSnapshot>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, Dictionary<string, FeatureValueSnapshot>> AssetMetrics { get; set; } =

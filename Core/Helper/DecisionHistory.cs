@@ -53,6 +53,10 @@ namespace Core.Helper
     // Set for Delta relation to audit both independent observation endpoints.
     public DateTimeOffset? PreviousSourceDataTimestampUtc { get; set; }
     public double? CoveragePercent { get; set; }
+    public Core.MarketAnalyzer.MarketData.VolumeCoverageDiagnostics VolumeCoverage { get; set; }
+    public Core.MarketAnalyzer.MarketData.VolumeCoverageDiagnostics PreviousVolumeCoverage { get; set; }
+    public double? CurrentMatchedValue { get; set; }
+    public double? PreviousMatchedValue { get; set; }
   }
 
   public sealed class DecisionTrendUniverse

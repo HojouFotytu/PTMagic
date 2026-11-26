@@ -135,73 +135,12 @@ namespace Core.MarketAnalyzer.MarketData
 
       if (globalVolume)
       {
-        List<KeyValuePair<string, FeatureValueSnapshot>> validVolumes = new List<KeyValuePair<string, FeatureValueSnapshot>>();
-        foreach (string symbol in global)
-        {
-          FeatureValueSnapshot volume = features[symbol].LastQuoteVolume;
-          if (IsUsable(volume))
-          {
-            validVolumes.Add(new KeyValuePair<string, FeatureValueSnapshot>(symbol, volume));
-          }
-        }
-        // Volume share calculations require complete eligible observations:
-        // otherwise missing volume can artificially inflate measured shares.
-        bool complete = MarketMetricCoverage.IsReady(validVolumes.Count, global.Length, requireComplete: true);
-        double total = validVolumes.Sum(pair => pair.Value.Value.Value);
-        bool usableTotal = complete && total > 0 && double.IsFinite(total);
-        DateTimeOffset? sourceTime = Oldest(validVolumes.Select(pair => pair.Value));
-        FeatureValueSnapshot volumeFailure = Invalid(asOfUtc, validVolumes.Count,
-          complete ? "Total complete-period quote volume is zero or invalid."
-          : "Complete eligible market quote-volume population is required (" +
-            validVolumes.Count + "/" + global.Length + ").");
-
-        if (volumeHHI)
-        {
-          double hhi = usableTotal
-            ? validVolumes.Sum(pair => Math.Pow(pair.Value.Value.Value / total, 2.0)) * 100.0
-            : double.NaN;
-          marketResults[MarketTrendMetrics.VolumeConcentration] = UsableOrInvalid(
-            hhi, volumeFailure, asOfUtc, sourceTime, validVolumes.Count);
-        }
-        if (topShare)
-        {
-          int n = trend.TopNVolumeCount;
-          double share = usableTotal && n > 0 && n <= validVolumes.Count
-            ? validVolumes.OrderByDescending(pair => pair.Value.Value.Value)
-              .ThenBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-              .Take(n).Sum(pair => pair.Value.Value.Value) / total * 100.0
-            : double.NaN;
-          marketResults[MarketTrendMetrics.TopNVolumeShare] =
-            n < 1 || n > 1000 ? Invalid(asOfUtc, validVolumes.Count, "TopNVolumeCount must be between 1 and 1000.")
-            : usableTotal && n > validVolumes.Count ? Invalid(asOfUtc, validVolumes.Count, "Fewer markets than TopNVolumeCount.")
-            : UsableOrInvalid(share, volumeFailure, asOfUtc, sourceTime, validVolumes.Count);
-        }
-        if (btcShare)
-        {
-          marketResults[MarketTrendMetrics.BTCVolumeShare] = ShareForSymbols(
-            validVolumes, "BTC" + mainMarket, null, usableTotal, total, volumeFailure, asOfUtc, sourceTime);
-        }
-        if (btcEthShare)
-        {
-          marketResults[MarketTrendMetrics.BTCETHVolumeShare] = ShareForSymbols(
-            validVolumes, "BTC" + mainMarket, "ETH" + mainMarket, usableTotal, total, volumeFailure, asOfUtc, sourceTime);
-        }
-        // Preserve the exact eligible denominator and coverage metadata for
-        // every concentration/share result, with a strict 100% requirement.
-        foreach (string metric in new[]
-        {
-          MarketTrendMetrics.VolumeConcentration,
-          MarketTrendMetrics.TopNVolumeShare,
-          MarketTrendMetrics.BTCVolumeShare,
-          MarketTrendMetrics.BTCETHVolumeShare
-        })
-        {
-          if (marketResults.TryGetValue(metric, out FeatureValueSnapshot measurement))
-          {
-            marketResults[metric] = MarketMetricCoverage.Apply(
-              measurement, validVolumes.Count, global.Length, asOfUtc, requireComplete: true);
-          }
-        }
+        var observed = global.ToDictionary(s => s, s => features[s].LastQuoteVolume, StringComparer.OrdinalIgnoreCase);
+        var selected = new HashSet<string>(global.Where(s => VolumeDistributionCoverage.Usable(observed[s])), StringComparer.OrdinalIgnoreCase);
+        var references = VolumeDistributionCoverage.References(global, observed, selected, trend, store, interval, asOfUtc);
+        foreach (string metric in active.Where(VolumeDistributionCoverage.IsMetric))
+          marketResults[metric] = VolumeDistributionCoverage.Calculate(metric, trend, global,
+            observed, selected, references, asOfUtc, mainMarket);
       }
 
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetResults =
