@@ -92,6 +92,8 @@ namespace Core.Main
     private ConfigurationDeliveryResult _startupGuardDelivery = ConfigurationDeliveryResult.Deferred("No startup global SOM command attempted.");
     private string _startupGuardStatus = "Inactive";
     private bool _selectionIndeterminate;
+    private bool _missingGlobalData;
+    private bool _provisionalDecision;
     // A single unavailable asset-SMS condition cannot make a conclusive
     // market-wide setting unknown. Protect its own market instead.
     private readonly Dictionary<string, HashSet<string>> _smsUnavailableMarkets =
@@ -948,6 +950,8 @@ namespace Core.Main
             _raidAnalysisBuilt = false;
             _normalDecisionCommittedThisRaid = false;
             _selectionIndeterminate = false;
+            _missingGlobalData = false;
+            _provisionalDecision = false;
             _smsUnavailableMarkets.Clear();
             _decisionFresh = false;
             _decisionInputs.Clear();
@@ -1614,9 +1618,11 @@ namespace Core.Main
         this.Log.DoLogInfo("Checking global settings triggers...");
         bool unavailableNormalizedTriggerFound = false;
         bool foundMatchingSetting = false;
+        var candidates = new List<IncompleteGlobalCandidate>();
 
         foreach (GlobalSetting globalSetting in this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings)
         {
+            if (IncompleteGlobalPolicy.IsFailSafe(globalSetting.SettingName)) continue;
             // Reset triggers for each setting
             matchedTriggers = new List<string>();
 
@@ -1749,6 +1755,11 @@ namespace Core.Main
                     return;
                 }
 
+                candidates.Add(new IncompleteGlobalCandidate
+                {
+                    SettingName = globalSetting.SettingName, Result = settingResult,
+                    KnownMatches = orderedTriggerResults.Count(value => value == TriggerTruthValue.True)
+                });
                 if (settingResult == Core.MarketAnalyzer.MarketData.TriggerTruthValue.True)
                 {
                     triggeredSetting = globalSetting;
@@ -1766,28 +1777,21 @@ namespace Core.Main
             }
         }
 
-        // A missing normalized measurement is not evidence that the active
-        // regime ended. Hold the existing setting when no fully evaluated
-        // setting matched, instead of falling back to default by accident.
+        _missingGlobalData = unavailableNormalizedTriggerFound;
         if (!foundMatchingSetting && unavailableNormalizedTriggerFound)
         {
             _selectionIndeterminate = true;
+            string chosen = IncompleteGlobalPolicy.SelectBestAvailable(candidates,
+              this.ActiveSettingName, this.DefaultSettingName);
+            triggeredSetting = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
+              .Find(setting => String.Equals(setting.SettingName, chosen, StringComparison.OrdinalIgnoreCase))
+              ?? triggeredSetting;
+            matchedTriggers = new List<string>();
             _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
             _selectedGlobalTriggerConnection = "";
-            _selectedGlobalSelectionBasis = "Retained: regime selection indeterminate (unavailable metrics)";
-            GlobalSetting active = this.PTMagicConfiguration.AnalyzerSettings.GlobalSettings
-              .Find(setting => setting.SettingName.Equals(this.ActiveSettingName, StringComparison.OrdinalIgnoreCase))
-              ?? this.ActiveSetting;
-            if (active != null)
-            {
-                triggeredSetting = active;
-                matchedTriggers = new List<string>();
-                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate; retained '" + active.SettingName + "'.");
-            }
-            else
-            {
-                this._raidMetricWarnings.ReportGlobalDecision("selection indeterminate; no prior setting is known, so delivery is deferred.");
-            }
+            _selectedGlobalSelectionBasis = "Best available evidence; incomplete metrics";
+            this._raidMetricWarnings.ReportGlobalDecision(
+              "incomplete global evidence; provisional selection '" + triggeredSetting.SettingName + "'.");
         }
     }
 
