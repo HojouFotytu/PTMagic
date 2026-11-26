@@ -31,6 +31,7 @@ internal static class Program
       TestPlainLanguageGroupedCallers();
       TestVerifiedNoTradesWarnSuppression();
       TestVerifiedFlatPricePathInfoAndCompleteDebug();
+      TestHistoricalFlatPath();
       TestMixedFlatPathAndSourceFaultRemainWarnings();
       TestVerifiedNewMarketHistoryClassification();
       TestNewMarketWarningsAndNoticeLifecycle();
@@ -569,6 +570,38 @@ internal static class Program
     Expect(warnings.BuildLines(null!).Count == 0 &&
       warnings.BuildFlatPathInfoLines().Count == 0,
       "A new raid cannot inherit old flat-path reporting.");
+    _passed++;
+  }
+
+  private static void TestHistoricalFlatPath()
+  {
+    var warnings = new RaidMetricWarnings();
+    const string metric = MarketTrendMetrics.PricePathEfficiency;
+    var current = Valid(0.4);
+    var prior = Invalid(PricePathEfficiencyEngine.FlatPathUnavailableReason);
+    var observation = MarketTrendDeltaEngine.Compare(current, prior, Raid);
+    var analysis = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = "H1", EnabledMetrics = new[] { metric },
+      AssetSymbols = new[] { "SNPSUSDT" },
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      { ["SNPSUSDT"] = new Dictionary<string, FeatureValueSnapshot> { [metric] = current } }
+    };
+    var deltas = new Dictionary<string, MarketTrendDeltaAnalysisSnapshot>
+    {
+      ["H1"] = new MarketTrendDeltaAnalysisSnapshot
+      {
+        MarketTrendName = "H1",
+        AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, MetricDeltaObservation>>
+        { ["SNPSUSDT"] = new Dictionary<string, MetricDeltaObservation> { [metric] = observation } }
+      }
+    };
+    warnings.ReportUnavailable("H1", metric, "Delta unavailable: " + observation.Delta.InvalidReason,
+      "SMS activation", "SMS", "SNPSUSDT", "Delta", "A");
+    Expect(warnings.BuildLines(Analyses(analysis), deltas: deltas).Count == 0,
+      "Verified historical flat paths alone must be informational.");
+    Expect(warnings.BuildFlatPathInfoLines(deltas).Count == 1, "Historical flat path INFO missing.");
+    Expect(warnings.BuildLines(Analyses(analysis)).Count > 0, "Missing Delta evidence must remain WARN.");
     _passed++;
   }
 

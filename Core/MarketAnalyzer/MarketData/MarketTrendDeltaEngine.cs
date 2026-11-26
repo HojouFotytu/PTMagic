@@ -17,6 +17,7 @@ namespace Core.MarketAnalyzer.MarketData
   {
     public string MarketTrendName { get; init; } = "";
     public DateTimeOffset PreviousAsOfUtc { get; init; }
+    internal MarketTrendAnalysisSnapshot PreviousAnalysis { get; init; }
     public IReadOnlyDictionary<string, MetricDeltaObservation> MarketMetrics { get; init; } =
       new Dictionary<string, MetricDeltaObservation>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, MetricDeltaObservation>> AssetMetrics { get; init; } =
@@ -107,6 +108,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         MarketTrendName = trend.Name,
         PreviousAsOfUtc = previousAsOfUtc,
+        PreviousAnalysis = previous,
         MarketMetrics = new ReadOnlyDictionary<string, MetricDeltaObservation>(global),
         AssetMetrics = new ReadOnlyDictionary<string, IReadOnlyDictionary<string, MetricDeltaObservation>>(assets)
       };

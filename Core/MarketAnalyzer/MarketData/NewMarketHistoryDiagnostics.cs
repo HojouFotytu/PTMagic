@@ -19,17 +19,22 @@ namespace Core.MarketAnalyzer.MarketData
     private readonly Dictionary<string, DateTimeOffset> _onboard =
       new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
 
+    private readonly HashSet<string> _deltaUnavailable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     public int MarketCount => _unavailable.Count;
 
     public IReadOnlyDictionary<string, IReadOnlyCollection<string>> Affected =>
       new ReadOnlyDictionary<string, IReadOnlyCollection<string>>(
         _unavailable.ToDictionary(pair => pair.Key,
-          pair => (IReadOnlyCollection<string>)Array.AsReadOnly(pair.Value.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray()),
+          pair => (IReadOnlyCollection<string>)Array.AsReadOnly(pair.Value.Select(x => x.EndsWith("|Delta", StringComparison.OrdinalIgnoreCase) ? x.Substring(0, x.Length - 6) : x).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray()),
           StringComparer.OrdinalIgnoreCase));
 
     public bool IsExpected(string symbol, string trend, string metric) =>
       !String.IsNullOrWhiteSpace(symbol) && _unavailable.TryGetValue(symbol, out var keys) &&
       keys.Contains(Key(trend, metric));
+
+    public bool IsExpectedDelta(string symbol, string trend, string metric) =>
+      _deltaUnavailable.Contains(symbol + "|" + Key(trend, metric));
 
     public DateTimeOffset? OnboardDate(string symbol) =>
       _onboard.TryGetValue(symbol, out var time) ? time : (DateTimeOffset?)null;
@@ -51,7 +56,8 @@ namespace Core.MarketAnalyzer.MarketData
     public static NewMarketHistoryClassification Analyze(
       IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> analyses,
       MarketDataStore store, Func<string, DateTimeOffset?> onboardDate,
-      TimeSpan? sourceInterval = null)
+      TimeSpan? sourceInterval = null,
+      IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> deltas = null)
     {
       var output = new NewMarketHistoryClassification();
       if (analyses == null || store == null || onboardDate == null) return output;
@@ -69,8 +75,14 @@ namespace Core.MarketAnalyzer.MarketData
           continue;
         foreach (string symbol in analysis.AssetSymbols.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-          if (!analysis.AssetMetrics.TryGetValue(symbol, out var values) || values == null ||
-              !values.Values.Any(v => v != null && !v.IsValid && !v.IsStale && !v.IsNoTrades))
+          if (!analysis.AssetMetrics.TryGetValue(symbol, out var values) || values == null)
+            continue;
+          MarketTrendDeltaAnalysisSnapshot delta = null;
+          deltas?.TryGetValue(analysis.MarketTrendName, out delta);
+          IReadOnlyDictionary<string, MetricDeltaObservation> comparisons = null;
+          delta?.AssetMetrics.TryGetValue(symbol, out comparisons);
+          if (!values.Values.Any(v => v != null && !v.IsValid && !v.IsStale && !v.IsNoTrades) &&
+              !(comparisons?.Values.Any(v => v?.Delta != null && !v.Delta.IsValid && !v.Delta.IsStale) ?? false))
             continue;
           DateTimeOffset? listed = onboardDate(symbol);
           if (!listed.HasValue || listed.Value <= DateTimeOffset.UnixEpoch ||
@@ -95,6 +107,30 @@ namespace Core.MarketAnalyzer.MarketData
             if (IsPrelistingShortage(analysis, values, pair.Key, feature.InvalidReason,
                 listed.Value, interval))
               output.Add(symbol, analysis.MarketTrendName, pair.Key, listed.Value);
+          }
+          // Verify the historical measurement using its own calculation window
+          // and benchmark. The CURRENT source series must still be continuous
+          // from the exchange listing through the raid's latest closed candle.
+          var previous = delta?.PreviousAnalysis;
+          if (previous == null || comparisons == null ||
+              !previous.AssetMetrics.TryGetValue(symbol, out var priorValues)) continue;
+          foreach (var comparison in comparisons)
+          {
+            var observation = comparison.Value;
+            if (observation?.Delta == null || observation.Delta.IsValid || observation.Delta.IsStale ||
+                observation.Current == null || observation.Previous == null) continue;
+            bool currentExpected = output.IsExpected(symbol, analysis.MarketTrendName, comparison.Key);
+            bool priorExpected = !observation.Previous.IsValid && !observation.Previous.IsStale &&
+              !observation.Previous.IsNoTrades &&
+              IsPrelistingShortage(previous, priorValues, comparison.Key,
+                observation.Previous.InvalidReason, listed.Value, interval);
+            if ((observation.Current.IsValid || currentExpected) &&
+                (observation.Previous.IsValid || priorExpected) && (currentExpected || priorExpected))
+            {
+              output._deltaUnavailable.Add(symbol + "|" + Key(analysis.MarketTrendName, comparison.Key));
+              // Distinct key prevents historical-only absence masking a current failure.
+              output.Add(symbol, analysis.MarketTrendName, comparison.Key + "|Delta", listed.Value);
+            }
           }
         }
       }
@@ -130,7 +166,13 @@ namespace Core.MarketAnalyzer.MarketData
         historyReason = reason.StartsWith("Insufficient complete ", StringComparison.OrdinalIgnoreCase)
           && reason.Contains(" for VolumeExpansion(", StringComparison.OrdinalIgnoreCase);
       else if (name == MarketTrendMetrics.PriceTrend)
-        historyReason = reason.StartsWith("No exact closed-candle reference exists ", StringComparison.OrdinalIgnoreCase);
+        historyReason = reason.StartsWith("No exact closed-candle reference exists ", StringComparison.OrdinalIgnoreCase) ||
+          (analysis.ExpectedClosedCandleTimeUtc < listed &&
+           reason.Equals("No closed candle data is available.", StringComparison.OrdinalIgnoreCase));
+      else if (name == MarketTrendMetrics.PricePathEfficiency)
+        historyReason = reason.Equals("Missing initial or subsequent closed-candle price-path history.", StringComparison.OrdinalIgnoreCase) ||
+          (analysis.ExpectedClosedCandleTimeUtc < listed &&
+           reason.Equals("No compatible closed normalized source candles are available.", StringComparison.OrdinalIgnoreCase));
       else if (name == MarketTrendMetrics.CorrelationToBTC)
       {
         Match missing = Regex.Match(reason,

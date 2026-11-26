@@ -30,6 +30,7 @@ namespace Core.MarketAnalyzer.MarketData
     {
       public string Market;
       public string Reason;
+      public string Relation;
     }
 
     private sealed class AssetFailure
@@ -90,7 +91,7 @@ namespace Core.MarketAnalyzer.MarketData
       issue.FailedRequests++;
       string cleaned = Clean(reason);
       issue.ReportedCauses.Add(new ReportedCause
-        { Market = marketSymbol?.Trim() ?? "", Reason = cleaned });
+        { Market = marketSymbol?.Trim() ?? "", Reason = cleaned, Relation = relation?.Trim() ?? "" });
       if (!issue.FailureReasons.Contains(cleaned, StringComparer.OrdinalIgnoreCase)
         && issue.FailureReasons.Count < MaxAssetReasonExamples)
       {
@@ -136,7 +137,8 @@ namespace Core.MarketAnalyzer.MarketData
     }
 
     public IReadOnlyList<string> BuildLines(IReadOnlyDictionary<string, MarketTrendAnalysisSnapshot> analyses,
-      NewMarketHistoryClassification newMarkets = null)
+      NewMarketHistoryClassification newMarkets = null,
+      IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> deltas = null)
     {
       foreach (Issue issue in _issues.Values)
       {
@@ -238,12 +240,14 @@ namespace Core.MarketAnalyzer.MarketData
       // EVERY reported caller is a verified, market-specific pre-listing gap.
       // Global and mixed causes stay WARN, as do unknown/indeterminate decisions.
       Issue[] reportable = _issues.Values.Where(issue =>
-        !IsVerifiedFlatPath(issue) &&
+        !IsVerifiedFlatPath(issue) && !IsVerifiedHistoricalFlatPath(issue, deltas) &&
         !(newMarkets != null && issue.UnavailableAssets == 0 &&
-          issue.GlobalFeature == null && !issue.UnknownMetric &&
+          issue.GlobalFeature == null && !issue.UnknownMetric && !issue.HasNonSmsCaller &&
           issue.FailedRequests > 0 && issue.ReportedCauses.Count == issue.FailedRequests &&
           issue.ReportedCauses.All(cause => !String.IsNullOrWhiteSpace(cause.Market) &&
-            newMarkets.IsExpected(cause.Market, issue.Trend, issue.Metric) &&
+            (MarketTrendDeltaSelection.IsDelta(cause.Relation)
+              ? newMarkets.IsExpectedDelta(cause.Market, issue.Trend, issue.Metric)
+              : newMarkets.IsExpected(cause.Market, issue.Trend, issue.Metric)) &&
             IsExpectedHistoryReport(cause.Reason))))
         .OrderBy(i => i.Trend, StringComparer.OrdinalIgnoreCase)
         .ThenBy(i => i.Metric, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -289,16 +293,38 @@ namespace Core.MarketAnalyzer.MarketData
       return true;
     }
 
+    private static bool IsVerifiedHistoricalFlatPath(Issue issue,
+      IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> deltas)
+    {
+      if (issue.UnknownMetric || issue.GlobalFeature != null || issue.HasNonSmsCaller ||
+          issue.UnavailableAssets != 0 || issue.FailedRequests == 0 ||
+          !String.Equals(issue.Metric, MarketTrendMetrics.PricePathEfficiency, StringComparison.OrdinalIgnoreCase) ||
+          deltas == null || !deltas.TryGetValue(issue.Trend, out var delta))
+        return false;
+      return issue.ReportedCauses.All(cause =>
+        MarketTrendDeltaSelection.IsDelta(cause.Relation) &&
+        !String.IsNullOrWhiteSpace(cause.Market) &&
+        Contains(cause.Reason, PricePathEfficiencyEngine.FlatPathUnavailableReason) &&
+        delta.TryGet(issue.Metric, cause.Market, out var observation) &&
+        observation?.Delta != null && !observation.Delta.IsValid && !observation.Delta.IsStale &&
+        IsUsable(observation.Current) && observation.Previous != null &&
+        !observation.Previous.IsValid && !observation.Previous.IsStale &&
+        String.Equals(observation.Previous.InvalidReason, PricePathEfficiencyEngine.FlatPathUnavailableReason,
+          StringComparison.OrdinalIgnoreCase));
+    }
+
     // Call after BuildLines(analyses), which joins exact runtime snapshots
     // with recorded trigger requests. This changes only log classification.
-    public IReadOnlyList<string> BuildFlatPathInfoLines()
+    public IReadOnlyList<string> BuildFlatPathInfoLines(
+      IReadOnlyDictionary<string, MarketTrendDeltaAnalysisSnapshot> deltas = null)
     {
       return _issues.Values
-        .Where(IsVerifiedFlatPath)
+        .Where(issue => IsVerifiedFlatPath(issue) || IsVerifiedHistoricalFlatPath(issue, deltas))
         .OrderBy(issue => issue.Trend, StringComparer.OrdinalIgnoreCase)
         .ThenBy(issue => issue.Metric, StringComparer.OrdinalIgnoreCase)
         .Select(issue => "+ " + issue.Trend + " " + issue.Metric + ": " +
-          issue.UnavailableAssets + "/" + issue.EligibleAssets +
+          (issue.UnavailableAssets > 0 ? issue.UnavailableAssets + "/" + issue.EligibleAssets
+            : issue.Markets.Count + " historical") +
           " unavailable (flat price paths" +
           (issue.FailedRequests > 0 ? "; " + issue.FailedRequests + " SMS trigger evaluations" : "") + ").")
         .ToArray();

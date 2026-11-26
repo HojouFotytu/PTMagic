@@ -286,6 +286,16 @@ internal static class Program
           trigger.MinChange = 10.0; trigger.MaxChange = 20.0;
           Require(Evaluate().SettingName == "Default" &&
             Get<bool>(fixture.Bot, "_selectionIndeterminate"));
+          fixture.Configuration.AnalyzerSettings.GlobalSettings.Add(new GlobalSetting
+          {
+            SettingName = "Definite", TriggerConnection = "AND",
+            Triggers = new List<Trigger> { new Trigger { Tag = "A", MarketTrendName = "H1",
+              Metric = "Breadth", MarketTrendRelation = Constants.MarketTrendRelationAbsolute,
+              MinChange = 50, MaxChange = 60 } }
+          });
+          Require(Evaluate().SettingName == "Definite" &&
+            !Get<bool>(fixture.Bot, "_selectionIndeterminate") &&
+            !Get<bool>(fixture.Bot, "_missingGlobalData"));
         }
         finally
         {
@@ -871,6 +881,43 @@ internal static class Program
         Require(fixture.Sent.Last().SettingName == "Default"
           && !fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData
           && !fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteData);
+      });
+      Check("fresh in-flight raid recovers from prior watchdog generation", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Configuration.AnalyzerSettings.GlobalSettings.Insert(0, new GlobalSetting
+        {
+          SettingName = "FAILSAFE",
+          PairsProperties = new Dictionary<string, object> { ["DEFAULT_sell_only_mode_enabled"] = true }
+        });
+        fixture.BeforeRaid();
+        Set(fixture.Bot, "_lastFreshAnalysisUtc", DateTimeOffset.UtcNow.AddHours(-1));
+        Call(fixture.Bot, "WatchdogTick", false);
+        Require(fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData);
+        Require(Get<long>(fixture.Bot, "_raidWatchdogGeneration") != Get<long>(fixture.Bot, "_watchdogGeneration"));
+        SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow);
+        object[] args = { fixture.Configuration.AnalyzerSettings.GlobalSettings.Single(s => s.SettingName == "Default"), new List<string>() };
+        Call(fixture.Bot, "ActivateSetting", args);
+        fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
+        fixture.RecentVolume(100);
+        Call(fixture.Bot, "ApplySingleMarketSettings");
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Last().SettingName == "Default" &&
+          !fixture.Sent.Last().IncompleteData && !fixture.Sent.Last().SmsSuppressed &&
+          fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT"));
+      });
+      Check("fresh provisional Global without FAILSAFE retains valid SMS and reason", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Bot.MarketList = new List<string> { "BTCUSDT" };
+        fixture.RecentVolume(100);
+        Call(fixture.Bot, "ApplySingleMarketSettings");
+        Set(fixture.Bot, "_selectionIndeterminate", true);
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Last().IncompleteData && !fixture.Sent.Last().SmsSuppressed &&
+          fixture.Bot.TriggeredSingleMarketSettings.ContainsKey("BTCUSDT") &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.SmsSuppressed == false &&
+          fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteDataReason.Contains("No ordinary Global expression"));
       });
       Check("watchdog without FAILSAFE records incomplete best-known Global without inventing a new setting", () =>
       {

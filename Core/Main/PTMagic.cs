@@ -1211,12 +1211,14 @@ namespace Core.Main
                     "BinanceFutures", StringComparison.OrdinalIgnoreCase)
                     ? Core.MarketAnalyzer.MarketData.NewMarketHistoryClassification.Analyze(
                         analyses, Core.MarketAnalyzer.MarketData.BinanceFuturesAnalyticsRuntime.DataService.Store,
-                        Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc)
+                        Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc,
+                        deltas: BinanceFuturesAnalyticsRuntime.CurrentDeltaAnalyses)
                     : null;
-                IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses, newMarketHistory);
+                IReadOnlyList<string> warnings = this._raidMetricWarnings.BuildLines(analyses, newMarketHistory,
+                  BinanceFuturesAnalyticsRuntime.CurrentDeltaAnalyses);
                 // Caller details were logged while SMS conditions were evaluated.
                 // The RAID SUMMARY contains only the short INFO aggregate.
-                foreach (string flatPathInfo in this._raidMetricWarnings.BuildFlatPathInfoLines())
+                foreach (string flatPathInfo in this._raidMetricWarnings.BuildFlatPathInfoLines(BinanceFuturesAnalyticsRuntime.CurrentDeltaAnalyses))
                   this.Log.DoLogInfo(flatPathInfo);
                 foreach (string newMarketInfo in this._raidMetricWarnings.BuildNewMarketInfoLines(newMarketHistory))
                   this.Log.DoLogInfo(newMarketInfo);
