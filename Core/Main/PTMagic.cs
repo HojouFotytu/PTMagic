@@ -93,6 +93,7 @@ namespace Core.Main
     private string _startupGuardStatus = "Inactive";
     private bool _selectionIndeterminate;
     private bool _missingGlobalData;
+    private string _lastBestAvailableGlobalName = "";
     private bool _provisionalDecision;
     // A single unavailable asset-SMS condition cannot make a conclusive
     // market-wide setting unknown. Protect its own market instead.
@@ -1825,6 +1826,7 @@ namespace Core.Main
             this._raidMetricWarnings.ReportGlobalDecision(
               "incomplete global evidence; provisional selection '" + triggeredSetting.SettingName + "'.");
         }
+        _lastBestAvailableGlobalName = triggeredSetting?.SettingName ?? "";
     }
 
     private void ActivateSetting(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
@@ -2945,7 +2947,9 @@ namespace Core.Main
           GlobalSetting target = FindFailSafe();
           if (target == null)
           {
-            string bestName = _configurationDelivery.Confirmed.AppliedSettingName;
+            string bestName = _lastBestAvailableGlobalName;
+            if (String.IsNullOrWhiteSpace(bestName))
+              bestName = _configurationDelivery.Confirmed.AppliedSettingName;
             if (String.IsNullOrWhiteSpace(bestName))
               bestName = this.ActiveSettingName;
             target = settings.GlobalSettings.Find(setting =>
@@ -2959,7 +2963,7 @@ namespace Core.Main
           {
             PTMagicConfiguration = this.PTMagicConfiguration,
             DefaultSettingName = this.DefaultSettingName,
-            LastRuntimeSummary = new Summary { MainMarket = this.LastRuntimeSummary?.MainMarket ?? "USDT" },
+            LastRuntimeSummary = new Summary { MainMarket = this.LastRuntimeSummary?.MainMarket ?? "" },
             ActiveSetting = target, ActiveSettingName = target.SettingName
           };
           SettingsHandler.CompileProperties(detached, target, DateTime.Now);
@@ -2973,6 +2977,9 @@ namespace Core.Main
                 candidate.Indicators.ToList(), this.PTMagicConfiguration, this.Log,
                 canSend: () => true), false);
           _raidDelivery = result;
+          _desiredGlobalSettingName = target.SettingName;
+          _desiredSms = Array.Empty<string>();
+          _desiredPayloadHash = payload.PayloadHash;
           if (result.Succeeded)
           {
             this.ActiveSetting = target;
