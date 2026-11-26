@@ -34,6 +34,13 @@
           </div>
         </div>
 
+        <div class="form-group row">
+          <label class="col-md-4 col-form-label" for="GlobalSettingDescription_@(Model.SettingName)">Description <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="Optional explanation shown when hovering over the Global Setting information icon in the Monitor ticker."></i></label>
+          <div class="col-md-8">
+            <textarea id="GlobalSettingDescription_@(Model.SettingName)" class="form-control" rows="2" name="MarketAnalyzer_GlobalSetting_@(Model.SettingName)|Description">@Model.GlobalSetting.Description</textarea>
+          </div>
+        </div>
+
         @if (!Model.IsDefaultSetting) {
           <div class="form-group row">
             <label class="col-md-4 col-form-label">Trigger Connection <i class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" title="AND / OR, or a Boolean expression using the trigger Tags (for example A &amp;&amp; !B)"></i></label>
