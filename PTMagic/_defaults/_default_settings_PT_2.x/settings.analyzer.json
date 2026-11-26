@@ -248,6 +248,29 @@
         }
       },
 	  // -----------------------------
+      // FAILSAFE is an OPTIONAL operational policy, not a normal market regime.
+      // PTMagic recognizes the exact SettingName "FAILSAFE" (case-insensitive) and
+      // ignores its Triggers. An incomplete, stale, inconclusive or failed raid
+      // selects FAILSAFE immediately; it does not wait for the current raid to finish.
+      // A successful, current analysis resumes ordinary Global selection only after
+      // PT acknowledges the replacement configuration.
+      // This example adds ONLY DEFAULT_sell_only_mode_enabled=true: block new PT
+      // buys while preserving existing native sell/stop configuration from DEFAULT.
+      // There are NO SMS overlays in FAILSAFE. Existing PT-native/exchange stop
+      // orders are not canceled; this setting does not guarantee resetting already
+      // armed trailing buys or automatically tightening existing structural stops.
+      // Operators may remove the entire FAILSAFE Global to opt out: PTMagic then
+      // chooses the best available ordinary Global from incomplete observations
+      // and labels that delivery "(Incomplete Data)".
+      // This is NOT ProfitTrailer's separate global startup SOM API switch.
+      {
+        "SettingName": "FAILSAFE",
+        "Description": "Operational protection during incomplete or stale analysis; no new buys. Existing native exits remain.",
+        "PairsProperties": {
+          "DEFAULT_sell_only_mode_enabled": true
+        }
+      },
+      // -----------------------------
       {
         "SettingName": "Default",
         "PairsProperties": {
