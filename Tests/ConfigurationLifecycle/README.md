@@ -1,5 +1,12 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 26 — FAILSAFE/provisional delivery and held-defense source coverage (unverified)
+
+At PTMagic code checkpoint `24db0b56bd7c33e32fcccfc25f6aaf40a1883bd5`, new ConfigurationLifecycle tests cover optional reserved FAILSAFE override, absent-FAILSAFE best-available selection, stale delivery, watchdog deadline handling, SMS removal, acknowledgement/recovery, failure rollback and the persisted `IncompleteData` signal. The watchdog operates independently of the raid timer and publishes a separately compiled preset, subject to configured PT delivery acknowledgements; its five-second polling interval is not a demonstrated maximum wall-clock activation time. The provisional selection algorithm counts known TRUE trigger clauses for possible Globals; this is a heuristic, not a verified market condition. `FAILSAFE` is opt-in by a reserved Global definition, not a separately installed LONG/SHORT preset. The two distribution templates contain one ordinary `DEFAULT_sell_only_mode_enabled=true` override and operational comments, not a complete exit-optimization strategy.
+
+The most recent operator-reported local execution of this suite predates these changes. **No post-change ConfigurationLifecycle test PASS, full .NET solution build, live multi-target PT acknowledgement, startup/SOM interaction, watchdog runtime acceptance or native protection result has been provided.** Older 84/84 and 85/85 suite results remain historical and cannot validate the current suite. Existing tests which asserted stale deferral have been updated to assert provisional delivery; test source is not execution evidence. Check that no SMS override reopens entry, that partial target failure does not advance confirmed state, that a successful fresh reclassification clears warning, and that the absent-FAILSAFE path actually uses available contemporaneous data before fallback to retained classification.
+
+
 ## November 23 — Remove market-scan and SMS progress dots
 
 Removed all dot-by-dot progress printing from the first-seen date check and the SMS evaluation loop. Both stages now emit **one concise INFO completion** through the normal application logger, visible in the regular Analyzer log and Monitor; interrupted first-seen scans similarly emit one INFO status. Removed the redundant progress-only DEBUG copy. Neither stage writes console fragments. Market counts, SMS matches, cancellation handling and acquisition/concurrency policies are unchanged.
