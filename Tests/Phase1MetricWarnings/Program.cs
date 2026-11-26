@@ -35,6 +35,7 @@ internal static class Program
       TestMixedFlatPathAndSourceFaultRemainWarnings();
       TestVerifiedNewMarketHistoryClassification();
       TestNewMarketWarningsAndNoticeLifecycle();
+      TestMixedListingCorrelationWarnings();
       Console.WriteLine("Phase 1 metric-warning summary tests passed: " + _passed + ".");
       return 0;
     }
@@ -740,6 +741,38 @@ internal static class Program
       line.Contains("retained 'DEFAULT'")), "Global decision failure must remain WARN.");
     Expect(warnings.BuildNewMarketInfoLines(new NewMarketHistoryClassification()).Count == 0,
       "When no new markets are excluded, no extra recovery or detail lines are required.");
+    _passed++;
+  }
+
+  private static void TestMixedListingCorrelationWarnings()
+  {
+    var analysis = Analyses(ListingTrend());
+    var classification = NewMarketHistoryClassification.Analyze(analysis, ListingStore(), _ => Listing);
+    var warnings = new RaidMetricWarnings();
+    string metric = MarketTrendMetrics.CorrelationToBTC;
+    string expected = ListingTrend().AssetMetrics["SOXXUSDT"][metric].InvalidReason;
+    for (int i = 0; i < 9; i++)
+      warnings.ReportUnavailable("H48", metric, expected,
+        "SMS activation", "LIST_" + i, "SOXXUSDT", "Absolute", "C" + i);
+    warnings.ReportUnavailable("H48", metric,
+      "Delta unavailable: Previous MarketTrend-duration measurement is unavailable: Asset return vector unavailable: Missing or invalid exact closed source candle for 'ANTUSDT'.",
+      "SMS activation", "SS17", "ANTUSDT", "Delta", "C6003");
+    var lines = warnings.BuildLines(analysis, classification);
+    Expect(lines.Count == 2 && lines[0] == "+ Metric warnings: 1" &&
+      lines[1].Contains("ANTUSDT") && lines[1].Contains("C6003") &&
+      !lines[1].Contains("SOXXUSDT") && !lines[1].Contains("LIST_"),
+      "Mixed listing/correlation group retains the genuine caller beyond the original five examples.");
+    Expect(warnings.BuildLines(analysis, classification).SequenceEqual(lines),
+      "Repeated rendering must preserve filtered evidence.");
+    Expect(warnings.BuildLines(analysis).Any(line => line.Contains("SOXXUSDT")),
+      "Rendering without listing classification retains original evidence.");
+    warnings.ReportUnavailable("H48", metric,
+      "Analysis is stale; MaxAnalysisAgeSeconds exceeded.",
+      "SMS activation", "STALE", "SOXXUSDT", "Absolute", "C999");
+    var mixed = warnings.BuildLines(analysis, classification);
+    Expect(mixed.Any(line => line.Contains("Affected trigger requests: 2") &&
+      line.Contains("ANTUSDT") && line.Contains("STALE") && !line.Contains("LIST_")),
+      "Unrelated stale failure for a listed market remains a warning with correct request count.");
     _passed++;
   }
 

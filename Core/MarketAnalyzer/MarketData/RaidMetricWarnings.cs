@@ -31,6 +31,7 @@ namespace Core.MarketAnalyzer.MarketData
       public string Market;
       public string Reason;
       public string Relation;
+      public Caller Caller;
     }
 
     private sealed class AssetFailure
@@ -90,8 +91,7 @@ namespace Core.MarketAnalyzer.MarketData
       Issue issue = GetIssue(Name(trendName, "(unknown trend)"), MarketTrendMetrics.Normalize(metricName));
       issue.FailedRequests++;
       string cleaned = Clean(reason);
-      issue.ReportedCauses.Add(new ReportedCause
-        { Market = marketSymbol?.Trim() ?? "", Reason = cleaned, Relation = relation?.Trim() ?? "" });
+
       if (!issue.FailureReasons.Contains(cleaned, StringComparer.OrdinalIgnoreCase)
         && issue.FailureReasons.Count < MaxAssetReasonExamples)
       {
@@ -112,6 +112,8 @@ namespace Core.MarketAnalyzer.MarketData
         Trigger = trigger?.Trim() ?? "",
         ImplicitPriceTrend = String.IsNullOrWhiteSpace(metricName)
       };
+      issue.ReportedCauses.Add(new ReportedCause
+        { Market = caller.Market, Reason = cleaned, Relation = caller.Relation, Caller = caller });
       bool smsCaller = caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) ||
         caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase);
       if (!smsCaller) issue.HasNonSmsCaller = true;
@@ -236,19 +238,13 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      // A directly referenced new-listing shortage is informational only when
-      // EVERY reported caller is a verified, market-specific pre-listing gap.
-      // Global and mixed causes stay WARN, as do unknown/indeterminate decisions.
-      Issue[] reportable = _issues.Values.Where(issue =>
-        !IsVerifiedFlatPath(issue) && !IsVerifiedHistoricalFlatPath(issue, deltas) &&
-        !(newMarkets != null && issue.UnavailableAssets == 0 &&
-          issue.GlobalFeature == null && !issue.UnknownMetric && !issue.HasNonSmsCaller &&
-          issue.FailedRequests > 0 && issue.ReportedCauses.Count == issue.FailedRequests &&
-          issue.ReportedCauses.All(cause => !String.IsNullOrWhiteSpace(cause.Market) &&
-            (MarketTrendDeltaSelection.IsDelta(cause.Relation)
-              ? newMarkets.IsExpectedDelta(cause.Market, issue.Trend, issue.Metric)
-              : newMarkets.IsExpected(cause.Market, issue.Trend, issue.Metric)) &&
-            IsExpectedHistoryReport(cause.Reason))))
+      // Filter individual verified listing-related SMS requests before grouping
+      // warnings. Do not mutate the original raid evidence: repeated rendering
+      // with or without listing classification must remain deterministic.
+      Issue[] reportable = _issues.Values.Select(issue => FilterExpectedHistory(issue, newMarkets))
+        .Where(issue => (issue.FailedRequests > 0 || issue.UnavailableAssets > 0 ||
+          issue.GlobalFeature != null || issue.UnknownMetric) &&
+          !IsVerifiedFlatPath(issue) && !IsVerifiedHistoricalFlatPath(issue, deltas))
         .OrderBy(i => i.Trend, StringComparer.OrdinalIgnoreCase)
         .ThenBy(i => i.Metric, StringComparer.OrdinalIgnoreCase).ToArray();
       if (reportable.Length == 0 && String.IsNullOrWhiteSpace(_globalDecision))
@@ -267,6 +263,53 @@ namespace Core.MarketAnalyzer.MarketData
       }
 
       return lines;
+    }
+
+    private static Issue FilterExpectedHistory(Issue original, NewMarketHistoryClassification newMarkets)
+    {
+      if (newMarkets == null || original.ReportedCauses.Count != original.FailedRequests)
+        return original;
+      bool Expected(ReportedCause cause)
+      {
+        var caller = cause.Caller;
+        if (caller == null || String.IsNullOrWhiteSpace(cause.Market) ||
+            !(caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) ||
+              caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase)) ||
+            !IsExpectedHistoryReport(cause.Reason)) return false;
+        return MarketTrendDeltaSelection.IsDelta(cause.Relation)
+          ? newMarkets.IsExpectedDelta(cause.Market, original.Trend, original.Metric)
+          : newMarkets.IsExpected(cause.Market, original.Trend, original.Metric);
+      }
+
+      var retained = original.ReportedCauses.Where(cause => !Expected(cause)).ToArray();
+      if (retained.Length == original.FailedRequests) return original;
+      var filtered = new Issue
+      {
+        Trend = original.Trend, Metric = original.Metric,
+        FailedRequests = retained.Length, GlobalFeature = original.GlobalFeature,
+        UnknownMetric = original.UnknownMetric, UnavailableAssets = original.UnavailableAssets,
+        EligibleAssets = original.EligibleAssets, OtherAssetFailures = original.OtherAssetFailures
+      };
+      filtered.AssetFailures.AddRange(original.AssetFailures);
+      foreach (var cause in retained)
+      {
+        filtered.ReportedCauses.Add(cause);
+        if (!String.IsNullOrWhiteSpace(cause.Market)) filtered.Markets.Add(cause.Market);
+        var caller = cause.Caller;
+        if (caller != null)
+        {
+          if (!(caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) ||
+                caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase)))
+            filtered.HasNonSmsCaller = true;
+          if (filtered.Callers.Count < MaxCallerExamples &&
+              !filtered.Callers.Any(existing => SameCaller(existing, caller)))
+            filtered.Callers.Add(caller);
+        }
+        if (filtered.FailureReasons.Count < MaxAssetReasonExamples &&
+            !filtered.FailureReasons.Contains(cause.Reason, StringComparer.OrdinalIgnoreCase))
+          filtered.FailureReasons.Add(cause.Reason);
+      }
+      return filtered;
     }
 
     // This is intentionally narrow: only the *exact* mathematical 0/0
@@ -336,7 +379,10 @@ namespace Core.MarketAnalyzer.MarketData
     private static bool IsExpectedHistoryReport(string reason)
     {
       if (String.IsNullOrWhiteSpace(reason)) return false;
-      if (Contains(reason, "outside the selected asset population") ||
+      if (Contains(reason, "stale") ||
+          Contains(reason, "MaxAnalysisAgeSeconds") ||
+          Contains(reason, "benchmark return vector unavailable") ||
+          Contains(reason, "outside the selected asset population") ||
           Contains(reason, "does not enable metric") ||
           Contains(reason, "asset-only metric used globally") ||
           Contains(reason, "requires a market-specific context") ||

@@ -2,6 +2,9 @@
 
 ## Dev 18 — PTM-VOLUME-COVERAGE-01
 
+Mixed listing-warning correction: filter individual verified listing-related SMS trigger failures before warning grouping, rebuilding counts and examples from remaining requests. Genuine stale, benchmark, configuration and unclassified data failures remain visible. No change to metric validity or trading decisions. Regression covers mixed correlation callers beyond display cap and repeated rendering. Native execution pending.
+
+
 Retention expansion acquisition: production normalized refresh now plans missing UTC-aligned ranges against retained validated candles, with recent overlap and bounded historical anchors. Existing warm cache and in-memory history are reused; listing metadata bounds prelisting requests on Futures. Completed historical pages are merged and checkpointed even on partial failure/cancellation, bypassing the save throttle. Separate historical requested/received counts and cold versus incremental market counts are logged. Legacy count-only adapters retain the original contract. Added expansion, gap, restart and listing regression cases. Native build/tests and live 216-to-288-hour expansion validation pending; freshness and strategy settings unchanged.
 
 

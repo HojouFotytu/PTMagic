@@ -62,3 +62,7 @@ this change.
 Under D-021, the user runs builds, regression tests and TestMode locally.
 Check the new warning sentences on Binance Futures, Spot and Binance US, and
 confirm existing settings/OffTrigger behavior remains unchanged.
+
+## Mixed new-market warning groups (Dev 18)
+
+Verified listing-related SMS failures are removed individually before warning rendering, preserving unrelated failures, recalculated counts, reason examples and caller identities (including those beyond the original display cap). Absolute and Delta use their respective classification. Original evidence remains intact. Native execution pending.
