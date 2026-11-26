@@ -818,14 +818,71 @@ internal static class Program
         Require(fixture.Sent.Count == 0 &&
           fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
       });
-      Check("stale raid sends no normal configuration and retains startup guard", () =>
+      Check("stale incomplete analysis delivers best-available Global and keeps startup SOM manual", () =>
       {
         using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode"); fixture.CompileClean();
-        Set(fixture.Bot, "_raidAnalysisBuilt", false); SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
+        Set(fixture.Bot, "_raidAnalysisBuilt", false);
+        SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
         Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true })
-          && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred" &&
-          Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
+        Require(fixture.Sent.Count == 1 && fixture.Sent[0].SettingName == "Default"
+          && fixture.SomCalls.SequenceEqual(new[] { true })
+          && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Applied"
+          && fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData
+          && Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
+      });
+      Check("reserved FAILSAFE Global overrides stale analysis and clears SMS overlays", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Configuration.AnalyzerSettings.GlobalSettings.Insert(0, new GlobalSetting
+        {
+          SettingName = "FAILSAFE",
+          PairsProperties = new Dictionary<string, object> { ["DEFAULT_sell_only_mode_enabled"] = true }
+        });
+        fixture.Bot.TriggeredSingleMarketSettings = new Dictionary<string, List<SingleMarketSetting>>
+        { ["BTCUSDT"] = new List<SingleMarketSetting> { fixture.Sms } };
+        fixture.Bot.PairsLines.Add("BTC_sell_only_mode_enabled = false");
+        fixture.Bot.PairsLines.Add("# PTMagic_SingleMarketSettings - temporary");
+        Set(fixture.Bot, "_raidAnalysisBuilt", false);
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 && fixture.Sent[0].SettingName == "FAILSAFE"
+          && fixture.Sent[0].IncompleteData
+          && fixture.Sent[0].Pairs.Any(line => line.Contains("DEFAULT_sell_only_mode_enabled = true"))
+          && fixture.Bot.TriggeredSingleMarketSettings.Count == 0
+          && fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData);
+      });
+      Check("watchdog publishes FAILSAFE before delayed raid completion and recovery clears warning", () =>
+      {
+        using var fixture = new Fixture();
+        fixture.Configuration.AnalyzerSettings.GlobalSettings.Insert(0, new GlobalSetting
+        {
+          SettingName = "FAILSAFE",
+          PairsProperties = new Dictionary<string, object> { ["DEFAULT_sell_only_mode_enabled"] = true }
+        });
+        Set(fixture.Bot, "_lastFreshAnalysisUtc", DateTimeOffset.UtcNow.AddHours(-1));
+        Call(fixture.Bot, "WatchdogTick", false);
+        Require(fixture.Sent.Count == 1 && fixture.Sent[0].SettingName == "FAILSAFE"
+          && fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData);
+        fixture.BeforeRaid();
+        fixture.Bot.ActiveSetting = fixture.Configuration.AnalyzerSettings.GlobalSettings
+          .Single(setting => setting.SettingName == "Default");
+        fixture.Bot.ActiveSettingName = "Default";
+        fixture.CompileClean();
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Last().SettingName == "Default"
+          && !fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData
+          && !fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteData);
+      });
+      Check("incomplete best-available selection uses observations before prior name", () =>
+      {
+        var selected = IncompleteGlobalPolicy.SelectBestAvailable(new[]
+        {
+          new IncompleteGlobalCandidate { SettingName = "FAILSAFE", Result = TriggerTruthValue.True },
+          new IncompleteGlobalCandidate { SettingName = "More", Result = TriggerTruthValue.Unavailable, KnownMatches = 2 },
+          new IncompleteGlobalCandidate { SettingName = "Less", Result = TriggerTruthValue.Unavailable, KnownMatches = 1 }
+        }, "Less", "Default");
+        Require(selected == "More");
+        Require(IncompleteGlobalPolicy.SelectBestAvailable(Array.Empty<IncompleteGlobalCandidate>(),
+          "Last", "Default") == "Last");
       });
       Check("normal settings acknowledgement never triggers SOM off", () =>
       {
@@ -839,17 +896,13 @@ internal static class Program
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) &&
           Get<bool>(fixture.Bot, "_startupGuardManualReviewRequired"));
       });
-      Check("stale and indeterminate raids never release global SOM", () =>
+      Check("inconclusive raid delivers provisionally without releasing startup SOM", () =>
       {
         using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
         Set(fixture.Bot, "_selectionIndeterminate", true);
         Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true }));
-        Set(fixture.Bot, "_selectionIndeterminate", false);
-        fixture.AfterConfigurationSend = () => SetStatic(typeof(BinanceFuturesAnalyticsRuntime),
-          "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
-        Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true })
+          && fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData);
       });
       Check("startup guard checkpoint restores pending control without storing credentials or properties", () =>
       {
@@ -1020,11 +1073,12 @@ internal static class Program
         Call(fixture.Bot, "EnsureStartupSellOnlyMode"); Call(fixture.Bot, "SaveProfitTrailerProperties");
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == 0 && File.ReadAllText(fixture.GuardCheckpoint) == before);
       });
-      Check("volume-only configuration still defers when its completed raid pin expires", () =>
+      Check("volume-only configuration publishes provisional settings with expired observation pin", () =>
       {
         using var fixture = new Fixture(); SetStatic(typeof(BinanceFuturesAnalyticsRuntime), "_currentRaidAsOfUtc", DateTimeOffset.UtcNow.AddHours(-1));
         Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 0 && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Deferred");
+        Require(fixture.Sent.Count == 1 && fixture.Bot.LastRuntimeSummary.ConfigurationDeliveryStatus == "Applied"
+          && fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteData);
       });
       Check("Futures only-normalized trends skip unnecessary legacy 1m reconstruction", () =>
       {
@@ -1470,6 +1524,7 @@ internal static class Program
       Set(Bot, "_selectionIndeterminate", false); Set(Bot, "_normalDecisionCommittedThisRaid", false); Set(Bot, "_raidAnalysisBuilt", true);
       Bot.TriggeredSingleMarketSettings = new Dictionary<string, List<SingleMarketSetting>>(); Bot.SingleMarketSettingsCount = new Dictionary<string, int>();
       Bot.GlobalSettingWritten = false; Bot.SingleMarketSettingChanged = false;
+      Set(Bot, "_provisionalDecision", false); Set(Bot, "_missingGlobalData", false);
     }
     public void SelectRisk()
     {
