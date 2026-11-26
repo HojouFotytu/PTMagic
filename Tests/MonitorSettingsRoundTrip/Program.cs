@@ -44,6 +44,21 @@ internal static class Program
           " 2.6.3 RAID SUMMARY #4 ");
         Require(Core.Main.PTMagic.FormatRaidSummaryTitle("A", 123).Contains("RAID SUMMARY #123"));
       });
+      Check("Global description persists, clears and survives no-edit saves", () =>
+      {
+        var original = Baseline(); var form = Form(original);
+        Set(form, Global + "Description", "Broad market deterioration & caution");
+        var saved = AnalyzerSettingsForm.Apply(original, form);
+        Require(saved.GlobalSettings[0].Description == "Broad market deterioration & caution");
+        Equal(saved, AnalyzerSettingsForm.Apply(saved, Form(saved)));
+        var cleared = Form(saved);
+        Set(cleared, Global + "Description", "");
+        Require(AnalyzerSettingsForm.Apply(saved, cleared).GlobalSettings[0].Description == "");
+        Require(AnalyzerSettingsForm.Apply(original, Form(original)).GlobalSettings[1].Description == "");
+        var legacy = Form(original);
+        legacy.Remove(Global + "Description");
+        Require(AnalyzerSettingsForm.Apply(original, legacy).GlobalSettings[0].Description == original.GlobalSettings[0].Description);
+      });
       Check("Delta relation roundtrip for GlobalSetting, SMS and OffTrigger", () =>
       {
         var source = Baseline(); var form = Form(source);
@@ -323,7 +338,7 @@ internal static class Program
     foreach (var setting in source.GlobalSettings)
     {
       string identity = Identity(setting.SettingName); string parent = "MarketAnalyzer_GlobalSetting_" + identity + "|";
-      Fields(form, setting, parent, "SettingName");
+      Fields(form, setting, parent, "SettingName", "Description");
       if (!setting.SettingName.StartsWith("Default", StringComparison.OrdinalIgnoreCase))
       {
         Fields(form, setting, parent, "TriggerConnection");
