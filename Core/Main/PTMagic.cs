@@ -1643,6 +1643,7 @@ namespace Core.Main
     private void CheckGlobalSettingsTriggers(ref GlobalSetting triggeredSetting, ref List<string> matchedTriggers)
     {
         _selectionIndeterminate = false;
+        _missingGlobalData = false;
         _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
         _selectedGlobalTriggerConnection = "";
         _selectedGlobalSelectionBasis = "Default fallback: no global trigger expression matched";
@@ -2865,6 +2866,24 @@ namespace Core.Main
       }
     }
 
+    private static void EnforceFailSafeSellOnly(List<string> pairs)
+    {
+      if (pairs == null) throw new InvalidOperationException("FAILSAFE requires compiled PAIRS properties.");
+      bool found = false;
+      for (int i = 0; i < pairs.Count; i++)
+      {
+        string line = pairs[i] ?? "";
+        int equal = line.IndexOf('=');
+        if (equal < 0 || !line.Substring(0, equal).Trim().Equals(
+              "DEFAULT_sell_only_mode_enabled", StringComparison.OrdinalIgnoreCase)) continue;
+        pairs[i] = "DEFAULT_sell_only_mode_enabled = true";
+        found = true;
+      }
+      // The ordinary property override engine cannot insert a missing key.
+      // An explicitly configured FAILSAFE must nevertheless prohibit buys.
+      if (!found) pairs.Add("DEFAULT_sell_only_mode_enabled = true");
+    }
+
     private GlobalSetting FindFailSafe() =>
       this.PTMagicConfiguration?.AnalyzerSettings?.GlobalSettings?
         .Find(setting => IncompleteGlobalPolicy.IsFailSafe(setting.SettingName));
@@ -2888,6 +2907,7 @@ namespace Core.Main
       {
         this.GlobalSettingWritten = true;
         SettingsHandler.CompileProperties(this, failSafe, DateTime.Now);
+        EnforceFailSafeSellOnly(this.PairsLines);
         this.ActiveSetting = failSafe;
         this.ActiveSettingName = failSafe.SettingName;
         this.LastRuntimeSummary.CurrentGlobalSetting = failSafe;
@@ -2943,6 +2963,8 @@ namespace Core.Main
             ActiveSetting = target, ActiveSettingName = target.SettingName
           };
           SettingsHandler.CompileProperties(detached, target, DateTime.Now);
+          if (IncompleteGlobalPolicy.IsFailSafe(target.SettingName))
+            EnforceFailSafeSellOnly(detached.PairsLines);
           var payload = new ConfigurationPayload(target.SettingName, detached.PairsLines,
             detached.DCALines, detached.IndicatorsLines, DestinationFingerprint(), incompleteData: true);
           var result = _configurationDelivery.Deliver(payload,
