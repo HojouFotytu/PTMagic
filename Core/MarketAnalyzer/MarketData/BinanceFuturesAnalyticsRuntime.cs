@@ -246,7 +246,10 @@ namespace Core.MarketAnalyzer.MarketData
         cancellationToken,
         refreshAsOfUtc,
         exchangeName,
-        takerTrendMinutes).ConfigureAwait(false);
+        takerTrendMinutes,
+        supportsHistoricalAnchors: true,
+        onboardDate: String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+          ? (Func<string, DateTimeOffset?>)Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc : null).ConfigureAwait(false);
 
       MarketDataRefreshStatus[] statusSnapshot = statuses.ToArray();
       lock (SnapshotLock)
@@ -260,10 +263,12 @@ namespace Core.MarketAnalyzer.MarketData
       int failed = statusSnapshot.Count(status => status == null || !status.Succeeded);
       int receivedCandles = statusSnapshot.Where(status => status != null).Sum(status => status.ReceivedCandleCount);
       int fullHistoryRequests = statusSnapshot.Count(status => status != null &&
-        !status.Skipped && status.RequestedCandleCount >= targetHistoryCandles);
+        status.FullHistoryRequest);
+      int historicalRequests = statusSnapshot.Count(status => status != null && status.HistoricalBackfillRequestedCandleCount > 0);
       int incrementalRequests = statusSnapshot.Count(status => status != null &&
-        !status.Skipped && status.RequestedCandleCount > 0 &&
-        status.RequestedCandleCount < targetHistoryCandles);
+        !status.FullHistoryRequest && status.RequestedCandleCount > status.HistoricalBackfillRequestedCandleCount);
+      long historicalRequested = statusSnapshot.Where(status => status != null).Sum(status => (long)status.HistoricalBackfillRequestedCandleCount);
+      long historicalReceived = statusSnapshot.Where(status => status != null).Sum(status => (long)status.HistoricalBackfillReceivedCandleCount);
       long requestedCandles = statusSnapshot.Where(status => status != null)
         .Sum(status => (long)status.RequestedCandleCount);
       log.DoLogInfo("RAID TIMING - normalized 5m refresh: " +
@@ -271,6 +276,9 @@ namespace Core.MarketAnalyzer.MarketData
         "s; markets=" + refreshSymbols.Length +
         ", full-history requests=" + fullHistoryRequests +
         ", incremental requests=" + incrementalRequests +
+        ", historical backfill markets=" + historicalRequests +
+        ", historical requested candles=" + historicalRequested +
+        ", historical received candles=" + historicalReceived +
         ", skipped=" + skipped + ", failed=" + failed +
         ", requested candles=" + requestedCandles +
         ", received candles=" + receivedCandles +

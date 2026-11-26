@@ -8,6 +8,9 @@ namespace Core.MarketAnalyzer.MarketData
     public DateTimeOffset RefreshedAtUtc { get; init; }
     public int RequestedCandleCount { get; init; }
     public int ReceivedCandleCount { get; init; }
+    public bool FullHistoryRequest { get; init; }
+    public int HistoricalBackfillRequestedCandleCount { get; init; }
+    public int HistoricalBackfillReceivedCandleCount { get; init; }
     public bool Succeeded { get; init; }
     public bool Skipped { get; init; }
     public string Error { get; init; } = "";

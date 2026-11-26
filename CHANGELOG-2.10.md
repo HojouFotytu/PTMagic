@@ -2,6 +2,9 @@
 
 ## Dev 18 — PTM-VOLUME-COVERAGE-01
 
+Retention expansion acquisition: production normalized refresh now plans missing UTC-aligned ranges against retained validated candles, with recent overlap and bounded historical anchors. Existing warm cache and in-memory history are reused; listing metadata bounds prelisting requests on Futures. Completed historical pages are merged and checkpointed even on partial failure/cancellation, bypassing the save throttle. Separate historical requested/received counts and cold versus incremental market counts are logged. Legacy count-only adapters retain the original contract. Added expansion, gap, restart and listing regression cases. Native build/tests and live 216-to-288-hour expansion validation pending; freshness and strategy settings unchanged.
+
+
 Follow-up: removed unconditional estimation completeness. Verified Binance Futures onboard metadata identifies wholly prelisting periods as zero exposure (not a fabricated observation); periods crossing listing use verified contiguous post-listing candle turnover when available. Otherwise use preceding verified equal-duration volume, or for unresolved assets a conservative maximum verified cohort-volume proxy. This proxy is not a guaranteed bound and is explicitly diagnosed; both 90% thresholds and mandatory benchmarks remain unchanged. No estimate enters the metric denominator. Added regressions for unknown exposure, material proxy exposure, prelisting matched Delta and listing-crossing periods. Native execution and live validation pending. No strategy changes.
 
 

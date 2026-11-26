@@ -40,7 +40,7 @@ namespace Core.MarketAnalyzer.MarketData
         log, maxConcurrency, cancellationToken, refreshAsOfUtc);
     }
 
-    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null, string cacheExchange = null, IReadOnlyCollection<int> takerTrendMinutes = null)
+    public async Task<IReadOnlyList<MarketDataRefreshStatus>> RefreshAtAsync(IEnumerable<string> symbols, TimeSpan interval, int targetHistoryCandles, AnchoredMarketCandleLoader loader, LogHelper log, int maxConcurrency = DefaultRefreshConcurrency, CancellationToken cancellationToken = default, DateTimeOffset? refreshAsOfUtc = null, string cacheExchange = null, IReadOnlyCollection<int> takerTrendMinutes = null, bool supportsHistoricalAnchors = false, Func<string, DateTimeOffset?> onboardDate = null)
     {
       if (symbols == null)
       {
@@ -112,6 +112,13 @@ namespace Core.MarketAnalyzer.MarketData
         // Only a missing/null taker field INSIDE already cached closed
         // history requires a taker-specific repair. Candles newer than the
         // latest cached close are handled by normal incremental refresh.
+        if (supportsHistoricalAnchors)
+        {
+          statuses[index] = await RefreshMissingRangesAsync(symbol, interval, targetHistoryCandles,
+            loader, log, ct, refreshStartedUtc, cacheExchange, takerTrendMinutes,
+            onboardDate?.Invoke(symbol)).ConfigureAwait(false);
+          return;
+        }
         int takerRepairCount = RequiredTakerRepairCount(symbol, interval,
           refreshStartedUtc, takerTrendMinutes);
         int requestedCandleCount = GetRequiredCandleCount(symbol, interval,
@@ -192,6 +199,132 @@ namespace Core.MarketAnalyzer.MarketData
       }).ConfigureAwait(false);
 
       return Array.AsReadOnly(statuses);
+    }
+
+    private sealed class MissingRange
+    {
+      public long First;
+      public long Last;
+      public bool Historical;
+    }
+
+    // Production loaders support a historical end anchor. Legacy count-only
+    // adapters retain their original contract and never receive old anchors.
+    private async Task<MarketDataRefreshStatus> RefreshMissingRangesAsync(
+      string symbol, TimeSpan interval, int target, AnchoredMarketCandleLoader loader,
+      LogHelper log, CancellationToken ct, DateTimeOffset now, string cacheExchange,
+      IReadOnlyCollection<int> takerTrendMinutes, DateTimeOffset? listed)
+    {
+      long step = checked((long)interval.TotalMilliseconds);
+      long nowMs = now.ToUnixTimeMilliseconds();
+      long forming = nowMs / step * step;
+      long first = checked(forming - (long)(target - 1) * step);
+      if (listed.HasValue && listed.Value > DateTimeOffset.UnixEpoch && listed.Value <= now)
+      {
+        long listingMs = listed.Value.ToUnixTimeMilliseconds();
+        first = Math.Max(first, listingMs / step * step);
+      }
+      var snapshot = _store.GetSnapshot(symbol, interval, now);
+      var cached = snapshot.Candles.Where(c => c.OpenTimeUtc.ToUnixTimeMilliseconds() >= first &&
+        c.OpenTimeUtc.ToUnixTimeMilliseconds() <= forming).ToDictionary(c => c.OpenTimeUtc.ToUnixTimeMilliseconds());
+      bool ClosedAt(long open) => cached.TryGetValue(open, out var c) && c.IsClosed &&
+        c.CloseTimeUtc.ToUnixTimeMilliseconds() == open + step - 1;
+      long latestClosed = cached.Keys.Where(ClosedAt).DefaultIfEmpty(first - step).Max();
+      bool cold = latestClosed < first;
+      var takerWindows = (takerTrendMinutes ?? Array.Empty<int>()).Where(m => m > 0)
+        .Select(m => (long)m * 60000L).Where(ms => ms % step == 0)
+        .Select(ms => (Start: nowMs / ms * ms - ms, End: nowMs / ms * ms))
+        .Where(w => w.Start >= first).ToArray();
+      bool NeedsRepair(long open) => !ClosedAt(open) ||
+        (!cached[open].TakerBuyQuoteVolume.HasValue &&
+          takerWindows.Any(w => open >= w.Start && open < w.End));
+      var ranges = new List<MissingRange>();
+      // Fetch recent candles (including forming) with the existing two-bar
+      // overlap; repair older holes separately, without fetching intervening
+      // verified history. A cached forming bar must be refreshed when it closes.
+      long recentFirst = cold ? first : Math.Max(first, Math.Min(forming, latestClosed + step) - RefreshOverlapCandles * step);
+      if (!cold && latestClosed == forming - step && cached.TryGetValue(forming, out var formingBar)
+          && !formingBar.IsClosed)
+        recentFirst = forming + step; // already pinned to this forming interval
+      for (long open = first; open < Math.Min(recentFirst, forming); open += step)
+      {
+        if (!NeedsRepair(open)) continue;
+        if (ranges.Count > 0 && ranges[ranges.Count - 1].Last + step == open)
+          ranges[ranges.Count - 1].Last = open;
+        else ranges.Add(new MissingRange { First = open, Last = open, Historical = true });
+      }
+      if (recentFirst <= forming)
+        ranges.Add(new MissingRange { First = recentFirst, Last = forming, Historical = false });
+      int requested = 0, received = 0, historicalRequested = 0, historicalReceived = 0;
+      bool historicalProgress = false;
+      string error = "";
+      try
+      {
+        // Recent data first, then bounded historical pages. A completed page
+        // is merged immediately; failure in a later page cannot discard it.
+        foreach (var range in ranges.OrderBy(x => x.Historical))
+        {
+          for (long last = range.Last; last >= range.First;)
+          {
+            ct.ThrowIfCancellationRequested();
+            int count = (int)Math.Min(1000L, (last - range.First) / step + 1);
+            long start = last - (count - 1L) * step;
+            bool historical = range.Historical || last < forming;
+            var anchor = last == forming ? now : DateTimeOffset.FromUnixTimeMilliseconds(last + step - 1);
+            requested += count;
+            if (historical && !cold) historicalRequested += count;
+            var rows = await loader(symbol, count, log, ct, anchor).ConfigureAwait(false);
+            var matching = (rows ?? new List<MarketCandle>()).Where(c => c != null &&
+              String.Equals(c.Symbol, symbol, StringComparison.OrdinalIgnoreCase) && c.Interval == interval &&
+              c.OpenTimeUtc.ToUnixTimeMilliseconds() >= start && c.OpenTimeUtc.ToUnixTimeMilliseconds() <= last &&
+              c.OpenTimeUtc.ToUnixTimeMilliseconds() % step == 0 &&
+              c.CloseTimeUtc == c.OpenTimeUtc.Add(interval).AddMilliseconds(-1) &&
+              (c.OpenTimeUtc.ToUnixTimeMilliseconds() == forming ? !c.IsClosed : c.IsClosed))
+              .GroupBy(c => c.OpenTimeUtc).Select(g => g.Last()).ToList();
+            foreach (var candle in matching) MarketDataStore.ValidateCandle(candle);
+            _store.UpsertCandles(matching);
+            received += matching.Count;
+            if (historical && !cold)
+            {
+              historicalReceived += matching.Count;
+              historicalProgress |= matching.Count > 0;
+            }
+            // Do not infer that a short provider response filled the range.
+            // Continue other planned ranges; unfilled slots remain missing.
+            last = start - step;
+          }
+        }
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+      catch (Exception ex)
+      {
+        error = ex.Message;
+        log.DoLogWarn("MarketDataService - Unable to refresh normalized candles for '" + symbol + "': " + ex.Message);
+      }
+      finally
+      {
+        // Persist any completed historical work, even on cancellation or
+        // partial failure, bypassing the ordinary checkpoint throttle.
+        if (received > 0 && _warmStartCache != null && !String.IsNullOrWhiteSpace(cacheExchange))
+          _warmStartCache.TrySave(cacheExchange, symbol, interval, now, _store, log,
+            forceSave: historicalProgress || cold);
+      }
+      var final = _store.GetSnapshot(symbol, interval, now);
+      var closed = final.ClosedCandles.Select(c => c.OpenTimeUtc.ToUnixTimeMilliseconds()).ToHashSet();
+      bool complete = true;
+      for (long open = first; open < forming; open += step)
+        if (!closed.Contains(open)) { complete = false; break; }
+      if (!complete && error.Length == 0) error = "Requested closed history remains incomplete.";
+      if (received == 0 && ranges.Count > 0 && error.Length == 0) error = "No matching candles were returned.";
+      return new MarketDataRefreshStatus
+      {
+        Symbol = symbol, RefreshedAtUtc = DateTimeOffset.UtcNow,
+        RequestedCandleCount = requested, ReceivedCandleCount = received,
+        FullHistoryRequest = cold && requested > 0,
+        HistoricalBackfillRequestedCandleCount = historicalRequested,
+        HistoricalBackfillReceivedCandleCount = historicalReceived,
+        Succeeded = error.Length == 0, Skipped = ranges.Count == 0, Error = error
+      };
     }
 
     // Find the oldest deficient source field within a cached completed taker

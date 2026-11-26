@@ -29,6 +29,7 @@ internal static class Program
       await TestFuturesNormalizedRefreshDoesNotPrintDots();
       await TestIncompleteCacheBackfills(root);
       await TestIncompleteMemoryBackfills();
+      await TestRangeExpansionAndGapRepair(root);
       TestCorruptionFailOpen(root);
       TestBoundedRestoration(root);
       TestFileSaveThrottle(root);
@@ -176,6 +177,51 @@ internal static class Program
       }, Log, maxConcurrency: 1, refreshAsOfUtc: Boundary);
     Assert(requested == 10,
       "Incomplete ordinary in-memory history must request full backfill.");
+    _passed++;
+  }
+
+  private static async Task TestRangeExpansionAndGapRepair(string root)
+  {
+    var cache = new MarketDataWarmStartCache(Path.Combine(root, "range-expansion"), TimeSpan.FromHours(1));
+    var original = new MarketDataStore(10);
+    original.UpsertCandles(Candles("BTCUSDT", 9));
+    Assert(cache.TrySave("BinanceFutures", "BTCUSDT", Interval, Boundary, original, Log), "Seed cache");
+    var warm = new MarketDataService(new MarketDataStore(14), cache);
+    var requests = new List<(int Count, DateTimeOffset Anchor)>();
+    Task<List<MarketCandle>> Loader(string symbol, int count, LogHelper logger, CancellationToken ct, DateTimeOffset anchor)
+    {
+      requests.Add((count, anchor));
+      long ms = anchor.ToUnixTimeMilliseconds(), step = (long)Interval.TotalMilliseconds;
+      var last = DateTimeOffset.FromUnixTimeMilliseconds(ms / step * step);
+      return Task.FromResult(Enumerable.Range(0, count).Select(i =>
+      {
+        var open = last.AddTicks((i - count + 1L) * Interval.Ticks);
+        return Candle(symbol, open, 100, closed: open.Add(Interval).AddMilliseconds(-1) <= anchor, takerQuote: 10);
+      }).ToList());
+    }
+    var result = await warm.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 14, Loader, Log,
+      maxConcurrency: 1, refreshAsOfUtc: Boundary, cacheExchange: "BinanceFutures", supportsHistoricalAnchors: true);
+    Assert(result[0].Succeeded && !result[0].FullHistoryRequest &&
+      result[0].HistoricalBackfillRequestedCandleCount == 4 && result[0].RequestedCandleCount == 7,
+      "Expansion fetches four older candles plus three recent, not fourteen");
+    Assert(warm.Store.GetSnapshot("BTCUSDT", Interval, Boundary).SampleCount == 14, "Expanded history complete");
+    var restart = new MarketDataService(new MarketDataStore(14), cache);
+    result = await restart.RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 14, Loader, Log,
+      maxConcurrency: 1, refreshAsOfUtc: Boundary, cacheExchange: "BinanceFutures", supportsHistoricalAnchors: true);
+    Assert(result[0].HistoricalBackfillRequestedCandleCount == 0, "Expanded checkpoint persisted despite throttle");
+    var gapStore = new MarketDataStore(14);
+    gapStore.UpsertCandles(Candles("BTCUSDT", 13).Where((c,i) => i != 3));
+    result = await new MarketDataService(gapStore).RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 14, Loader, Log,
+      maxConcurrency: 1, refreshAsOfUtc: Boundary, supportsHistoricalAnchors: true);
+    Assert(result[0].Succeeded && result[0].HistoricalBackfillRequestedCandleCount == 1,
+      "Only the internal missing candle is repaired");
+    var listedStore = new MarketDataStore(14);
+    listedStore.UpsertCandles(Candles("BTCUSDT", 3));
+    result = await new MarketDataService(listedStore).RefreshAtAsync(new[] { "BTCUSDT" }, Interval, 14, Loader, Log,
+      maxConcurrency: 1, refreshAsOfUtc: Boundary, supportsHistoricalAnchors: true,
+      onboardDate: _ => Boundary.AddMinutes(-15));
+    Assert(result[0].Succeeded && result[0].HistoricalBackfillRequestedCandleCount == 0,
+      "No backfill before verified listing");
     _passed++;
   }
 
