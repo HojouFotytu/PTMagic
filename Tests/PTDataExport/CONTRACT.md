@@ -1,5 +1,12 @@
 # PT history exporter: verified contract and rebuild
 
+## November 25–26 export range update and operator acceptance
+
+The PT Data page now uses an integer field plus Days/Weeks/Months/All available dropdown rather than the earlier fixed 7d/1m/3m/6m selection. The shared `ExportHistoryPeriod` parser retains legacy range codes; months are calendar-month `AddMonths` computations. Buy/sell source pages, raw source records, original one-based API pagination and schema 1.3 exporter manifest are unchanged. The PTMagic Logs page uses the same range pattern but ZIPs whole retained daily log files, including the boundary date; undated files use modification time. The separately downloadable PTMagic `_data` ZIP is always complete, without a range filter. These are Monitor export interfaces, not changes to native ProfitTrailer's trade-history retention.
+
+**User-observed:** `dotnet run --project .\Tests\PTDataExport` completed **28/28 test groups PASS**, including custom/invalid day-week-month periods and log ZIP date filtering. This validates the test harness on that checkpoint, not live browser ZIP selection or newer FAILSAFE engine changes. Subsequent source must be built and browser-checked independently. Under the Monitor Control menu, the log/data page is now labeled `PTMagic Logs/Data` and appears directly before `PT Data`.
+
+
 Date: 2026-11-15 KST. Scope: Monitor Control > PT Data only.
 
 ## Evidence, not an inferred API convention
