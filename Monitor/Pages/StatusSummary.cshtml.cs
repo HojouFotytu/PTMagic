@@ -218,6 +218,8 @@ namespace Monitor.Pages
 
     private void BuildMarketsWithSingleSettings()
     {
+      // The provisional delivered configuration contains no SMS overlays.
+      if (Summary.ConfirmedIncompleteData) return;
       // Get markets with active single settings
       foreach (string key in Summary.MarketSummary.Keys)
       {
