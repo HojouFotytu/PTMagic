@@ -72,7 +72,7 @@ namespace Monitor.Configuration
         string token = ParentToken(key, "MarketAnalyzer_GlobalSetting_", "SettingName");
         GlobalSetting setting = Existing(original.GlobalSettings, token, item => item.SettingName, () => new GlobalSetting());
         string prefix = "MarketAnalyzer_GlobalSetting_" + token + "|";
-        SetFields(setting, form, prefix, new[] { "SettingName", "TriggerConnection" });
+        SetFields(setting, form, prefix, new[] { "SettingName", "Description", "TriggerConnection" });
         if (form.ContainsKey(prefix + "TriggersRendered"))
           setting.Triggers = ReadTriggers(setting.Triggers, form, prefix, false);
         setting.PairsProperties = ReadProperties(setting.PairsProperties, form, prefix, "Pairs");
