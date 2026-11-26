@@ -2,6 +2,9 @@
 
 ## Dev 18 — PTM-VOLUME-COVERAGE-01
 
+Owner-run native validation receipt for `8bcf6b30dcc37daff691a5499402cc6cdb1833f7` (November 27, 2026): full solution build succeeded in 17.7 seconds (Core, PTMagic, Monitor); Phase1COhlcv 31/31, Phase1MetricWarnings 24/24, DecisionHistory 18/18, ConfigurationLifecycle 99/99 (172 total). Three nonblocking nullable warnings in Phase1COhlcv (CS8625 twice, CS8629 once). This supersedes pending native execution for that checkpoint only; remaining handoff cases, Monitor visual presentation, full matched Delta RAID reporting, live dual-instance behavior and financial validation remain open. No claim of deployment or live acceptance.
+
+
 VolumeConcentration, TopNVolumeShare, BTCVolumeShare and BTCETHVolumeShare now require 90% valid eligible markets and 90% estimated quote volume. Missing observations use only the immediately preceding verified equal-duration period for coverage estimation; missing history is unavailable. Actual denominator uses verified observations only. Delta recalculates both endpoints on their common valid population, validating economic coverage independently; excluded observed volume uses its actual value in coverage estimation only. BTC/ETH benchmark validity remains mandatory. Retention adds one period to Absolute and Delta requirements. Coverage metadata is exported to Monitor JSON, trigger DecisionHistory and partial Absolute raid INFO. No strategy or FAILSAFE changes. Thresholds are engineering tolerances, not empirically calibrated. Native build, regression execution, runtime and financial validation pending. Monitor visual display and full matched Delta raid reporting require follow-up.
 
 
