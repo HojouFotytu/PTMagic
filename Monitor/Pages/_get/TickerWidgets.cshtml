@@ -28,9 +28,15 @@
   // Only the four requested compact lines; absent SOM is not listed.
   // StartupSellOnlyModeActive records PTMagic's acknowledged enable, not
   // a live ProfitTrailer SOM readback.
-  string globalSettingInfoTooltip = System.Net.WebUtility.HtmlEncode(Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName)
-    + "<br />" + System.Net.WebUtility.HtmlEncode(selectedGlobalSetting)
-    + "<br />" + (deliveredToPT ? "Delivered to PT" : "Not Delivered to PT");
+  // Prefer the selected setting's description, not its name. Look up the
+  // selected configuration rather than assuming CurrentGlobalSetting is desired.
+  string selectedGlobalDescription = Model.PTMagicConfiguration.AnalyzerSettings.GlobalSettings?
+    .FirstOrDefault(setting => String.Equals(setting.SettingName, selectedGlobalSetting,
+      StringComparison.OrdinalIgnoreCase))?.Description;
+  string globalSettingInfoTooltip = System.Net.WebUtility.HtmlEncode(Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName);
+  if (!String.IsNullOrWhiteSpace(selectedGlobalDescription))
+    globalSettingInfoTooltip += "<br />" + System.Net.WebUtility.HtmlEncode(selectedGlobalDescription).Replace("\r\n", "\n").Replace("\n", "<br />");
+  globalSettingInfoTooltip += "<br />" + (deliveredToPT ? "Delivered to PT" : "Not Delivered to PT");
   if (Model.Summary.StartupSellOnlyModeActive)
     globalSettingInfoTooltip += "<br />Startup SOM";
 
@@ -59,11 +65,11 @@
 }
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined @globalIconColor" data-ticker-role="global-card">
-  <span data-ticker-role="global-setting" data-toggle="tooltip" data-placement="bottom" title="Selected global setting; see details for confirmed delivery">@Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-global-setting text-left'></div></div>"></i></a></span>
+  <span data-ticker-role="global-setting">@Core.Helper.SystemHelper.SplitCamelCase(String.IsNullOrEmpty(Model.Summary.DesiredGlobalSettingName) ? Model.Summary.CurrentGlobalSetting?.SettingName ?? "Not selected" : Model.Summary.DesiredGlobalSettingName)</span><span class="header-title"><a href="StatusSummary"> <i data-ticker-role="global-info" class="fa fa-info-circle text-muted" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(globalSettingInfoTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-global-setting text-left'></div></div>"></i></a></span>
 </div>
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined" data-ticker-role="sms-card">
-  <span data-toggle="tooltip" data-placement="bottom" title="Active single market settings"><b>SMS: </b></span><span class="header-title"><a href="ManageSMS"><span data-ticker-role="sms-count">@activeSingleSettings</span> <i data-ticker-role="sms-info" class="@singleSettingsInfoClass" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(singleSettingsTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-200 text-left'></div></div>"></i></a></span>
+  <span><b>SMS: </b></span><span class="header-title"><a href="ManageSMS"><span data-ticker-role="sms-count">@activeSingleSettings</span> <i data-ticker-role="sms-info" class="@singleSettingsInfoClass" data-toggle="tooltip" data-placement="top" data-html="true" title="@Html.Raw(singleSettingsTooltip)" data-template="<div class='tooltip' role='tooltip'><div class='tooltip-arrow'></div><div class='tooltip-inner tooltip-200 text-left'></div></div>"></i></a></span>
 </div>
 
 @if (Model.Summary.StartupSellOnlyModeNoticeVisible)
