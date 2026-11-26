@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Global description and ticker tooltip simplification (validation pending)
+
+Add optional `Description` to the GlobalSetting schema and Monitor Analyzer editor, including the Default setting. The editor now persists, clears and roundtrips this field without changing trigger or configuration behavior. In Monitor's ticker, neither the Global setting name nor the SMS text/count has its own tooltip; only the existing information icons display those details. The Global information icon uses the selected Global's HTML-escaped description, if present, instead of repeating its setting name, while preserving instance name, PT delivery acknowledgement and startup SOM status. SMS information remains unchanged. Added editor roundtrip regression coverage. Native .NET build, regression execution and live ticker validation pending.
+
 ## November 26, 2026 — Contextual comparisons and graded single-market defense
 
 Analyzer rules can compare the magnitude of a reversal to its preceding leg and to volatility observed before the move, and compare leader overlap to the actual incidence of origin leaders, including ties. Historical percentile metrics compare current market or contract data with 24 preceding comparable windows. Buyer and seller pressure can be compared directly. Participation intensity uses the amount of volume expansion or buying imbalance for each contract.
