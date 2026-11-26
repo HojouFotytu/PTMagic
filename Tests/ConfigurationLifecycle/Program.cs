@@ -872,6 +872,32 @@ internal static class Program
           && !fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData
           && !fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteData);
       });
+      Check("watchdog without FAILSAFE records incomplete best-known Global without inventing a new setting", () =>
+      {
+        using var fixture = new Fixture();
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        fixture.BeforeRaid();
+        Set(fixture.Bot, "_lastFreshAnalysisUtc", DateTimeOffset.UtcNow.AddHours(-1));
+        Call(fixture.Bot, "WatchdogTick", false);
+        Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default"
+          && fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData
+          && fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteData);
+      });
+      Check("failed provisional transfer preserves the normal confirmed PT setting", () =>
+      {
+        using var fixture = new Fixture();
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        fixture.BeforeRaid();
+        fixture.SelectRisk();
+        Set(fixture.Bot, "_raidAnalysisBuilt", false);
+        fixture.Next = ConfigurationDeliveryResult.Failed("transport unavailable");
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default"
+          && !fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData
+          && fixture.Bot.ConfigurationDelivery.Pending
+          && fixture.Bot.ActiveSettingName == "Default"
+          && !fixture.Bot.LastRuntimeSummary.ConfirmedIncompleteData);
+      });
       Check("incomplete best-available selection uses observations before prior name", () =>
       {
         var selected = IncompleteGlobalPolicy.SelectBestAvailable(new[]
