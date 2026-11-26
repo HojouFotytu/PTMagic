@@ -3192,6 +3192,8 @@ namespace Core.Main
           DesiredPayloadHash = _desiredPayloadHash, ConfirmedPayloadHash = _configurationDelivery.Confirmed.AppliedPayloadHash,
           AnalysisAsOfUtc = _raidAnalysisBuilt ? BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc : null,
           DecisionFresh = _decisionFresh, SelectionIndeterminate = _selectionIndeterminate,
+          ProvisionalDecision = _provisionalDecision,
+          ConfirmedIncompleteData = _configurationDelivery.Confirmed.IncompleteData,
           StartupSellOnlyModeActive = _startupGuardActive, StartupSellOnlyModePending = _startupGuardPending,
           StartupSellOnlyModeStatus = _startupGuardStatus, TestMode = app.TestMode,
           DesiredGlobalSetting = _desiredGlobalSettingName, ConfirmedGlobalSetting = _configurationDelivery.Confirmed.AppliedSettingName,
