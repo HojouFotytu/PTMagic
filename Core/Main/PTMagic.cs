@@ -2894,8 +2894,9 @@ namespace Core.Main
     {
       this.TriggeredSingleMarketSettings.Clear();
       this.SingleMarketSettingsCount.Clear();
-      this.SingleMarketSettingChanged = SettingsHandler.RemoveSingleMarketSettings(this)
+      bool removed = SettingsHandler.RemoveSingleMarketSettings(this)
         || this.SingleMarketSettingSummaries.Count > 0;
+      this.SingleMarketSettingChanged = this.SingleMarketSettingChanged || removed;
       this.SingleMarketSettingSummaries.Clear();
     }
 
