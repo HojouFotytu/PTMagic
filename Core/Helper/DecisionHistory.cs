@@ -84,6 +84,8 @@ namespace Core.Helper
     public DateTimeOffset? AnalysisAsOfUtc { get; set; }
     public bool DecisionFresh { get; set; }
     public bool SelectionIndeterminate { get; set; }
+    public bool ProvisionalDecision { get; set; }
+    public bool ConfirmedIncompleteData { get; set; }
     public bool StartupSellOnlyModeActive { get; set; }
     public bool StartupSellOnlyModePending { get; set; }
     public string StartupSellOnlyModeStatus { get; set; }
