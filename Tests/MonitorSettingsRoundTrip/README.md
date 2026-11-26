@@ -1,5 +1,10 @@
 # Monitor settings form acceptance
 
+## November 26 Global Description and ticker metadata — source only
+
+Production `GlobalSetting.Description` is an optional string persisted by `AnalyzerSettingsForm` and edited in the Monitor Global Settings form, including the Default Global. Ticker Global (i) uses the HTML-escaped description, preserves instance/delivery/SOM context, and no longer displays name hover on the text; SMS ticker text hover removed while SMS info icon stays. The Settings strategy repository subsequently advanced both Analyzer metadata versions to 0.10.3 with CONDITION/RESPONSE Description strings (18 LONG, 20 SHORT). The previously reported native **28-check PASS** predates these changes. Additional description roundtrip regression was added in source; the current suite count and new PASS have NOT been confirmed by a user run. Live Monitor behavior/installed schema must be verified after upgrading the application, otherwise old engine/Monitor builds may ignore descriptions.
+
+
 Status: **all 28 checks passed in the user's .NET 10.0.403 run at source `86c2ea3ff430b62e654f929a222935ec53ea8fa6`.** Native build and harness execution remain user-owned under D-021. Browser acceptance remains separate from the production form round-trip results.
 
 The harness links the production `Monitor/Configuration/AnalyzerSettingsForm.cs` used by `SettingsAnalyzerModel.OnPost`, together with the production `AnalyzerSettingsEditor.cs` row projection used by the AJAX pages and `AnalyzerSettingsStore.cs` file commit. It does not implement an alternate save algorithm. The fixture converts production row values and selected HTML options into posted form fields, then calls the same detached-copy validation and transformation used by the Monitor. Two isolated temporary-file cases cover atomic commit, same-revision rejection and failed replacement without mutation of the source object or original file.
