@@ -20,16 +20,19 @@ namespace Core.ProfitTrailer
     public string HeldMarketDefenseProperty { get; }
     public int? HeldMarketDefenseLevel { get; }
     public string HeldMarketDefensePolicyHash { get; }
+    public bool IncompleteData { get; }
 
     public ConfigurationPayload(string settingName, IEnumerable<string> pairs, IEnumerable<string> dca,
       IEnumerable<string> indicators, string destinationHash, string heldMarketDefenseProperty = null,
-      int? heldMarketDefenseLevel = null, string heldMarketDefensePolicyHash = null)
+      int? heldMarketDefenseLevel = null, string heldMarketDefensePolicyHash = null,
+      bool incompleteData = false)
     {
       SettingName = settingName ?? "";
       Pairs = Array.AsReadOnly((pairs ?? throw new ArgumentNullException(nameof(pairs))).ToArray());
       Dca = Array.AsReadOnly((dca ?? throw new ArgumentNullException(nameof(dca))).ToArray());
       Indicators = Array.AsReadOnly((indicators ?? throw new ArgumentNullException(nameof(indicators))).ToArray());
       DestinationHash = destinationHash ?? "";
+      IncompleteData = incompleteData;
       HeldMarketDefenseLevel = heldMarketDefenseLevel;
       HeldMarketDefensePolicyHash = heldMarketDefenseLevel.HasValue ? heldMarketDefensePolicyHash : null;
       HeldMarketDefenseProperty = heldMarketDefenseLevel.HasValue ? heldMarketDefenseProperty : null;
@@ -77,6 +80,7 @@ namespace Core.ProfitTrailer
     public string HeldMarketDefenseProperty { get; set; }
     public int? HeldMarketDefenseLevel { get; set; }
     public string HeldMarketDefensePolicyHash { get; set; }
+    public bool IncompleteData { get; set; }
 
     public int? PreviousDefenseFor(string destinationHash, string property, string policyHash) =>
       DestinationHash == destinationHash && HeldMarketDefenseProperty == property
@@ -117,6 +121,7 @@ namespace Core.ProfitTrailer
         current.HeldMarketDefenseProperty = payload.HeldMarketDefenseProperty;
         current.HeldMarketDefenseLevel = payload.HeldMarketDefenseLevel;
         current.HeldMarketDefensePolicyHash = payload.HeldMarketDefensePolicyHash;
+        current.IncompleteData = payload.IncompleteData;
         Pending = false;
         return LastResult = new ConfigurationDeliveryResult
           { Succeeded = true, Simulated = testMode, Status = testMode ? "TestMode unchanged" : "Unchanged" };
@@ -153,7 +158,7 @@ namespace Core.ProfitTrailer
       AppliedSettingName = payload.SettingName, AppliedPayloadHash = payload.PayloadHash,
       DestinationHash = payload.DestinationHash, HeldMarketDefenseProperty = payload.HeldMarketDefenseProperty,
       HeldMarketDefenseLevel = payload.HeldMarketDefenseLevel, HeldMarketDefensePolicyHash = payload.HeldMarketDefensePolicyHash,
-      AppliedAtUtc = DateTimeOffset.UtcNow
+      IncompleteData = payload.IncompleteData, AppliedAtUtc = DateTimeOffset.UtcNow
     };
 
     public static ConfigurationDeliveryState Load(string path)
