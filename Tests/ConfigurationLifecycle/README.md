@@ -1,5 +1,10 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 26 — Monitor ticker delivery tooltip and raid animation
+
+Move Delivered to PT / Not Delivered to PT and the acknowledged Incomplete Data suffix from Global information to PTMagic Health. Keep the existing Global description, instance name and conditional startup SOM line. Select the spinning cog after all idle health and delivery-warning icon assignments; active raids retain their animation even when a prior delivery warning colors it amber. Idle warning triangle and healthy heartbeat remain. The lifecycle source regression checks tooltip placement and icon precedence. Native Monitor build, suite execution and browser validation pending.
+
+
 ## November 26 — Dev 17 operator validation (partial run; test expectation corrected)
 
 Operator ran ConfigurationLifecycle at Dev 17 source (branch checkpoint `df26022`): compilation and the first 55 checks passed, including Global Delta, delivery acknowledgement/retry, HTTP freshness and startup API guard independence. Execution stopped at Program.cs:801: obsolete assertion that inconclusive selection sends no configuration. This contradicts Dev 16's explicit best-available provisional delivery policy. Updated only the regression: require provisional acknowledgement with startup SOM unchanged, exercise transport failure using a distinct normal Global payload, preserve the previous provisional acknowledgement on failure, retry and clear incomplete quality on successful acknowledgement without issuing SOM OFF. This is a test correction, not a production policy change. Full suite rerun, complete solution build and live runtime validation remain pending.

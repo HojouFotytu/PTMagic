@@ -25,7 +25,7 @@
     && !String.IsNullOrWhiteSpace(Model.Summary.AppliedGlobalSettingName)
     && String.Equals(Model.Summary.AppliedGlobalSettingName, selectedGlobalSetting, StringComparison.OrdinalIgnoreCase);
 
-  // Only the four requested compact lines; absent SOM is not listed.
+  // Global info describes the selected setting; delivery belongs to Health.
   // StartupSellOnlyModeActive records PTMagic's acknowledged enable, not
   // a live ProfitTrailer SOM readback.
   // Prefer the selected setting's description, not its name. Look up the
@@ -36,9 +36,6 @@
   string globalSettingInfoTooltip = System.Net.WebUtility.HtmlEncode(Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName);
   if (!String.IsNullOrWhiteSpace(selectedGlobalDescription))
     globalSettingInfoTooltip += "<br />" + System.Net.WebUtility.HtmlEncode(selectedGlobalDescription).Replace("\r\n", "\n").Replace("\n", "<br />");
-  globalSettingInfoTooltip += "<br />" + (deliveredToPT ? "Delivered to PT" : "Not Delivered to PT");
-  if (Model.Summary.ConfirmedIncompleteData)
-    globalSettingInfoTooltip += "<br />(Incomplete Data)";
   if (Model.Summary.StartupSellOnlyModeActive)
     globalSettingInfoTooltip += "<br />Startup SOM";
 
@@ -54,18 +51,22 @@
     ptMagicHealthTooltip = "PT Magic seems to have problems, check the logs!  Time elapsed since last run:  " + Math.Round(elapsedSecondsSinceRuntime / 60, 1) + " mins.";
     healthIconColor = "text-danger";
   }
-  if (Model.IsAnalyzerRunning()) {
-    ptMagicHealthIcon = "fa-cog fa-spin";
-  }
   if (String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Failed", StringComparison.OrdinalIgnoreCase)
     || String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Deferred", StringComparison.OrdinalIgnoreCase)
     || Model.Summary.StartupSellOnlyModePending || Model.Summary.ConfirmedIncompleteData) {
     healthIconColor = "text-warning";
     ptMagicHealthIcon = "fa-exclamation-triangle";
     ptMagicHealthTooltip = "Configuration delivery: " + Model.Summary.ConfigurationDeliveryStatus +
-      (Model.Summary.ConfirmedIncompleteData ? " (Incomplete Data)" : "") +
       "; startup global SOM: " + Model.Summary.StartupSellOnlyModeStatus + ". Check Status Summary and the logs.";
   }
+  // Running state controls the icon shape, independently of the last
+  // acknowledged delivery's quality. Retain the warning color if needed.
+  if (Model.IsAnalyzerRunning()) {
+    ptMagicHealthIcon = "fa-cog fa-spin";
+    ptMagicHealthTooltip = "Raid in progress. " + ptMagicHealthTooltip;
+  }
+  ptMagicHealthTooltip += " " + (deliveredToPT ? "Delivered to PT" : "Not Delivered to PT") +
+    (Model.Summary.ConfirmedIncompleteData ? " (Incomplete Data)" : "") + ".";
 }
 
 <div class="card-box card-box-mini card-box-ptmagic-outlined @globalIconColor" data-ticker-role="global-card">

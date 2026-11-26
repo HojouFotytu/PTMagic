@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Health ticker delivery status and active-raid cog
+
+Move the compact PT delivery acknowledgement wording (including the incomplete-data qualifier) from the Global info tooltip to the PTMagic Health tooltip. Global info retains instance name, description and conditional startup SOM. Restore the spinning cog whenever the Analyzer is running by selecting its icon after idle/fault icon assignments; warning color and fault tooltip remain visible during a raid, and the warning triangle returns when idle if the fault persists. No changes to delivery semantics or raid-state tracking. Update the existing lifecycle source regression. Build/browser verification pending.
+
+
 ## November 26, 2026 — Decision History oversized raid records
 
 Both live instances reported an InvalidOperationException during history capture. Source inspection found the remaining 16 MiB individual-record rejection; the failed live serialized size was not reported, so the diagnosis is source-supported but not yet confirmed by runtime evidence. Remove the hard rejection: 16 MiB is a rotation target, not a record cap. Oversized raid records remain intact as independent JSONL lines in dedicated segments, with subsequent raids rotating again. The age retention policy, interrupted-tail protection, complete evidence and configuration delivery state remain unchanged. Add tests covering oversized records and a synthetic 729-market, 100-trigger-per-market raid. Failure logs identify the processing stage and metric count without logging potentially sensitive exception text. Native regression and live capture validation pending.

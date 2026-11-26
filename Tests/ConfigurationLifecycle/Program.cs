@@ -1076,7 +1076,7 @@ internal static class Program
           && css.Contains(".market-wide-grouped thead .market-wide-group-line", StringComparison.Ordinal)
           && css.Contains("color: #8f9fb3", StringComparison.Ordinal));
       });
-      Check("global ticker tooltip uses compact delivery wording and only conditional startup SOM", () =>
+      Check("delivery wording belongs to Health tooltip and running cog takes precedence over warning icon", () =>
       {
         string root = Directory.GetCurrentDirectory();
         string tickerPath = Path.Combine(root, "Monitor", "Pages", "_get", "TickerWidgets.cshtml");
@@ -1085,8 +1085,19 @@ internal static class Program
           throw new InvalidOperationException("Run this source integration harness from the PTMagic repository root.");
         string ticker = File.ReadAllText(tickerPath);
         string css = File.ReadAllText(cssPath);
-        Require(ticker.Contains("Delivered to PT", StringComparison.Ordinal)
-          && ticker.Contains("Not Delivered to PT", StringComparison.Ordinal)
+        int globalTooltip = ticker.IndexOf("string globalSettingInfoTooltip =", StringComparison.Ordinal);
+        int healthTooltip = ticker.IndexOf("string ptMagicHealthTooltip =", StringComparison.Ordinal);
+        int warningIcon = ticker.LastIndexOf("ptMagicHealthIcon = \"fa-exclamation-triangle\";", StringComparison.Ordinal);
+        int runningCog = ticker.IndexOf("ptMagicHealthIcon = \"fa-cog fa-spin\";", StringComparison.Ordinal);
+        Require(globalTooltip >= 0 && healthTooltip > globalTooltip &&
+          warningIcon >= healthTooltip && runningCog > warningIcon);
+        string globalInfo = ticker.Substring(globalTooltip, healthTooltip - globalTooltip);
+        Require(!globalInfo.Contains("Delivered to PT", StringComparison.Ordinal)
+          && !globalInfo.Contains("(Incomplete Data)", StringComparison.Ordinal)
+          && ticker.Contains("ptMagicHealthTooltip += \" \" + (deliveredToPT ? \"Delivered to PT\" : \"Not Delivered to PT\")", StringComparison.Ordinal)
+          && ticker.Contains("Model.Summary.ConfirmedIncompleteData ? \" (Incomplete Data)\" : \"\"", StringComparison.Ordinal)
+          && ticker.Contains("ptMagicHealthTooltip = \"Raid in progress. \" + ptMagicHealthTooltip;", StringComparison.Ordinal)
+          && ticker.Contains("healthIconColor = \"text-warning\";", StringComparison.Ordinal)
           && ticker.Contains("Model.Summary.AppliedGlobalSettingName", StringComparison.Ordinal)
           && ticker.Contains("Model.Summary.StartupSellOnlyModeActive", StringComparison.Ordinal)
           && ticker.Contains("globalSettingInfoTooltip += \"<br />Startup SOM\"", StringComparison.Ordinal)
