@@ -116,6 +116,13 @@ namespace Core.Main
     private List<GlobalSettingTriggerSummary> _selectedGlobalTriggerDetails = new List<GlobalSettingTriggerSummary>();
     private string _selectedGlobalTriggerConnection = "";
     private string _selectedGlobalSelectionBasis = "";
+    private readonly object _deliveryGate = new object();
+    private System.Threading.Timer _freshnessWatchdog;
+    private DateTimeOffset _lastFreshAnalysisUtc = DateTimeOffset.UtcNow;
+    private DateTimeOffset _lastWatchdogAttemptUtc = DateTimeOffset.MinValue;
+    private long _watchdogGeneration;
+    private long _raidWatchdogGeneration;
+    private bool _watchdogActive;
     private int? _desiredHeldDefense;
     private string _desiredHeldPolicyHash;
     public ConfigurationDeliveryCoordinator ConfigurationDelivery => _configurationDelivery;
@@ -902,6 +909,10 @@ namespace Core.Main
       this.Timer = new System.Timers.Timer(this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.IntervalMinutes * 60 * 1000);
       this.Timer.Enabled = true;
       this.Timer.Elapsed += new System.Timers.ElapsedEventHandler(this.PTMagicIntervalTimer_Elapsed);
+      _freshnessWatchdog?.Dispose();
+      _lastFreshAnalysisUtc = DateTimeOffset.UtcNow;
+      _freshnessWatchdog = new System.Threading.Timer(_ => WatchdogTick(), null,
+        TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
 
       this.Log.DoLogInfo("Checking market trends every " + this.PTMagicConfiguration.AnalyzerSettings.MarketAnalyzer.IntervalMinutes.ToString() + " minutes...");
 
@@ -952,6 +963,7 @@ namespace Core.Main
             _selectionIndeterminate = false;
             _missingGlobalData = false;
             _provisionalDecision = false;
+            _raidWatchdogGeneration = Interlocked.Read(ref _watchdogGeneration);
             _smsUnavailableMarkets.Clear();
             _decisionFresh = false;
             _decisionInputs.Clear();
@@ -1055,6 +1067,8 @@ namespace Core.Main
               List<string> matchedTriggers = new List<string>();
               this.CheckGlobalSettingsTriggers(ref triggeredSetting, ref matchedTriggers);
               RaidStage("GlobalSetting trigger evaluation");
+              if (_decisionFresh && !_missingGlobalData && !_selectionIndeterminate)
+                _lastFreshAnalysisUtc = DateTimeOffset.UtcNow;
 
               // Record the actual setting-name transition separately from forced
               // reapplication of the same preset.
@@ -2877,8 +2891,90 @@ namespace Core.Main
       ResetProvisionalSms();
     }
 
+    // Independent of the raid mutex: a stalled data refresh cannot keep an old
+    // permissive Global in force past its freshness deadline. Never mutate the
+    // in-progress raid's compiled property arrays or deliver concurrently.
+    private void WatchdogTick(bool force = false)
+    {
+      try
+      {
+        Application app = this.PTMagicConfiguration?.GeneralSettings?.Application;
+        if (app == null || !app.IsEnabled || app.TestMode || _startupGuardPending) return;
+        var now = DateTimeOffset.UtcNow;
+        if (!force && (now - _lastFreshAnalysisUtc).TotalSeconds <= app.MaxAnalysisAgeSeconds) return;
+        if ((now - _lastWatchdogAttemptUtc).TotalSeconds < 30) return;
+        lock (_deliveryGate)
+        {
+          now = DateTimeOffset.UtcNow;
+          if (!force && (now - _lastFreshAnalysisUtc).TotalSeconds <= app.MaxAnalysisAgeSeconds) return;
+          if ((now - _lastWatchdogAttemptUtc).TotalSeconds < 30) return;
+          _lastWatchdogAttemptUtc = now;
+
+          AnalyzerSettings settings = this.PTMagicConfiguration.AnalyzerSettings;
+          GlobalSetting target = FindFailSafe();
+          if (target == null)
+          {
+            string bestName = _configurationDelivery.Confirmed.AppliedSettingName;
+            if (String.IsNullOrWhiteSpace(bestName))
+              bestName = this.ActiveSettingName;
+            target = settings.GlobalSettings.Find(setting =>
+              !IncompleteGlobalPolicy.IsFailSafe(setting.SettingName) &&
+              String.Equals(setting.SettingName, bestName, StringComparison.OrdinalIgnoreCase));
+            target ??= settings.GlobalSettings.Find(setting =>
+              String.Equals(setting.SettingName, this.DefaultSettingName, StringComparison.OrdinalIgnoreCase));
+          }
+          if (target == null) return;
+          var detached = new PTMagic(this.Log)
+          {
+            PTMagicConfiguration = this.PTMagicConfiguration,
+            DefaultSettingName = this.DefaultSettingName,
+            LastRuntimeSummary = new Summary { MainMarket = this.LastRuntimeSummary?.MainMarket ?? "USDT" },
+            ActiveSetting = target, ActiveSettingName = target.SettingName
+          };
+          SettingsHandler.CompileProperties(detached, target, DateTime.Now);
+          var payload = new ConfigurationPayload(target.SettingName, detached.PairsLines,
+            detached.DCALines, detached.IndicatorsLines, DestinationFingerprint(), incompleteData: true);
+          var result = _configurationDelivery.Deliver(payload,
+            candidate => _configurationSender != null ? _configurationSender(candidate) :
+              SettingsAPI.SendPropertyLinesToAPI(candidate.Pairs.ToList(), candidate.Dca.ToList(),
+                candidate.Indicators.ToList(), this.PTMagicConfiguration, this.Log,
+                canSend: () => true), false);
+          _raidDelivery = result;
+          if (result.Succeeded)
+          {
+            this.ActiveSetting = target;
+            this.ActiveSettingName = target.SettingName;
+            _lastEffectivePayload = payload;
+            this.LastSettingsChange = DateTime.UtcNow;
+            _watchdogActive = true;
+            Interlocked.Increment(ref _watchdogGeneration);
+            SaveDeliveryCheckpoint();
+            this.Log.DoLogWarn("Watchdog applied '" + target.SettingName + "' (Incomplete Data).");
+          }
+          else this.Log.DoLogWarn("Watchdog configuration delivery failed; retry remains pending.");
+          if (this.LastRuntimeSummary != null)
+          {
+            UpdateDeliverySummary();
+            PersistFailedRaidSummary();
+          }
+        }
+      }
+      catch (Exception exception)
+      {
+        this.Log?.DoLogWarn("Watchdog could not apply an incomplete-data configuration: "
+          + exception.GetType().Name + ".");
+      }
+    }
+
     private void SaveProfitTrailerProperties()
     {
+      lock (_deliveryGate) SaveProfitTrailerPropertiesCore();
+    }
+
+    private void SaveProfitTrailerPropertiesCore()
+    {
+      if (_raidWatchdogGeneration != Interlocked.Read(ref _watchdogGeneration) && _watchdogActive)
+        _provisionalDecision = true;
       PrepareProvisionalDelivery();
       _desiredGlobalSettingName = this.ActiveSettingName;
       _desiredSms = this.TriggeredSingleMarketSettings
