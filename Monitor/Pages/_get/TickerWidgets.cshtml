@@ -31,7 +31,7 @@
   // Prefer the selected setting's description, not its name. Look up the
   // selected configuration rather than assuming CurrentGlobalSetting is desired.
   string selectedGlobalDescription = Model.PTMagicConfiguration.AnalyzerSettings.GlobalSettings?
-    .FirstOrDefault(setting => String.Equals(setting.SettingName, selectedGlobalSetting,
+    .Find(setting => String.Equals(setting.SettingName, selectedGlobalSetting,
       StringComparison.OrdinalIgnoreCase))?.Description;
   string globalSettingInfoTooltip = System.Net.WebUtility.HtmlEncode(Model.PTMagicConfiguration.GeneralSettings.Application.InstanceName);
   if (!String.IsNullOrWhiteSpace(selectedGlobalDescription))
