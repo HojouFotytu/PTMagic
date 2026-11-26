@@ -55,6 +55,9 @@ namespace Monitor.Pages {
 
     private void BindData() {
       PTData = this.PtDataObject;
+      // Provisional deliveries are compiled without SMS overrides. Do not
+      // display historical raid SMS as currently active in ProfitTrailer.
+      if (Summary.ConfirmedIncompleteData) return;
       // Get markets with active single settings
       var MarketsWithSingleSettingsData = from x in Summary.MarketSummary
                                           where x.Value.ActiveSingleSettings != null
