@@ -43,7 +43,7 @@ namespace Core.MarketAnalyzer.MarketData
       MarketDataStore store,
       TimeSpan interval,
       DateTimeOffset asOfUtc,
-      string mainMarket = "USDT")
+      string mainMarket = "USDT", Func<string, DateTimeOffset?> onboardDate = null)
     {
       HashSet<string> active = new HashSet<string>(enabled ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
       string[] global = Normalize(globalSymbols);
@@ -138,9 +138,10 @@ namespace Core.MarketAnalyzer.MarketData
         var observed = global.ToDictionary(s => s, s => features[s].LastQuoteVolume, StringComparer.OrdinalIgnoreCase);
         var selected = new HashSet<string>(global.Where(s => VolumeDistributionCoverage.Usable(observed[s])), StringComparer.OrdinalIgnoreCase);
         var references = VolumeDistributionCoverage.References(global, observed, selected, trend, store, interval, asOfUtc);
+        var evidence = VolumeDistributionCoverage.ListingEvidence(global, observed, selected, trend, store, interval, asOfUtc, onboardDate);
         foreach (string metric in active.Where(VolumeDistributionCoverage.IsMetric))
           marketResults[metric] = VolumeDistributionCoverage.Calculate(metric, trend, global,
-            observed, selected, references, asOfUtc, mainMarket);
+            observed, selected, references, asOfUtc, mainMarket, evidence);
       }
 
       Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>> assetResults =

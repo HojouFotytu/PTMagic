@@ -29,6 +29,7 @@ internal static class Program
       TestVolumeConcentration();
       TestIncompleteVolumePopulation();
       TestEconomicVolumeCoverage();
+      TestListingVolumeCoverage();
       TestRegistryScopesAndSharedIntegration();
       TestTakerFlowAndMissingHistory();
       TestTakerFailureReasonCategories();
@@ -294,10 +295,17 @@ internal static class Program
     Phase1CFeatureResult result = MarketTrendPhase1CEngine.Calculate(
       trend, MarketTrendMetrics.ParseEnabled(trend), symbols, Array.Empty<string>(),
       store, Interval, Start.AddMinutes(10).AddSeconds(1));
-    Invalid(result.GlobalMetrics[MarketTrendMetrics.TopNVolumeShare],
-      "Missing volume without comparable history remains unavailable");
+    Near(result.GlobalMetrics[MarketTrendMetrics.TopNVolumeShare], 300.0 / 9,
+      "Unknown volume accepted at 90% using conservative cohort proxy");
+    var hhi = result.GlobalMetrics[MarketTrendMetrics.VolumeConcentration];
+    Near(hhi, 100.0 / 9, "Proxy not inserted into actual denominator");
+    Assert(hhi.VolumeCoverage.ProxyEstimatedAssets.SequenceEqual(new[] { symbols[9] }),
+      "Unknown exposure remains explicitly identified");
+    AddBars(store, symbols[0], 1, baseSourceQuote: 100);
+    result = MarketTrendPhase1CEngine.Calculate(trend, MarketTrendMetrics.ParseEnabled(trend),
+      symbols, Array.Empty<string>(), store, Interval, Start.AddMinutes(10).AddSeconds(1));
     Invalid(result.GlobalMetrics[MarketTrendMetrics.VolumeConcentration],
-      "HHI without missing-volume estimation history remains unavailable");
+      "Material unresolved exposure fails economic coverage");
     _passed++;
   }
 
@@ -323,6 +331,40 @@ internal static class Program
     AddBars(store, symbols[9], 2, baseSourceQuote: 100);
     current = MarketTrendAnalyticsEngine.Calculate(trend, symbols, Array.Empty<string>(), store, Interval, at, metrics);
     Invalid(current.MarketMetrics[MarketTrendMetrics.VolumeConcentration], "Dominant missing asset rejected");
+    _passed++;
+  }
+
+  private static void TestListingVolumeCoverage()
+  {
+    var store = NewStore();
+    string[] symbols = new[] { "BTCUSDT", "ETHUSDT" }.Concat(
+      Enumerable.Range(0, 8).Select(i => "LIST" + i + "USDT")).ToArray();
+    string recent = symbols[9];
+    var trend = new MarketTrend { Name = "Listing", TrendMinutes = 10, TopNVolumeCount = 3,
+      Metrics = "VolumeConcentration,BTCETHVolumeShare" };
+    var metrics = MarketTrendMetrics.ParseEnabled(trend);
+    foreach (string s in symbols.Take(9)) AddBars(store, s, 3);
+    AddSource(store, recent, Start.AddMinutes(20), 90, 110, 1);
+    AddSource(store, recent, Start.AddMinutes(25), 90, 110, 1);
+    DateTimeOffset? Listed(string s) => s == recent ? Start.AddMinutes(20) : null;
+    var at = Start.AddMinutes(30).AddSeconds(1);
+    var current = MarketTrendAnalyticsEngine.Calculate(trend, symbols, Array.Empty<string>(), store, Interval, at, metrics, onboardDate: Listed);
+    var delta = MarketTrendDeltaEngine.Calculate(trend, metrics, current, store, Interval, onboardDate: Listed);
+    var hhi = delta.MarketMetrics[MarketTrendMetrics.VolumeConcentration];
+    Near(hhi.Delta, 0, "Matched Delta accepts verified prelisting absence");
+    Assert(hhi.Previous.VolumeCoverage.PrelistingAssets.SequenceEqual(new[] { recent }) &&
+      hhi.Previous.VolumeCoverage.EstimatedVolumeWeightedCoveragePercent == 100,
+      "Verified prelisting absence has no missing turnover");
+    DateTimeOffset? Crossing(string s) => s == recent ? Start.AddMinutes(25) : null;
+    var partialStore = NewStore();
+    foreach (string s in symbols.Take(9)) AddBars(partialStore, s, 3);
+    AddSource(partialStore, recent, Start.AddMinutes(25), 90, 110, 1);
+    var partial = MarketTrendPhase1CEngine.Calculate(trend, metrics, symbols, Array.Empty<string>(),
+      partialStore, Interval, at, onboardDate: Crossing).GlobalMetrics[MarketTrendMetrics.VolumeConcentration];
+    Near(partial, 100.0 / 9, "Verified partial listing-period turnover accepted");
+    Assert(partial.VolumeCoverage.PartialListingAssets.SequenceEqual(new[] { recent }) &&
+      partial.VolumeCoverage.ActualQuoteVolumeDenominator == 180,
+      "Partial listing volume only informs coverage");
     _passed++;
   }
 

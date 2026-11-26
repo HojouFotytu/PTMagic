@@ -25,7 +25,7 @@ namespace Core.MarketAnalyzer.MarketData
       int? configuredStoreDataMaxHours = null,
       string exchangeName = "BinanceFutures",
       FuturesFundingDataService fundingData = null,
-      IReadOnlyCollection<string> deltaMetrics = null)
+      IReadOnlyCollection<string> deltaMetrics = null, Func<string, DateTimeOffset?> onboardDate = null)
     {
       if (marketTrend == null)
       {
@@ -285,7 +285,9 @@ namespace Core.MarketAnalyzer.MarketData
         Phase1CFeatureResult phase1c = MarketTrendPhase1CEngine.Calculate(
           marketTrend, ohlcvMetrics, globalUniverse, assetUniverse, store, interval, calculatedAtUtc,
           benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase)
-            ? benchmarkSymbol.Substring(3) : "USDT");
+            ? benchmarkSymbol.Substring(3) : "USDT",
+          onboardDate ?? (String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+            ? (Func<string, DateTimeOffset?>)Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc : null));
         foreach (KeyValuePair<string, FeatureValueSnapshot> feature in phase1c.GlobalMetrics)
         {
           marketMetrics[feature.Key] = feature.Value;

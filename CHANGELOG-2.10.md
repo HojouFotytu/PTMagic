@@ -2,6 +2,9 @@
 
 ## Dev 18 — PTM-VOLUME-COVERAGE-01
 
+Follow-up: removed unconditional estimation completeness. Verified Binance Futures onboard metadata identifies wholly prelisting periods as zero exposure (not a fabricated observation); periods crossing listing use verified contiguous post-listing candle turnover when available. Otherwise use preceding verified equal-duration volume, or for unresolved assets a conservative maximum verified cohort-volume proxy. This proxy is not a guaranteed bound and is explicitly diagnosed; both 90% thresholds and mandatory benchmarks remain unchanged. No estimate enters the metric denominator. Added regressions for unknown exposure, material proxy exposure, prelisting matched Delta and listing-crossing periods. Native execution and live validation pending. No strategy changes.
+
+
 Owner-run native validation receipt for `8bcf6b30dcc37daff691a5499402cc6cdb1833f7` (November 27, 2026): full solution build succeeded in 17.7 seconds (Core, PTMagic, Monitor); Phase1COhlcv 31/31, Phase1MetricWarnings 24/24, DecisionHistory 18/18, ConfigurationLifecycle 99/99 (172 total). Three nonblocking nullable warnings in Phase1COhlcv (CS8625 twice, CS8629 once). This supersedes pending native execution for that checkpoint only; remaining handoff cases, Monitor visual presentation, full matched Delta RAID reporting, live dual-instance behavior and financial validation remain open. No claim of deployment or live acceptance.
 
 

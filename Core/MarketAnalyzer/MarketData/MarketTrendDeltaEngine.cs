@@ -57,7 +57,7 @@ namespace Core.MarketAnalyzer.MarketData
       string benchmarkSymbol = "BTCUSDT",
       int? configuredStoreDataMaxHours = null,
       string exchangeName = "BinanceFutures",
-      FuturesFundingDataService fundingData = null)
+      FuturesFundingDataService fundingData = null, Func<string, DateTimeOffset?> onboardDate = null)
     {
       if (trend == null) throw new ArgumentNullException(nameof(trend));
       if (current == null) throw new ArgumentNullException(nameof(current));
@@ -66,13 +66,15 @@ namespace Core.MarketAnalyzer.MarketData
       var requested = (requestedMetrics ?? Array.Empty<string>())
         .Select(MarketTrendMetrics.Normalize).Distinct(StringComparer.OrdinalIgnoreCase)
         .Where(MarketTrendMetrics.IsKnown).ToArray();
+      onboardDate ??= String.Equals(exchangeName, "BinanceFutures", StringComparison.OrdinalIgnoreCase)
+        ? (Func<string, DateTimeOffset?>)Core.MarketAnalyzer.BinanceFuturesMarketUniverse.GetOnboardDateUtc : null;
       DateTimeOffset previousAsOfUtc = current.CalculatedAtUtc.AddMinutes(-trend.TrendMinutes);
 
       MarketTrendAnalysisSnapshot previous = requested.Length == 0 ? null
         : MarketTrendAnalyticsEngine.Calculate(
           trend, current.GlobalSymbols, current.AssetSymbols, store, interval,
           previousAsOfUtc, requested, benchmarkSymbol, configuredStoreDataMaxHours,
-          exchangeName, fundingData);
+          exchangeName, fundingData, onboardDate: onboardDate);
 
       var global = new Dictionary<string, MetricDeltaObservation>(StringComparer.OrdinalIgnoreCase);
       var assets = new Dictionary<string, IReadOnlyDictionary<string, MetricDeltaObservation>>(StringComparer.OrdinalIgnoreCase);
@@ -87,11 +89,13 @@ namespace Core.MarketAnalyzer.MarketData
           VolumeDistributionCoverage.Usable(prior[s])), StringComparer.OrdinalIgnoreCase);
         var nowReferences = VolumeDistributionCoverage.References(eligible, now, matched, trend, store, interval, current.CalculatedAtUtc);
         var priorReferences = VolumeDistributionCoverage.References(eligible, prior, matched, trend, store, interval, previousAsOfUtc);
+        var nowEvidence = VolumeDistributionCoverage.ListingEvidence(eligible, now, matched, trend, store, interval, current.CalculatedAtUtc, onboardDate);
+        var priorEvidence = VolumeDistributionCoverage.ListingEvidence(eligible, prior, matched, trend, store, interval, previousAsOfUtc, onboardDate);
         string quote = benchmarkSymbol.StartsWith("BTC", StringComparison.OrdinalIgnoreCase) ? benchmarkSymbol.Substring(3) : "USDT";
         foreach (string metric in volumeMetrics)
           global[metric] = Compare(
-            VolumeDistributionCoverage.Calculate(metric, trend, eligible, now, matched, nowReferences, current.CalculatedAtUtc, quote),
-            VolumeDistributionCoverage.Calculate(metric, trend, eligible, prior, matched, priorReferences, previousAsOfUtc, quote),
+            VolumeDistributionCoverage.Calculate(metric, trend, eligible, now, matched, nowReferences, current.CalculatedAtUtc, quote, nowEvidence),
+            VolumeDistributionCoverage.Calculate(metric, trend, eligible, prior, matched, priorReferences, previousAsOfUtc, quote, priorEvidence),
             current.CalculatedAtUtc);
       }
 
