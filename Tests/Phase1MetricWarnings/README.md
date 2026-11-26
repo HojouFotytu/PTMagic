@@ -1,5 +1,10 @@
 # Raid metric-warning natural-language regression tests
 
+## November 26–27 — historical Delta availability (Dev 17, source implemented, native execution pending)
+
+`df260227` retains the previous Delta analysis and independently checks previous asset/benchmark observations. A verified continuous listing-origin series and the metric's actual historical requirement are necessary for an expected history classification. Separate current versus Delta classification avoids concealing actual current data failures. A valid current efficiency with a nonstale historical flat path is informational when all affected requests have matching verified evidence; mixed or genuine faults stay WARN. Values and three-valued trigger decisions remain UNAVAILABLE, not zero. The historical-flat-path regression is added; expand direct new-listing Delta and mixed current/historical benchmark/source-gap cases during acceptance. User's old-build SHORT raid #12 had duplicate Swing72 PricePathEfficiency and RelativeStrengthMarket Delta warnings solely for AMDLUSDT/JNJUSDT/NIOUSDT, already named in the INFO line; a valid historical median benchmark must be verified before classifying the latter as expected. No current-code warning harness execution or dual-instance replay has been reported. The earlier per-market-notice design below is historical; one consolidated market list per raid is current.
+
+
 ## November 23 — One-line new-market history reporting
 
 Verified new-market history exclusions now produce exactly one INFO line per raid:
