@@ -1,5 +1,15 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Consolidated source and validation checkpoint (documentation reconciliation)
+
+**Current application source:** `24db0b56bd7c33e32fcccfc25f6aaf40a1883bd5` on `phase1/market-data-foundation`. Source changes listed below are not evidence of deployed binaries. Latest FAILSAFE/watchdog, Global description, Monitor layout, logging/export and current data/held-defense extensions need new native solution build, focused tests, TestMode and live acceptance; do not claim that earlier passing tests validate this head.
+
+**Observed local validation from operator (earlier checkpoints, not full-head certification):** DecisionHistory **17/17 PASS** after path normalization plus **PTMagic.sln build PASS** (Core/PTMagic/Monitor, November 24); PTDataExport **28/28 PASS** after numeric day/week/month ZIP selectors (November 25). ConfigurationLifecycle FAILSAFE and MonitorSettingsRoundTrip changes were published afterward with **no execution result reported**. Earlier UI and download behavior changes remain browser-acceptance pending.
+
+**Monitor corrections missing from prior notes:** Control menu now reads `PTMagic Logs/Data` above `PT Data` (route remains `Logs`); PT Data page's unnecessary non-upload disclaimer was removed. Application Settings storage estimate labels shortened to `Estimated space required`, `Available`, `Observed`. A failed *attempted* `Configuration delivery` raid-summary line uses WARN; a successful provisional acknowledgement uses WARN with `(Incomplete Data)` for both confirmed setting and delivery. Global and SMS ticker text have no tooltips; only respective `(i)` icons do, and a saved optional Global `Description` replaces repetition of the name in the Global icon. No LONG/SHORT distribution variants exist: the development and packaged default Analyzer templates are two generic copies.
+
+**Current unresolved checks:** complete build and regression suite at `24db0b5`; confirm optional FAILSAFE removal and best-available selection; confirm independent deadline watchdog, failed-raid recovery, multi-target acknowledgements, SMS overlay clearing and restoration, persisted `IncompleteData` after restart, missed data sources and runtime color changes; verify native sell-only enforcement cannot be bypassed by pair-level rules. The watchdog's absent-FAILSAFE path may use the latest retained classification when no new observation has arrived; do not imply a new market measurement was performed. The provisional candidate ranking counts known positive clauses and is a best-effort heuristic, **not** validated market inference or a guarantee of safer outcomes.
+
 ## November 26, 2026 — Optional FAILSAFE and incomplete-data Global delivery (source committed; native validation pending)
 
 Replaced indefinite stale/inconclusive Global delivery deferral with an explicitly marked provisional policy. The reserved case-insensitive Global SettingName `FAILSAFE` is optional and is excluded from ordinary metric-trigger classification. When current analysis is incomplete, inconclusive or stale, configured FAILSAFE supersedes the ordinary Global and clears SMS overrides. Native DEFAULT sell-only is explicitly emitted even if the DEFAULT preset omitted the key. Without FAILSAFE, retain normal metric truth semantics, evaluate every valid available input, choose a conclusive Global when possible or the best-supported configured Global (known positive trigger evidence and original priority), and otherwise use the latest known classification/default as the only remaining evidence; do not substitute fabricated zero measurements. The same mechanism applies to either trading side.
@@ -690,7 +700,7 @@ Added bounded JSONL decision history under `_data/DecisionHistory/YYYY-MM-DD-NNN
 
 Failed raids record safe status/error categories once the required services are initialized. Records exclude raw general settings, raw PT properties, tokens/licenses, HTTP text and unrestricted exception strings. History append errors do not change an already-known delivery result.
 
-Segments rotate at 16 MiB. Retention and total quota prune whole older files; interrupted tails cause a new segment, and a single oversized record is rejected before damaging history. This is the implemented decision audit trail. It records decisions and evidence, without claiming strategy-performance or full historical replay validation.
+Segments rotate at 16 MiB. Unified age-based `HistoryRetentionDays` pruning removes whole expired segments; the previous cumulative 256 MiB quota and size-based early deletion have been removed. Interrupted tails cause a new segment, and a single oversized record is rejected before damaging history. This is the implemented decision audit trail. It records decisions and evidence, without claiming strategy-performance or full historical replay validation.
 
 Core embeds the Git source revision at build time. Runtime logs, summary, Monitor and decision history expose it, with `-dirty` for detected uncommitted changes and `unknown` if identity is unavailable. Version `2.10.0` alone does not identify which implementation is running.
 
@@ -706,10 +716,9 @@ These fields belong in **`settings.general.json` → `GeneralSettings.Applicatio
 |---|---|---|
 | `StartupSellOnlyMode` | `true` | Enable-only native global SOM at startup, followed by manual release in ProfitTrailer; no automatic OFF. Explicitly present in both supplied general-settings templates. |
 | `ProfitTrailerServerAPITokenXtra` | `""` | Blank reuses the primary token. Otherwise comma-separated tokens correspond to additional PT URLs in the same order. |
-| `MaxAnalysisAgeSeconds` | `300` | Permitted range 1–86400 seconds. Measures age from the raid pin at decision time. |
-| `DecisionHistoryEnabled` | `true` | Enables bounded decision records. |
-| `DecisionHistoryRetentionDays` | `30` | Permitted range 1–3650 days. |
-| `DecisionHistoryMaxMegabytes` | `256` | Permitted range 16–102400; storage accounting uses MiB. |
+| `MaxAnalysisAgeSeconds` | `300` | Permitted range 1–86400 seconds. Defines an analysis freshness deadline; the optional FAILSAFE or provisional best-available path can deliver after this expires. |
+| `DecisionHistoryEnabled` | `true` | Enables segmented decision records; there is no cumulative size quota. |
+| `HistoryRetentionDays` | `30` | Unified disk retention (1–3650 days) for legacy MarketData snapshots and DecisionHistory, separate from active OHLCV candle capacity. Migrates explicitly configured legacy `DecisionHistoryRetentionDays` if the new key is absent. |
 | `TestMode` | `true` | Existing setting; 2.10 extends isolation to native SOM, acknowledgement checkpoints and SMS persistence. |
 
 The supplied files are [`PTMagic/_defaults/_default_settings_PT_2.x/settings.general.json`][packaged-settings] and [`_Development/DevSettings/settings.general.json`][development-settings]. Both explicitly contain `"StartupSellOnlyMode": true` under `Application`. Existing installations obtain the default when the field is absent; a configured `false` prevents a new enable but never releases an existing global SOM flag.
