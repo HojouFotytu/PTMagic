@@ -1525,6 +1525,7 @@ internal static class Program
       Bot.TriggeredSingleMarketSettings = new Dictionary<string, List<SingleMarketSetting>>(); Bot.SingleMarketSettingsCount = new Dictionary<string, int>();
       Bot.GlobalSettingWritten = false; Bot.SingleMarketSettingChanged = false;
       Set(Bot, "_provisionalDecision", false); Set(Bot, "_missingGlobalData", false);
+      Set(Bot, "_raidWatchdogGeneration", Get<long>(Bot, "_watchdogGeneration"));
     }
     public void SelectRisk()
     {
