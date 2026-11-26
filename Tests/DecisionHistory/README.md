@@ -1,5 +1,10 @@
 # Decision history regression harness
 
+## Operator validation update — November 26, 2026 (historical code checkpoint)
+
+The user executed `dotnet run --project .\Tests\DecisionHistory` after the unified retention + storage estimator + path-normalization fix: **all 17 checks PASS**, including legacy retention migration, no cumulative quota, JSONL segment integrity, MarketData-only cleanup, combined storage measurement and failure-safe records. The next user-executed `dotnet build .\PTMagic.sln` compiled Core, PTMagic and Monitor successfully in **13.3 seconds**. These are real operator outputs and supersede the earlier "native retest pending" notes for that checkpoint only. Subsequent November 26 FAILSAFE/watchdog and market analytics source changes are not covered by those executions and require a new build/lifecycle run. The longer history retention does not extend active normalized OHLCV beyond `StoreDataMaxHours`.
+
+
 ## November 24 — Fix migration-test save path
 
 A .NET 10 run passed the first ten DecisionHistory checks then failed in the migration case: PTMagicConfiguration(string basePath) accepted an unseparated temp-directory path, while its write/backup helpers relied on a trailing directory separator. Both constructors now normalize the base path before any read/write, and the migration regression asserts the settings backup and subsequent Analyzer settings backup remain inside the supplied directory. Native retest of the amended commit pending.
