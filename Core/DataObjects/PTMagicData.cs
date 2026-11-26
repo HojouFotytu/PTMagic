@@ -217,6 +217,8 @@ namespace Core.Main.DataObjects.PTMagicData
   public class GlobalSetting
   {
     public string SettingName { get; set; }
+    [DefaultValue("")]
+    public string Description { get; set; } = "";
     public string TriggerConnection { get; set; } = "AND";
     public List<Trigger> Triggers { get; set; } = new List<Trigger>();
     public Dictionary<string, object> PairsProperties { get; set; } = new Dictionary<string, object>();
