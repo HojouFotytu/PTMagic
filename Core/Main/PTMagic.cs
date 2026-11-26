@@ -1068,7 +1068,7 @@ namespace Core.Main
               this.CheckGlobalSettingsTriggers(ref triggeredSetting, ref matchedTriggers);
               RaidStage("GlobalSetting trigger evaluation");
               if (_decisionFresh && !_missingGlobalData && !_selectionIndeterminate)
-                _lastFreshAnalysisUtc = DateTimeOffset.UtcNow;
+                _lastFreshAnalysisUtc = BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc ?? DateTimeOffset.UtcNow;
 
               // Record the actual setting-name transition separately from forced
               // reapplication of the same preset.
@@ -1153,9 +1153,17 @@ namespace Core.Main
               this.Log.DoLogInfo("+ Instance name: " + PTMagicConfiguration.GeneralSettings.Application.InstanceName);
               this.Log.DoLogInfo("+ Time spent: " + SystemHelper.GetProperDurationTime(elapsedSeconds));
               this.Log.DoLogInfo("+ Selected setting: " + _desiredGlobalSettingName);
-              this.Log.DoLogInfo("+ Confirmed PT setting: " + (String.IsNullOrWhiteSpace(this.LastRuntimeSummary.AppliedGlobalSettingName) ? "unknown" : this.LastRuntimeSummary.AppliedGlobalSettingName));
-              string deliverySummary = "+ Configuration delivery: " + _raidDelivery.Status;
-              if (_raidDelivery.Attempted && !_raidDelivery.Succeeded)
+              string confirmedText = "+ Confirmed PT setting: " +
+                (String.IsNullOrWhiteSpace(this.LastRuntimeSummary.AppliedGlobalSettingName)
+                  ? "unknown" : this.LastRuntimeSummary.AppliedGlobalSettingName);
+              if (this.LastRuntimeSummary.ConfirmedIncompleteData)
+                this.Log.DoLogWarn(confirmedText + " (Incomplete Data)");
+              else
+                this.Log.DoLogInfo(confirmedText);
+              string deliverySummary = "+ Configuration delivery: " + _raidDelivery.Status +
+                (this.LastRuntimeSummary.ConfirmedIncompleteData ? " (Incomplete Data)" : "");
+              if ((_raidDelivery.Attempted && !_raidDelivery.Succeeded) ||
+                  this.LastRuntimeSummary.ConfirmedIncompleteData)
                 this.Log.DoLogWarn(deliverySummary);
               else
                 this.Log.DoLogInfo(deliverySummary);
@@ -1233,6 +1241,7 @@ namespace Core.Main
             }
             this.PersistFailedRaidSummary();
             this.RecordDecisionHistory(ex.GetType().Name);
+            WatchdogTick(force: true);
             // Error
             this.Log.DoLogCritical("A error occurred during the raid, the raid did not complete, but will try again next interval!", ex);
           }
@@ -2888,6 +2897,8 @@ namespace Core.Main
         this.GlobalSettingWritten = true;
         SettingsHandler.CompileProperties(this, this.ActiveSetting, DateTime.Now);
       }
+      _desiredHeldDefense = null;
+      _desiredHeldPolicyHash = null;
       ResetProvisionalSms();
     }
 
@@ -3006,6 +3017,7 @@ namespace Core.Main
         _normalDecisionCommittedThisRaid = true;
         _firstSuccessfulRaidPending = false;
         _lastEffectivePayload = desired;
+        if (!_provisionalDecision) _watchdogActive = false;
         bool switched = !String.Equals(_raidPriorSetting?.SettingName, this.ActiveSettingName, StringComparison.OrdinalIgnoreCase);
         if (switched || this.GlobalSettingWritten) this.LastSettingsChange = DateTime.UtcNow;
         if (switched) this.LastRuntimeSummary.LastGlobalSettingSwitch = this.LastRuntime;
