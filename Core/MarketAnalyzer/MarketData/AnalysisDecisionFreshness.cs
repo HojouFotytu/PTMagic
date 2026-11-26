@@ -35,7 +35,7 @@ namespace Core.MarketAnalyzer.MarketData
       {
         reason = "Analysis is " + seconds.ToString("0.###", CultureInfo.InvariantCulture) +
           " seconds old at decision time; Application.MaxAnalysisAgeSeconds=" + maxAgeSeconds +
-          ". Retain the applied configuration (or startup SOM) until a fresh raid completes.";
+          ". The incomplete-data delivery policy applies until fresh analysis completes.";
         return false;
       }
       return true;

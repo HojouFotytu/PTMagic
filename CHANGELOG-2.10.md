@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Dev 17: scope incomplete-data decisions to actual Global/freshness failure (native validation pending)
+
+A definite ordinary Global match is not provisional solely because an earlier candidate's expression was unavailable. Preserve unknown inputs and metric diagnostics; if no definite match exists, existing best-available selection and optional FAILSAFE remain. Refresh the watchdog heartbeat on completed fresh observations even when classification is inconclusive. Serialize heartbeat and Global compilation with watchdog delivery, bypass flood protection on provisional recovery, and do not force fresh raids provisional because the watchdog delivered earlier in their lifetime. Recheck actual age at delivery. Fresh provisional classification without FAILSAFE evaluates SMS and preserves local overlays and held defense; stale analysis or actual FAILSAFE still suppresses them. Acknowledged reason and SMS-suppression state are persisted separately from quality and transport, with legacy fallback; Monitor no longer hides confirmed valid SMS solely because the Global is provisional. Raid summaries report the acknowledged incomplete-data reason. Native execution and live behavior remain unverified.
+
 ## November 26, 2026 — Consolidated source and validation checkpoint (documentation reconciliation)
 
 **Current application source:** `24db0b56bd7c33e32fcccfc25f6aaf40a1883bd5` on `phase1/market-data-foundation`. Source changes listed below are not evidence of deployed binaries. Latest FAILSAFE/watchdog, Global description, Monitor layout, logging/export and current data/held-defense extensions need new native solution build, focused tests, TestMode and live acceptance; do not claim that earlier passing tests validate this head.

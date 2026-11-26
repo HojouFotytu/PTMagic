@@ -21,11 +21,13 @@ namespace Core.ProfitTrailer
     public int? HeldMarketDefenseLevel { get; }
     public string HeldMarketDefensePolicyHash { get; }
     public bool IncompleteData { get; }
+    public string IncompleteDataReason { get; }
+    public bool SmsSuppressed { get; }
 
     public ConfigurationPayload(string settingName, IEnumerable<string> pairs, IEnumerable<string> dca,
       IEnumerable<string> indicators, string destinationHash, string heldMarketDefenseProperty = null,
       int? heldMarketDefenseLevel = null, string heldMarketDefensePolicyHash = null,
-      bool incompleteData = false)
+      bool incompleteData = false, string incompleteDataReason = null, bool? smsSuppressed = null)
     {
       SettingName = settingName ?? "";
       Pairs = Array.AsReadOnly((pairs ?? throw new ArgumentNullException(nameof(pairs))).ToArray());
@@ -33,6 +35,8 @@ namespace Core.ProfitTrailer
       Indicators = Array.AsReadOnly((indicators ?? throw new ArgumentNullException(nameof(indicators))).ToArray());
       DestinationHash = destinationHash ?? "";
       IncompleteData = incompleteData;
+      IncompleteDataReason = incompleteData ? (incompleteDataReason ?? "") : "";
+      SmsSuppressed = smsSuppressed ?? incompleteData;
       HeldMarketDefenseLevel = heldMarketDefenseLevel;
       HeldMarketDefensePolicyHash = heldMarketDefenseLevel.HasValue ? heldMarketDefensePolicyHash : null;
       HeldMarketDefenseProperty = heldMarketDefenseLevel.HasValue ? heldMarketDefenseProperty : null;
@@ -81,6 +85,9 @@ namespace Core.ProfitTrailer
     public int? HeldMarketDefenseLevel { get; set; }
     public string HeldMarketDefensePolicyHash { get; set; }
     public bool IncompleteData { get; set; }
+    public string IncompleteDataReason { get; set; } = "";
+    // Null denotes a legacy checkpoint.
+    public bool? SmsSuppressed { get; set; }
 
     public int? PreviousDefenseFor(string destinationHash, string property, string policyHash) =>
       DestinationHash == destinationHash && HeldMarketDefenseProperty == property
@@ -122,6 +129,8 @@ namespace Core.ProfitTrailer
         current.HeldMarketDefenseLevel = payload.HeldMarketDefenseLevel;
         current.HeldMarketDefensePolicyHash = payload.HeldMarketDefensePolicyHash;
         current.IncompleteData = payload.IncompleteData;
+        current.IncompleteDataReason = payload.IncompleteDataReason;
+        current.SmsSuppressed = payload.SmsSuppressed;
         Pending = false;
         return LastResult = new ConfigurationDeliveryResult
           { Succeeded = true, Simulated = testMode, Status = testMode ? "TestMode unchanged" : "Unchanged" };
@@ -158,7 +167,8 @@ namespace Core.ProfitTrailer
       AppliedSettingName = payload.SettingName, AppliedPayloadHash = payload.PayloadHash,
       DestinationHash = payload.DestinationHash, HeldMarketDefenseProperty = payload.HeldMarketDefenseProperty,
       HeldMarketDefenseLevel = payload.HeldMarketDefenseLevel, HeldMarketDefensePolicyHash = payload.HeldMarketDefensePolicyHash,
-      IncompleteData = payload.IncompleteData, AppliedAtUtc = DateTimeOffset.UtcNow
+      IncompleteData = payload.IncompleteData, IncompleteDataReason = payload.IncompleteDataReason,
+      SmsSuppressed = payload.SmsSuppressed, AppliedAtUtc = DateTimeOffset.UtcNow
     };
 
     public static ConfigurationDeliveryState Load(string path)

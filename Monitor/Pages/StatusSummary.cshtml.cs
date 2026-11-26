@@ -218,8 +218,9 @@ namespace Monitor.Pages
 
     private void BuildMarketsWithSingleSettings()
     {
-      // The provisional delivered configuration contains no SMS overlays.
-      if (Summary.ConfirmedIncompleteData) return;
+      // Fresh provisional Globals may retain valid SMS. Legacy incomplete
+      // summaries lacked the separate suppression field.
+      if (Summary.ConfirmedSmsSuppressed ?? Summary.ConfirmedIncompleteData) return;
       // Get markets with active single settings
       foreach (string key in Summary.MarketSummary.Keys)
       {

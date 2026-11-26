@@ -95,6 +95,8 @@ namespace Core.Main
     private bool _missingGlobalData;
     private string _lastBestAvailableGlobalName = "";
     private bool _provisionalDecision;
+    private string _incompleteDataReason = "";
+    private bool _smsSuppressed;
     // A single unavailable asset-SMS condition cannot make a conclusive
     // market-wide setting unknown. Protect its own market instead.
     private readonly Dictionary<string, HashSet<string>> _smsUnavailableMarkets =
@@ -964,6 +966,8 @@ namespace Core.Main
             _selectionIndeterminate = false;
             _missingGlobalData = false;
             _provisionalDecision = false;
+            _incompleteDataReason = "";
+            _smsSuppressed = false;
             _raidWatchdogGeneration = Interlocked.Read(ref _watchdogGeneration);
             _smsUnavailableMarkets.Clear();
             _decisionFresh = false;
@@ -1068,29 +1072,33 @@ namespace Core.Main
               List<string> matchedTriggers = new List<string>();
               this.CheckGlobalSettingsTriggers(ref triggeredSetting, ref matchedTriggers);
               RaidStage("GlobalSetting trigger evaluation");
-              if (_decisionFresh && !_missingGlobalData && !_selectionIndeterminate)
-                _lastFreshAnalysisUtc = BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc ?? DateTimeOffset.UtcNow;
-
-              // Record the actual setting-name transition separately from forced
-              // reapplication of the same preset.
-              string previousActiveSettingName = this.ActiveSettingName;
-
-              // Incomplete analysis selects the optional operational FAILSAFE,
-              // independently of ordinary trigger precedence.
-              _provisionalDecision = !_decisionFresh || _missingGlobalData || _selectionIndeterminate;
-              if (_provisionalDecision)
+              string previousActiveSettingName;
+              // Serialize the observation heartbeat and working Global preparation
+              // with watchdog delivery. A prior watchdog intervention cannot
+              // invalidate newly completed, fresh analysis.
+              lock (_deliveryGate)
               {
-                GlobalSetting failSafe = FindFailSafe();
-                if (failSafe != null) triggeredSetting = failSafe;
+                _decisionFresh = this.IsRaidFresh(out raidFreshnessReason);
+                if (_decisionFresh)
+                  _lastFreshAnalysisUtc = BinanceFuturesAnalyticsRuntime.CurrentRaidAsOfUtc ?? DateTimeOffset.UtcNow;
+                previousActiveSettingName = this.ActiveSettingName;
+                _provisionalDecision = !_decisionFresh || _missingGlobalData || _selectionIndeterminate;
+                if (_provisionalDecision)
+                {
+                  GlobalSetting failSafe = FindFailSafe();
+                  if (failSafe != null) triggeredSetting = failSafe;
+                }
+                this.ActivateSetting(ref triggeredSetting, ref matchedTriggers);
               }
-              this.ActivateSetting(ref triggeredSetting, ref matchedTriggers);
 
               // The Global is now final, including flood protection. Its compiled
               // numeric floor is preserved; asset-specific defenses follow this overlay.
               if (_decisionFresh) ApplyHeldMarketDefense();
 
-              // Never reuse stale SMS overrides in provisional configurations.
-              if (!_provisionalDecision && _decisionFresh) this.ApplySingleMarketSettings();
+              // Fresh best-available Globals without FAILSAFE still have usable
+              // asset observations. Evaluate SMS with its local unknown safeguards.
+              if (_decisionFresh && !IncompleteGlobalPolicy.IsFailSafe(triggeredSetting.SettingName))
+                this.ApplySingleMarketSettings();
               else ResetProvisionalSms();
               RaidStage("SMS selection (skipped when stale)");
 
@@ -1158,7 +1166,13 @@ namespace Core.Main
                 (String.IsNullOrWhiteSpace(this.LastRuntimeSummary.AppliedGlobalSettingName)
                   ? "unknown" : this.LastRuntimeSummary.AppliedGlobalSettingName);
               if (this.LastRuntimeSummary.ConfirmedIncompleteData)
+              {
                 this.Log.DoLogWarn(confirmedText + " (Incomplete Data)");
+                this.Log.DoLogWarn("+ Incomplete Data reason: " +
+                  (String.IsNullOrWhiteSpace(this.LastRuntimeSummary.ConfirmedIncompleteDataReason)
+                    ? "Previous acknowledged provisional configuration (reason not recorded by its build)."
+                    : this.LastRuntimeSummary.ConfirmedIncompleteDataReason));
+              }
               else
                 this.Log.DoLogInfo(confirmedText);
               string deliverySummary = "+ Configuration delivery: " + _raidDelivery.Status +
@@ -1810,8 +1824,10 @@ namespace Core.Main
             }
         }
 
-        _missingGlobalData = unavailableNormalizedTriggerFound;
-        if (!foundMatchingSetting && unavailableNormalizedTriggerFound)
+        // An earlier unavailable expression is diagnostic evidence, not proof
+        // that a subsequent definite match is incomplete.
+        _missingGlobalData = !foundMatchingSetting && unavailableNormalizedTriggerFound;
+        if (_missingGlobalData)
         {
             _selectionIndeterminate = true;
             string chosen = IncompleteGlobalPolicy.SelectBestAvailable(candidates,
@@ -1833,7 +1849,9 @@ namespace Core.Main
     {
       // Prepare the desired preset. Applied state is committed only after delivery.
       bool changed = !String.Equals(this.ActiveSettingName, triggeredSetting.SettingName, StringComparison.OrdinalIgnoreCase);
-      if (changed && !_provisionalDecision && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
+      bool recovering = _watchdogActive || _configurationDelivery.Confirmed.IncompleteData ||
+        _raidWatchdogGeneration != Interlocked.Read(ref _watchdogGeneration);
+      if (changed && !recovering && !_provisionalDecision && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
         && this.LastSettingsChange > DateTime.UtcNow.AddMinutes(-PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes))
       {
         this.LastRuntimeSummary.FloodProtectedSetting = triggeredSetting;
@@ -1845,7 +1863,7 @@ namespace Core.Main
         changed = false;
         this.Log.DoLogInfo("Flood protection retained the confirmed global setting '" + this.ActiveSettingName + "'.");
       }
-      this.GlobalSettingWritten = this.EnforceSettingsReapply || changed || _provisionalDecision;
+      this.GlobalSettingWritten = this.EnforceSettingsReapply || changed || _provisionalDecision || recovering;
       if (this.GlobalSettingWritten)
         SettingsHandler.CompileProperties(this, triggeredSetting, changed ? DateTime.Now : this.LastSettingsChange.ToLocalTime());
       this.LastRuntimeSummary.CurrentGlobalSetting = triggeredSetting;
@@ -2902,10 +2920,15 @@ namespace Core.Main
 
     private void PrepareProvisionalDelivery()
     {
-      _decisionFresh = this.IsRaidFresh(out _);
-      _provisionalDecision = _provisionalDecision || !_decisionFresh || _selectionIndeterminate || _missingGlobalData;
+      _decisionFresh = this.IsRaidFresh(out string reason);
+      _provisionalDecision = !_decisionFresh || _selectionIndeterminate || _missingGlobalData;
+      _incompleteDataReason = !_decisionFresh ? reason :
+        _provisionalDecision ? "No ordinary Global expression matched conclusively; using best available evidence." : "";
+      _smsSuppressed = false;
       if (!_provisionalDecision) return;
       GlobalSetting failSafe = FindFailSafe();
+      if (failSafe == null && _decisionFresh) return;
+      _smsSuppressed = true;
       if (failSafe != null)
       {
         this.GlobalSettingWritten = true;
@@ -2915,7 +2938,7 @@ namespace Core.Main
         this.ActiveSettingName = failSafe.SettingName;
         this.LastRuntimeSummary.CurrentGlobalSetting = failSafe;
       }
-      else if (!this.GlobalSettingWritten && this.ActiveSetting != null)
+      else if (this.ActiveSetting != null)
       {
         this.GlobalSettingWritten = true;
         SettingsHandler.CompileProperties(this, this.ActiveSetting, DateTime.Now);
@@ -2934,12 +2957,9 @@ namespace Core.Main
       {
         Application app = this.PTMagicConfiguration?.GeneralSettings?.Application;
         if (app == null || !app.IsEnabled || app.TestMode || _startupGuardPending) return;
-        var now = DateTimeOffset.UtcNow;
-        if (!force && (now - _lastFreshAnalysisUtc).TotalSeconds <= app.MaxAnalysisAgeSeconds) return;
-        if ((now - _lastWatchdogAttemptUtc).TotalSeconds < 30) return;
         lock (_deliveryGate)
         {
-          now = DateTimeOffset.UtcNow;
+          var now = DateTimeOffset.UtcNow;
           if (!force && (now - _lastFreshAnalysisUtc).TotalSeconds <= app.MaxAnalysisAgeSeconds) return;
           if ((now - _lastWatchdogAttemptUtc).TotalSeconds < 30) return;
           _lastWatchdogAttemptUtc = now;
@@ -2970,8 +2990,12 @@ namespace Core.Main
           SettingsHandler.CompileProperties(detached, target, DateTime.Now);
           if (IncompleteGlobalPolicy.IsFailSafe(target.SettingName))
             EnforceFailSafeSellOnly(detached.PairsLines);
+          string watchdogReason = force ? "Raid failed; watchdog recovery used retained evidence."
+            : "No completed fresh market analysis within Application.MaxAnalysisAgeSeconds=" +
+              app.MaxAnalysisAgeSeconds + ".";
           var payload = new ConfigurationPayload(target.SettingName, detached.PairsLines,
-            detached.DCALines, detached.IndicatorsLines, DestinationFingerprint(), incompleteData: true);
+            detached.DCALines, detached.IndicatorsLines, DestinationFingerprint(), incompleteData: true,
+            incompleteDataReason: watchdogReason, smsSuppressed: true);
           if (_watchdogActive && _configurationDelivery.Confirmed.IncompleteData &&
               _configurationDelivery.Confirmed.AppliedPayloadHash == payload.PayloadHash &&
               _configurationDelivery.Confirmed.DestinationHash == payload.DestinationHash &&
@@ -2994,7 +3018,7 @@ namespace Core.Main
             _watchdogActive = true;
             Interlocked.Increment(ref _watchdogGeneration);
             SaveDeliveryCheckpoint();
-            this.Log.DoLogWarn("Watchdog applied '" + target.SettingName + "' (Incomplete Data).");
+            this.Log.DoLogWarn("Watchdog applied '" + target.SettingName + "' (Incomplete Data): " + watchdogReason);
           }
           else this.Log.DoLogWarn("Watchdog configuration delivery failed; retry remains pending.");
           if (this.LastRuntimeSummary != null)
@@ -3018,8 +3042,8 @@ namespace Core.Main
 
     private void SaveProfitTrailerPropertiesCore()
     {
-      if (_raidWatchdogGeneration != Interlocked.Read(ref _watchdogGeneration) && _watchdogActive)
-        _provisionalDecision = true;
+      // Actual observation age and Global result determine delivery quality,
+      // not a historical watchdog generation.
       PrepareProvisionalDelivery();
       _desiredGlobalSettingName = this.ActiveSettingName;
       _desiredSms = this.TriggeredSingleMarketSettings
@@ -3028,7 +3052,7 @@ namespace Core.Main
       ConfigurationPayload desired = new ConfigurationPayload(this.ActiveSettingName, this.PairsLines,
         this.DCALines, this.IndicatorsLines, DestinationFingerprint(),
         this.PTMagicConfiguration.AnalyzerSettings.HeldMarketDefenseProperty, _desiredHeldDefense, _desiredHeldPolicyHash,
-        _provisionalDecision);
+        _provisionalDecision, _incompleteDataReason, _smsSuppressed);
       _desiredPayloadHash = desired.PayloadHash;
       _decisionFresh = this.IsRaidFresh(out string freshnessReason);
       if (_startupGuardPending)
@@ -3088,6 +3112,8 @@ namespace Core.Main
       this.LastRuntimeSummary.AppliedGlobalSettingName = _configurationDelivery.Confirmed.AppliedSettingName;
       this.LastRuntimeSummary.ConfigurationDeliveryStatus = _raidDelivery.Status;
       this.LastRuntimeSummary.ConfirmedIncompleteData = _configurationDelivery.Confirmed.IncompleteData;
+      this.LastRuntimeSummary.ConfirmedIncompleteDataReason = _configurationDelivery.Confirmed.IncompleteDataReason;
+      this.LastRuntimeSummary.ConfirmedSmsSuppressed = _configurationDelivery.Confirmed.SmsSuppressed;
       this.LastRuntimeSummary.StartupSellOnlyModeActive = _startupGuardActive;
       this.LastRuntimeSummary.StartupSellOnlyModePending = _startupGuardPending;
       this.LastRuntimeSummary.StartupSellOnlyModeManualReviewRequired = _startupGuardManualReviewRequired;
@@ -3117,6 +3143,8 @@ namespace Core.Main
         summary.AppliedGlobalSettingName = _configurationDelivery.Confirmed.AppliedSettingName;
         summary.ConfigurationDeliveryStatus = _raidDelivery.Status;
         summary.ConfirmedIncompleteData = _configurationDelivery.Confirmed.IncompleteData;
+        summary.ConfirmedIncompleteDataReason = _configurationDelivery.Confirmed.IncompleteDataReason;
+        summary.ConfirmedSmsSuppressed = _configurationDelivery.Confirmed.SmsSuppressed;
         summary.StartupSellOnlyModeActive = _startupGuardActive;
         summary.StartupSellOnlyModePending = _startupGuardPending;
         summary.StartupSellOnlyModeManualReviewRequired = _startupGuardManualReviewRequired;

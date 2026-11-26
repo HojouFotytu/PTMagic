@@ -371,6 +371,8 @@ namespace Core.Main.DataObjects.PTMagicData
     public string AppliedGlobalSettingName { get; set; } = "";
     public string ConfigurationDeliveryStatus { get; set; } = "";
     public bool ConfirmedIncompleteData { get; set; } = false;
+    public string ConfirmedIncompleteDataReason { get; set; } = "";
+    public bool? ConfirmedSmsSuppressed { get; set; }
     public bool StartupSellOnlyModeActive { get; set; } = false;
     public bool StartupSellOnlyModePending { get; set; } = false;
     public bool StartupSellOnlyModeManualReviewRequired { get; set; } = false;
