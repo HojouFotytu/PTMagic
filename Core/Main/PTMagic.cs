@@ -1060,15 +1060,23 @@ namespace Core.Main
               // reapplication of the same preset.
               string previousActiveSettingName = this.ActiveSettingName;
 
-              // Activate global setting
+              // Incomplete analysis selects the optional operational FAILSAFE,
+              // independently of ordinary trigger precedence.
+              _provisionalDecision = !_decisionFresh || _missingGlobalData || _selectionIndeterminate;
+              if (_provisionalDecision)
+              {
+                GlobalSetting failSafe = FindFailSafe();
+                if (failSafe != null) triggeredSetting = failSafe;
+              }
               this.ActivateSetting(ref triggeredSetting, ref matchedTriggers);
 
               // The Global is now final, including flood protection. Its compiled
               // numeric floor is preserved; asset-specific defenses follow this overlay.
               if (_decisionFresh) ApplyHeldMarketDefense();
 
-              // Check for single market trend triggers
-              if (_decisionFresh) this.ApplySingleMarketSettings();
+              // Never reuse stale SMS overrides in provisional configurations.
+              if (!_provisionalDecision && _decisionFresh) this.ApplySingleMarketSettings();
+              else ResetProvisionalSms();
               RaidStage("SMS selection (skipped when stale)");
 
               // Ignore quarterly futures
@@ -1799,7 +1807,7 @@ namespace Core.Main
     {
       // Prepare the desired preset. Applied state is committed only after delivery.
       bool changed = !String.Equals(this.ActiveSettingName, triggeredSetting.SettingName, StringComparison.OrdinalIgnoreCase);
-      if (changed && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
+      if (changed && !_provisionalDecision && !this.EnforceSettingsReapply && !_firstSuccessfulRaidPending
         && this.LastSettingsChange > DateTime.UtcNow.AddMinutes(-PTMagicConfiguration.GeneralSettings.Application.FloodProtectionMinutes))
       {
         this.LastRuntimeSummary.FloodProtectedSetting = triggeredSetting;
@@ -1811,7 +1819,7 @@ namespace Core.Main
         changed = false;
         this.Log.DoLogInfo("Flood protection retained the confirmed global setting '" + this.ActiveSettingName + "'.");
       }
-      this.GlobalSettingWritten = this.EnforceSettingsReapply || changed;
+      this.GlobalSettingWritten = this.EnforceSettingsReapply || changed || _provisionalDecision;
       if (this.GlobalSettingWritten)
         SettingsHandler.CompileProperties(this, triggeredSetting, changed ? DateTime.Now : this.LastSettingsChange.ToLocalTime());
       this.LastRuntimeSummary.CurrentGlobalSetting = triggeredSetting;
@@ -2644,7 +2652,7 @@ namespace Core.Main
       _configurationSender != null ? _configurationSender(payload) :
       SettingsAPI.SendPropertyLinesToAPI(payload.Pairs.ToList(), payload.Dca.ToList(), payload.Indicators.ToList(),
         this.PTMagicConfiguration, this.Log,
-        canSend: () => (_decisionFresh = this.IsRaidFresh(out _)));
+        canSend: () => _provisionalDecision || (_decisionFresh = this.IsRaidFresh(out _)));
 
     // Global SOM is enable-only. A plain boolean setter cannot tell a user
     // switch from PTMagic's startup request; never issue enabled=false.
@@ -2834,23 +2842,58 @@ namespace Core.Main
       }
     }
 
+    private GlobalSetting FindFailSafe() =>
+      this.PTMagicConfiguration?.AnalyzerSettings?.GlobalSettings?
+        .Find(setting => IncompleteGlobalPolicy.IsFailSafe(setting.SettingName));
+
+    private void ResetProvisionalSms()
+    {
+      this.TriggeredSingleMarketSettings.Clear();
+      this.SingleMarketSettingsCount.Clear();
+      this.SingleMarketSettingChanged = SettingsHandler.RemoveSingleMarketSettings(this)
+        || this.SingleMarketSettingSummaries.Count > 0;
+      this.SingleMarketSettingSummaries.Clear();
+    }
+
+    private void PrepareProvisionalDelivery()
+    {
+      _decisionFresh = this.IsRaidFresh(out _);
+      _provisionalDecision = _provisionalDecision || !_decisionFresh || _selectionIndeterminate || _missingGlobalData;
+      if (!_provisionalDecision) return;
+      GlobalSetting failSafe = FindFailSafe();
+      if (failSafe != null)
+      {
+        this.GlobalSettingWritten = true;
+        SettingsHandler.CompileProperties(this, failSafe, DateTime.Now);
+        this.ActiveSetting = failSafe;
+        this.ActiveSettingName = failSafe.SettingName;
+        this.LastRuntimeSummary.CurrentGlobalSetting = failSafe;
+      }
+      else if (!this.GlobalSettingWritten && this.ActiveSetting != null)
+      {
+        this.GlobalSettingWritten = true;
+        SettingsHandler.CompileProperties(this, this.ActiveSetting, DateTime.Now);
+      }
+      ResetProvisionalSms();
+    }
+
     private void SaveProfitTrailerProperties()
     {
+      PrepareProvisionalDelivery();
       _desiredGlobalSettingName = this.ActiveSettingName;
       _desiredSms = this.TriggeredSingleMarketSettings
         .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
         .SelectMany(pair => pair.Value.Select(setting => pair.Key + "/" + setting.SettingName)).ToArray();
       ConfigurationPayload desired = new ConfigurationPayload(this.ActiveSettingName, this.PairsLines,
         this.DCALines, this.IndicatorsLines, DestinationFingerprint(),
-        this.PTMagicConfiguration.AnalyzerSettings.HeldMarketDefenseProperty, _desiredHeldDefense, _desiredHeldPolicyHash);
+        this.PTMagicConfiguration.AnalyzerSettings.HeldMarketDefenseProperty, _desiredHeldDefense, _desiredHeldPolicyHash,
+        _provisionalDecision);
       _desiredPayloadHash = desired.PayloadHash;
       _decisionFresh = this.IsRaidFresh(out string freshnessReason);
-      if (!_decisionFresh || _startupGuardPending ||
-          ((_firstSuccessfulRaidPending || _startupGuardManualReviewRequired) && _selectionIndeterminate))
+      if (_startupGuardPending)
       {
-        _raidDelivery = ConfigurationDeliveryResult.Deferred(!_decisionFresh ? freshnessReason :
-          _startupGuardPending ? "Startup SOM enable is unconfirmed; manually inspect PT before configuration delivery." :
-          "Initial selection is indeterminate; retain the confirmed configuration.");
+        _raidDelivery = ConfigurationDeliveryResult.Deferred(
+          "Startup SOM enable is unconfirmed; manually inspect PT before configuration delivery.");
         this.RestoreRaidState();
         this.UpdateDeliverySummary();
         this.Log.DoLogWarn("PT configuration deferred: " + _raidDelivery.Error);
@@ -2902,6 +2945,7 @@ namespace Core.Main
       this.LastRuntimeSummary.DesiredGlobalSettingName = _desiredGlobalSettingName;
       this.LastRuntimeSummary.AppliedGlobalSettingName = _configurationDelivery.Confirmed.AppliedSettingName;
       this.LastRuntimeSummary.ConfigurationDeliveryStatus = _raidDelivery.Status;
+      this.LastRuntimeSummary.ConfirmedIncompleteData = _configurationDelivery.Confirmed.IncompleteData;
       this.LastRuntimeSummary.StartupSellOnlyModeActive = _startupGuardActive;
       this.LastRuntimeSummary.StartupSellOnlyModePending = _startupGuardPending;
       this.LastRuntimeSummary.StartupSellOnlyModeManualReviewRequired = _startupGuardManualReviewRequired;
@@ -2930,6 +2974,7 @@ namespace Core.Main
         summary.DesiredGlobalSettingName = _desiredGlobalSettingName;
         summary.AppliedGlobalSettingName = _configurationDelivery.Confirmed.AppliedSettingName;
         summary.ConfigurationDeliveryStatus = _raidDelivery.Status;
+        summary.ConfirmedIncompleteData = _configurationDelivery.Confirmed.IncompleteData;
         summary.StartupSellOnlyModeActive = _startupGuardActive;
         summary.StartupSellOnlyModePending = _startupGuardPending;
         summary.StartupSellOnlyModeManualReviewRequired = _startupGuardManualReviewRequired;
