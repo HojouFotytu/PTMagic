@@ -1,5 +1,10 @@
 # Decision history regression harness
 
+## November 26 — Dev 17: no maximum raid-record size (native validation pending)
+
+Both live instances reported `Decision history could not be appended: InvalidOperationException` after raid completion. The source contains an explicit 16 MiB per-record rejection, which can reject a full modern Analyzer raid; exact failed live record size was not logged and remains unverified. Remove that rejection. The 16 MiB value remains a segment rotation target only. A larger raid writes a complete independent JSONL line into its own segment; the next raid rotates normally. Preserve all metric inputs, prior and subsequent records, UTC date rotation, time-only pruning and interrupted-tail handling. No cumulative quota or per-record truncation. The revised tests cover an oversized record surrounded by ordinary records and 72,900 distinct synthetic metric inputs in one raid. Failure logs include a non-sensitive stage and metric-input count without dumping exception messages. Native regression and deployed capture verification pending.
+
+
 ## Operator validation update — November 26, 2026 (historical code checkpoint)
 
 The user executed `dotnet run --project .\Tests\DecisionHistory` after the unified retention + storage estimator + path-normalization fix: **all 17 checks PASS**, including legacy retention migration, no cumulative quota, JSONL segment integrity, MarketData-only cleanup, combined storage measurement and failure-safe records. The next user-executed `dotnet build .\PTMagic.sln` compiled Core, PTMagic and Monitor successfully in **13.3 seconds**. These are real operator outputs and supersede the earlier "native retest pending" notes for that checkpoint only. Subsequent November 26 FAILSAFE/watchdog and market analytics source changes are not covered by those executions and require a new build/lifecycle run. The longer history retention does not extend active normalized OHLCV beyond `StoreDataMaxHours`.
@@ -24,9 +29,9 @@ Added one combined size projection for legacy MarketData snapshots and DecisionH
 
 The earlier validation at source `86c2ea3ff430b62e654f929a222935ec53ea8fa6` stopped on a `Telegram` type/namespace collision in ConfigurationLifecycle before this project ran. Both fixtures now explicitly construct `Core.Main.DataObjects.PTMagicData.Telegram`, and the successful continuation validates that correction.
 
-The harness calls the production JSONL writer and acknowledgement checkpoint, and uses actual `PTMagic` capture/history methods with synthetic offline configuration. It covers complete append records, UTC date rotation, retention, interrupted tails, the 16 MiB segment bound, age-based pruning without a cumulative size cap, oversized-record rejection, invalid limits, metadata-only acknowledgement persistence, TestMode separation, separate RelativeTrigger inputs for different SMS settings, failed-raid single-write capture, source provenance, and disabled history.
+The harness calls the production JSONL writer and acknowledgement checkpoint, and uses actual `PTMagic` capture/history methods with synthetic offline configuration. It covers complete append records, UTC date rotation, retention, interrupted tails, the 16 MiB rotation target, age-based pruning without a cumulative size cap, complete oversized-record retention, invalid retention limits, metadata-only acknowledgement persistence, TestMode separation, separate RelativeTrigger inputs for different SMS settings, failed-raid single-write capture, source provenance, and disabled history.
 
-The bounded-file checks allocate temporary records up to 16 MiB. All fixture files are created beneath the operating system temporary directory and removed on completion. No exchange or ProfitTrailer requests occur.
+The file checks allocate temporary records both below and above 16 MiB, including a representative wide-universe capture fixture. All fixture files are created beneath the operating system temporary directory and removed on completion. No exchange or ProfitTrailer requests occur.
 
 From the repository root in PowerShell:
 

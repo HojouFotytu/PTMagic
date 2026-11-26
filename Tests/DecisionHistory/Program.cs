@@ -89,14 +89,47 @@ internal static class Program
         Require(Read(old).Single().RaidId == "old" && Read(newest).Single().RaidId == "new");
         Require(Directory.GetFiles(directory, "*.jsonl").Sum(path => new FileInfo(path).Length) > 16L * 1024 * 1024);
       });
-      Run("one oversized record is rejected before damaging existing history", directory =>
+      Run("oversized raid occupies its own complete segment without losing existing or subsequent history", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         string path = writer.Append(Record("preserved"), 30);
         byte[] before = File.ReadAllBytes(path);
-        var large = Record("too-large"); large.MetricInputs = LargeInputs(16 * 1024 * 1024);
-        Throws<InvalidOperationException>(() => writer.Append(large, 30));
-        Require(File.ReadAllBytes(path).SequenceEqual(before) && Directory.GetFiles(directory, "*.jsonl").Length == 1);
+        var large = Record("large-raid"); large.MetricInputs = LargeInputs(16 * 1024 * 1024);
+        string largePath = writer.Append(large, 30);
+        var subsequent = Record("after-large");
+        string next = writer.Append(subsequent, 30);
+        Require(path != largePath && largePath != next && path != next);
+        Require(File.ReadAllBytes(path).SequenceEqual(before));
+        Require(new FileInfo(largePath).Length > 16L * 1024 * 1024);
+        var restored = Read(largePath).Single();
+        Require(restored.RaidId == large.RaidId &&
+          restored.MetricInputs.Length == large.MetricInputs.Length &&
+          restored.MetricInputs.Single().Reason == large.MetricInputs.Single().Reason);
+        Require(Read(next).Single().RaidId == subsequent.RaidId);
+        Require(Directory.GetFiles(directory, "*.jsonl").Length == 3);
+      });
+      Run("full-size multi-market raid preserves every captured metric input", directory =>
+      {
+        var writer = new DecisionHistoryWriter(directory);
+        var raid = Record("wide-analyzer-raid");
+        raid.MetricInputs = Enumerable.Range(0, 729).SelectMany(market =>
+          Enumerable.Range(0, 100).Select(trigger => new DecisionMetricInput
+          {
+            Scope = "SMS activation", SettingName = "FixtureSMS", TriggerId = "C" + trigger,
+            MarketTrend = "Swing72", Metric = "RelativeStrengthMarket",
+            Market = "FIXTURE" + market + "USDT", Relation = "Delta", Value = 1.25,
+            Available = true, Reason = "", SourceDataTimestampUtc = Now,
+            PreviousSourceDataTimestampUtc = Now.AddHours(-72), CoveragePercent = 100
+          })).ToArray();
+        string path = writer.Append(raid, 30);
+        Require(new FileInfo(path).Length > 16L * 1024 * 1024);
+        var restored = Read(path).Single();
+        Require(restored.RaidId == raid.RaidId && restored.MetricInputs.Length == 72900);
+        Require(restored.MetricInputs.First().Market == "FIXTURE0USDT" &&
+          restored.MetricInputs.Last().Market == "FIXTURE728USDT" &&
+          restored.MetricInputs.Last().TriggerId == "C99" &&
+          restored.MetricInputs.Last().Value == 1.25 &&
+          restored.MetricInputs.Last().PreviousSourceDataTimestampUtc == Now.AddHours(-72));
       });
       Run("invalid day retention fails before writing files", directory =>
       {

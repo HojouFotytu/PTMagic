@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Decision History oversized raid records
+
+Both live instances reported an InvalidOperationException during history capture. Source inspection found the remaining 16 MiB individual-record rejection; the failed live serialized size was not reported, so the diagnosis is source-supported but not yet confirmed by runtime evidence. Remove the hard rejection: 16 MiB is a rotation target, not a record cap. Oversized raid records remain intact as independent JSONL lines in dedicated segments, with subsequent raids rotating again. The age retention policy, interrupted-tail protection, complete evidence and configuration delivery state remain unchanged. Add tests covering oversized records and a synthetic 729-market, 100-trigger-per-market raid. Failure logs identify the processing stage and metric count without logging potentially sensitive exception text. Native regression and live capture validation pending.
+
+
 ## November 26, 2026 — Dev 17 lifecycle validation: obsolete startup SOM assertion
 
 Operator execution at `df26022` compiled and passed the first 55 ConfigurationLifecycle checks, then failed at Program.cs:801. The test incorrectly required zero sends on inconclusive selection, a superseded pre-Dev 16 deferral rule. Corrected regression now exercises acknowledged provisional delivery, failure of a distinct conclusive payload preserving acknowledgement, and successful recovery with manual startup SOM unchanged. No production changes. Full rerun pending; do not record a suite PASS yet.

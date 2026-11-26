@@ -3207,6 +3207,7 @@ namespace Core.Main
       if (_historyWritten || this.PTMagicConfiguration?.GeneralSettings?.Application == null) return;
       Application app = this.PTMagicConfiguration.GeneralSettings.Application;
       if (!app.DecisionHistoryEnabled) return;
+      string historyStage = "building the raid record";
       try
       {
         DecisionHistoryRecord record = new DecisionHistoryRecord
@@ -3240,13 +3241,15 @@ namespace Core.Main
               GlobalSymbols = analysis.GlobalSymbols.ToArray(), AssetSymbols = analysis.AssetSymbols.ToArray()
             }).ToArray()
         };
+        historyStage = "serializing or writing the raid record";
         new DecisionHistoryWriter(Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "DecisionHistory"))
           .Append(record, app.HistoryRetentionDays);
         _historyWritten = true;
       }
       catch (Exception exception)
       {
-        this.Log.DoLogWarn("Decision history could not be appended: " + exception.GetType().Name + ". Configuration delivery status is unchanged.");
+        this.Log.DoLogWarn("Decision history could not be appended: " + exception.GetType().Name +
+          " while " + historyStage + " (" + _decisionInputs.Count + " metric inputs). Configuration delivery status is unchanged.");
       }
     }
 

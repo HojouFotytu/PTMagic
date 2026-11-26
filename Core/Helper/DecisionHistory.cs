@@ -103,6 +103,8 @@ namespace Core.Helper
 
   public sealed class DecisionHistoryWriter
   {
+    // Rotation target, not a record-size or history-retention limit.
+    // One raid must remain one complete JSONL record, even when larger.
     private const long SegmentBytes = 16L * 1024 * 1024;
     private readonly object _sync = new object();
     private readonly string _directory;
@@ -113,7 +115,6 @@ namespace Core.Helper
       if (record == null) throw new ArgumentNullException(nameof(record));
       if (retentionDays < 1 || retentionDays > 3650) throw new ArgumentOutOfRangeException(nameof(retentionDays));
       byte[] bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(record, Formatting.None) + "\n");
-      if (bytes.LongLength > SegmentBytes) throw new InvalidOperationException("Decision record exceeds the 16 MiB history segment limit.");
 
       lock (_sync)
       {
@@ -132,7 +133,8 @@ namespace Core.Helper
         }
 
         // No cumulative size cap: only the age limit removes old segments.
-        // The 16 MiB individual-record/segment integrity bound remains.
+        // Oversized individual raids occupy a dedicated segment. The next
+        // record rotates again; never truncate, split or discard raid evidence.
         using (FileStream stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
         {
           stream.Write(bytes, 0, bytes.Length);
