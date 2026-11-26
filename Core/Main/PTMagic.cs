@@ -2971,6 +2971,10 @@ namespace Core.Main
             EnforceFailSafeSellOnly(detached.PairsLines);
           var payload = new ConfigurationPayload(target.SettingName, detached.PairsLines,
             detached.DCALines, detached.IndicatorsLines, DestinationFingerprint(), incompleteData: true);
+          if (_watchdogActive && _configurationDelivery.Confirmed.IncompleteData &&
+              _configurationDelivery.Confirmed.AppliedPayloadHash == payload.PayloadHash &&
+              _configurationDelivery.Confirmed.DestinationHash == payload.DestinationHash &&
+              !_configurationDelivery.Pending) return;
           var result = _configurationDelivery.Deliver(payload,
             candidate => _configurationSender != null ? _configurationSender(candidate) :
               SettingsAPI.SendPropertyLinesToAPI(candidate.Pairs.ToList(), candidate.Dca.ToList(),
