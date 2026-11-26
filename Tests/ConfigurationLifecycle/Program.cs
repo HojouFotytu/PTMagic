@@ -794,22 +794,51 @@ internal static class Program
         Call(fixture.Bot, "InitializeDeliveryTracking"); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
         Require(fixture.SomCalls.SequenceEqual(new[] { true }) && fixture.Sent.Count == sends && File.ReadAllText(fixture.Checkpoint) == before);
       });
-      Check("startup SOM remains enabled after conclusive acknowledged normal delivery", () =>
+      Check("startup SOM remains enabled through provisional delivery, failed recovery and conclusive acknowledgement", () =>
       {
-        using var fixture = new Fixture(); Call(fixture.Bot, "EnsureStartupSellOnlyMode");
-        Set(fixture.Bot, "_selectionIndeterminate", true); fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 0 && fixture.SomCalls.SequenceEqual(new[] { true }));
-        Set(fixture.Bot, "_selectionIndeterminate", false);
+        using var fixture = new Fixture();
+        Call(fixture.Bot, "EnsureStartupSellOnlyMode");
+
+        // Dev 16 replaced deferral with a best-available provisional delivery.
+        Set(fixture.Bot, "_selectionIndeterminate", true);
+        fixture.CompileClean();
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 1 && fixture.Sent[0].SettingName == "Default" &&
+          fixture.Sent[0].IncompleteData && !fixture.Sent[0].SmsSuppressed &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData &&
+          fixture.SomCalls.SequenceEqual(new[] { true }),
+          "Provisional delivery must be acknowledged without releasing startup SOM.");
+        var provisionalHash = fixture.Bot.ConfigurationDelivery.Confirmed.AppliedPayloadHash;
+
+        // Use a different payload so the recovery actually attempts transport;
+        // unchanged acknowledged properties legitimately skip a network send.
+        fixture.BeforeRaid();
+        fixture.SelectRisk();
         fixture.Next = ConfigurationDeliveryResult.Failed("transport failure");
-        fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 1 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 2 && !fixture.Sent[1].IncompleteData &&
+          fixture.Bot.ConfigurationDelivery.Pending &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.AppliedPayloadHash == provisionalHash &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Default" &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData &&
+          fixture.SomCalls.SequenceEqual(new[] { true }),
+          "A failed recovery must preserve the prior provisional acknowledgement and startup SOM.");
+
+        fixture.BeforeRaid();
+        fixture.SelectRisk();
         fixture.Next = ConfigurationDeliveryResult.Applied();
-        fixture.CompileClean(); Call(fixture.Bot, "SaveProfitTrailerProperties");
-        Require(fixture.Sent.Count == 2 && fixture.SomCalls.SequenceEqual(new[] { true }));
+        Call(fixture.Bot, "SaveProfitTrailerProperties");
+        Require(fixture.Sent.Count == 3 && fixture.Sent[2].SettingName == "Risk" &&
+          !fixture.Sent[2].IncompleteData &&
+          fixture.Bot.ConfigurationDelivery.Confirmed.AppliedSettingName == "Risk" &&
+          !fixture.Bot.ConfigurationDelivery.Confirmed.IncompleteData &&
+          !fixture.Bot.ConfigurationDelivery.Pending &&
+          fixture.SomCalls.SequenceEqual(new[] { true }),
+          "Successful recovery must clear incomplete-data status but never send SOM OFF.");
         Require(Get<bool>(fixture.Bot, "_startupGuardActive") &&
           !Get<bool>(fixture.Bot, "_startupGuardPending") &&
           !Get<bool>(fixture.Bot, "_firstSuccessfulRaidPending"));
-        Require(fixture.Events.SequenceEqual(new[] { "som:true", "configuration", "configuration" }));
+        Require(fixture.Events.SequenceEqual(new[] { "som:true", "configuration", "configuration", "configuration" }));
       });
       Check("failed SOM enable never automatically retries over a user's manual choice", () =>
       {

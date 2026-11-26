@@ -1,5 +1,10 @@
 # Configuration delivery and raid lifecycle acceptance
 
+## November 26 — Dev 17 operator validation (partial run; test expectation corrected)
+
+Operator ran ConfigurationLifecycle at Dev 17 source (branch checkpoint `df26022`): compilation and the first 55 checks passed, including Global Delta, delivery acknowledgement/retry, HTTP freshness and startup API guard independence. Execution stopped at Program.cs:801: obsolete assertion that inconclusive selection sends no configuration. This contradicts Dev 16's explicit best-available provisional delivery policy. Updated only the regression: require provisional acknowledgement with startup SOM unchanged, exercise transport failure using a distinct normal Global payload, preserve the previous provisional acknowledgement on failure, retry and clear incomplete quality on successful acknowledgement without issuing SOM OFF. This is a test correction, not a production policy change. Full suite rerun, complete solution build and live runtime validation remain pending.
+
+
 ## November 26 — FAILSAFE/provisional delivery and held-defense source coverage (unverified)
 
 At PTMagic code checkpoint `24db0b56bd7c33e32fcccfc25f6aaf40a1883bd5`, new ConfigurationLifecycle tests cover optional reserved FAILSAFE override, absent-FAILSAFE best-available selection, stale delivery, watchdog deadline handling, SMS removal, acknowledgement/recovery, failure rollback and the persisted `IncompleteData` signal. The watchdog operates independently of the raid timer and publishes a separately compiled preset, subject to configured PT delivery acknowledgements; its five-second polling interval is not a demonstrated maximum wall-clock activation time. The provisional selection algorithm counts known TRUE trigger clauses for possible Globals; this is a heuristic, not a verified market condition. `FAILSAFE` is opt-in by a reserved Global definition, not a separately installed LONG/SHORT preset. The two distribution templates contain one ordinary `DEFAULT_sell_only_mode_enabled=true` override and operational comments, not a complete exit-optimization strategy.

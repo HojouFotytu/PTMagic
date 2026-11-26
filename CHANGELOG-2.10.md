@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 26, 2026 — Dev 17 lifecycle validation: obsolete startup SOM assertion
+
+Operator execution at `df26022` compiled and passed the first 55 ConfigurationLifecycle checks, then failed at Program.cs:801. The test incorrectly required zero sends on inconclusive selection, a superseded pre-Dev 16 deferral rule. Corrected regression now exercises acknowledged provisional delivery, failure of a distinct conclusive payload preserving acknowledgement, and successful recovery with manual startup SOM unchanged. No production changes. Full rerun pending; do not record a suite PASS yet.
+
 ## November 26, 2026 — Dev 17: scope incomplete-data decisions to actual Global/freshness failure (native validation pending)
 
 Verified prelisting history diagnostics now inspect the previous Delta calculation and its independent benchmark. Current-series continuity and exact listing metadata are still required; historical-only shortages cannot suppress current-measurement errors. Verified historical flat PricePathEfficiency is informational, without changing UNAVAILABLE truth or metric calculations. Regression cases cover historical flat paths, fresh in-flight watchdog recovery, definite Global after unknown candidate and fresh provisional SMS retention. Native tests remain unexecuted.
