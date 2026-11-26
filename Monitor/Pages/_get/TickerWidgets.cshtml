@@ -37,6 +37,8 @@
   if (!String.IsNullOrWhiteSpace(selectedGlobalDescription))
     globalSettingInfoTooltip += "<br />" + System.Net.WebUtility.HtmlEncode(selectedGlobalDescription).Replace("\r\n", "\n").Replace("\n", "<br />");
   globalSettingInfoTooltip += "<br />" + (deliveredToPT ? "Delivered to PT" : "Not Delivered to PT");
+  if (Model.Summary.ConfirmedIncompleteData)
+    globalSettingInfoTooltip += "<br />(Incomplete Data)";
   if (Model.Summary.StartupSellOnlyModeActive)
     globalSettingInfoTooltip += "<br />Startup SOM";
 
@@ -57,10 +59,12 @@
   }
   if (String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Failed", StringComparison.OrdinalIgnoreCase)
     || String.Equals(Model.Summary.ConfigurationDeliveryStatus, "Deferred", StringComparison.OrdinalIgnoreCase)
-    || Model.Summary.StartupSellOnlyModePending) {
+    || Model.Summary.StartupSellOnlyModePending || Model.Summary.ConfirmedIncompleteData) {
     healthIconColor = "text-warning";
     ptMagicHealthIcon = "fa-exclamation-triangle";
-    ptMagicHealthTooltip = "Configuration delivery: " + Model.Summary.ConfigurationDeliveryStatus + "; startup global SOM: " + Model.Summary.StartupSellOnlyModeStatus + ". Check Status Summary and the logs.";
+    ptMagicHealthTooltip = "Configuration delivery: " + Model.Summary.ConfigurationDeliveryStatus +
+      (Model.Summary.ConfirmedIncompleteData ? " (Incomplete Data)" : "") +
+      "; startup global SOM: " + Model.Summary.StartupSellOnlyModeStatus + ". Check Status Summary and the logs.";
   }
 }
 
