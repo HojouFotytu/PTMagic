@@ -68,11 +68,11 @@
           </tr>
           <tr>
             <td>Confirmed Applied Setting</td>
-            <td class="text-right">@(String.IsNullOrEmpty(Model.Summary.AppliedGlobalSettingName) ? "Not confirmed" : Core.Helper.SystemHelper.SplitCamelCase(Model.Summary.AppliedGlobalSettingName))</td>
+            <td class="text-right @(Model.Summary.ConfirmedIncompleteData ? "text-warning" : "")">@(String.IsNullOrEmpty(Model.Summary.AppliedGlobalSettingName) ? "Not confirmed" : Core.Helper.SystemHelper.SplitCamelCase(Model.Summary.AppliedGlobalSettingName))@(Model.Summary.ConfirmedIncompleteData ? " (Incomplete Data)" : "")</td>
           </tr>
           <tr>
             <td>Configuration Delivery</td>
-            <td class="text-right">@(String.IsNullOrEmpty(Model.Summary.ConfigurationDeliveryStatus) ? "Not recorded" : Model.Summary.ConfigurationDeliveryStatus)</td>
+            <td class="text-right @(Model.Summary.ConfirmedIncompleteData || Model.Summary.ConfigurationDeliveryStatus == "Failed" ? "text-warning" : "")">@(String.IsNullOrEmpty(Model.Summary.ConfigurationDeliveryStatus) ? "Not recorded" : Model.Summary.ConfigurationDeliveryStatus)@(Model.Summary.ConfirmedIncompleteData ? " (Incomplete Data)" : "")</td>
           </tr>
           <tr>
             <td>Startup Global SOM</td>
