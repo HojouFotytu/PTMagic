@@ -1,5 +1,10 @@
 # Raid metric-warning natural-language regression tests
 
+## November 27 — Raid-wide new-market notice exclusion (current policy)
+
+Every symbol named in the consolidated new-market INFO notice is excluded from market-specific metric WARN summaries for that raid, across all metrics, trends, relations and failure causes. Apply the same membership test to failed asset snapshots and individual trigger reports before aggregating counts/examples. This supersedes earlier per-metric and per-relation warning suppression rules. The listing verification and source validity are unchanged; independent global/configuration warnings without a market and warnings for non-listed symbols remain. Tests cover cross-trend Absolute/Delta, invalid source and stale causes, mixed markets and independent Global failure. Native execution pending.
+
+
 ## November 26–27 — historical Delta availability (Dev 17, source implemented, native execution pending)
 
 `df260227` retains the previous Delta analysis and independently checks previous asset/benchmark observations. A verified continuous listing-origin series and the metric's actual historical requirement are necessary for an expected history classification. Separate current versus Delta classification avoids concealing actual current data failures. A valid current efficiency with a nonstale historical flat path is informational when all affected requests have matching verified evidence; mixed or genuine faults stay WARN. Values and three-valued trigger decisions remain UNAVAILABLE, not zero. The historical-flat-path regression is added; expand direct new-listing Delta and mixed current/historical benchmark/source-gap cases during acceptance. User's old-build SHORT raid #12 had duplicate Swing72 PricePathEfficiency and RelativeStrengthMarket Delta warnings solely for AMDLUSDT/JNJUSDT/NIOUSDT, already named in the INFO line; a valid historical median benchmark must be verified before classifying the latter as expected. No current-code warning harness execution or dual-instance replay has been reported. The earlier per-market-notice design below is historical; one consolidated market list per raid is current.

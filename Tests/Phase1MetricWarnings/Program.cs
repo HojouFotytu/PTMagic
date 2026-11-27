@@ -36,6 +36,7 @@ internal static class Program
       TestVerifiedNewMarketHistoryClassification();
       TestNewMarketWarningsAndNoticeLifecycle();
       TestMixedListingCorrelationWarnings();
+      TestNewMarketNoticeOwnsAllRaidWarnings();
       Console.WriteLine("Phase 1 metric-warning summary tests passed: " + _passed + ".");
       return 0;
     }
@@ -732,9 +733,11 @@ internal static class Program
 
     var mixed = Analyses(ListingTrend(invalidTaker: true));
     var filtered = NewMarketHistoryClassification.Analyze(mixed, ListingStore(), _ => Listing);
-    Expect(filtered.Affected["SOXXUSDT"].Count == 7, "Invalid taker value must not be suppressed.");
-    Expect(warnings.BuildLines(mixed, filtered).Any(line =>
-      line.Contains("TakerImbalance")), "A genuine invalid value must remain WARN.");
+    Expect(filtered.Affected["SOXXUSDT"].Count == 7, "Invalid taker value must not become a verified listing shortage.");
+    Expect(!warnings.BuildLines(mixed, filtered).Any(line =>
+      line.Contains("TakerImbalance")), "A listed market must not produce a second metric warning, even for a different failure.");
+    Expect(warnings.BuildLines(mixed).Any(line => line.Contains("TakerImbalance")),
+      "The underlying invalid metric remains intact without the reporting exclusion.");
 
     warnings.ReportGlobalDecision("selection indeterminate; retained 'DEFAULT'.");
     Expect(warnings.BuildLines(analysis, classification).Any(line =>
@@ -770,9 +773,56 @@ internal static class Program
       "Analysis is stale; MaxAnalysisAgeSeconds exceeded.",
       "SMS activation", "STALE", "SOXXUSDT", "Absolute", "C999");
     var mixed = warnings.BuildLines(analysis, classification);
-    Expect(mixed.Any(line => line.Contains("Affected trigger requests: 2") &&
-      line.Contains("ANTUSDT") && line.Contains("STALE") && !line.Contains("LIST_")),
-      "Unrelated stale failure for a listed market remains a warning with correct request count.");
+    Expect(mixed.Count == 2 && mixed[1].Contains("ANTUSDT") &&
+      !mixed[1].Contains("STALE") && !mixed[1].Contains("SOXXUSDT"),
+      "All asset-specific warnings for reported new markets are excluded; other markets remain.");
+    _passed++;
+  }
+
+  private static void TestNewMarketNoticeOwnsAllRaidWarnings()
+  {
+    var listing = ListingTrend();
+    var classification = NewMarketHistoryClassification.Analyze(Analyses(listing), ListingStore(), _ => Listing);
+    Expect(classification.IsReportedNewMarket("soxxusdt"), "Membership is case insensitive.");
+    Expect(!classification.IsExpected("SOXXUSDT", "Week168", MarketTrendMetrics.PriceTrend),
+      "No separate history classification exists for Week168.");
+    var week = new MarketTrendAnalysisSnapshot
+    {
+      MarketTrendName = "Week168",
+      EnabledMetrics = new[] { MarketTrendMetrics.PriceTrend },
+      AssetSymbols = new[] { "SOXXUSDT", "ANTUSDT" },
+      AssetMetrics = new Dictionary<string, IReadOnlyDictionary<string, FeatureValueSnapshot>>
+      {
+        ["SOXXUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        { [MarketTrendMetrics.PriceTrend] = Invalid("No exact closed-candle reference exists.") },
+        ["ANTUSDT"] = new Dictionary<string, FeatureValueSnapshot>
+        { [MarketTrendMetrics.PriceTrend] = Valid(1) }
+      }
+    };
+    var analyses = Analyses(listing, week);
+    var warnings = new RaidMetricWarnings();
+    warnings.ReportUnavailable("Day24", MarketTrendMetrics.CorrelationToBTC, "Missing or invalid exact closed source candle.",
+      "SMS activation", "SS12", "SOXXUSDT", "Absolute", "C6003");
+    warnings.ReportUnavailable("Week168", MarketTrendMetrics.PriceTrend, "No exact closed-candle reference exists.",
+      "SMS activation", "SS12", "SOXXUSDT", "Absolute", "C272");
+    warnings.ReportUnavailable("Week168", MarketTrendMetrics.PriceTrend, "Historical value unavailable.",
+      "SMS OffTrigger", "SS17", "SOXXUSDT", "Delta", "C273");
+    warnings.ReportUnavailable("Day24", MarketTrendMetrics.CorrelationToBTC, "Benchmark unavailable.",
+      "SMS activation", "SS12", "SOXXUSDT", "Absolute", "C6004");
+    Expect(warnings.BuildLines(analyses, classification).Count == 0,
+      "A market in the consolidated notice cannot generate metric warnings on any trend, relation or cause.");
+    Expect(warnings.BuildLines(analyses).Count > 0, "Original unavailable observations and caller evidence are preserved.");
+    warnings.ReportUnavailable("Week168", MarketTrendMetrics.PriceTrend, "Historical value unavailable.",
+      "SMS activation", "SS12", "ANTUSDT", "Delta", "C272");
+    warnings.ReportUnavailable("Day24", MarketTrendMetrics.MedianCorrelationToBTC, "Global benchmark unavailable.",
+      "GlobalSetting", "GS1", null, "Absolute", "C1");
+    var lines = warnings.BuildLines(analyses, classification);
+    Expect(lines.Count == 3 && lines[0] == "+ Metric warnings: 2" &&
+      lines.Any(line => line.Contains("ANTUSDT")) && lines.Any(line => line.Contains("GS1")) &&
+      lines.All(line => !line.Contains("SOXXUSDT")),
+      "Other-market and independent global warnings must survive the raid-wide symbol exclusion.");
+    Expect(warnings.BuildNewMarketInfoLines(classification).Count == 1,
+      "One consolidated notice remains.");
     _passed++;
   }
 

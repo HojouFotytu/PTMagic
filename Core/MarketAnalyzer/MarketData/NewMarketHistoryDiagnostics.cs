@@ -10,7 +10,8 @@ namespace Core.MarketAnalyzer.MarketData
   /// <summary>
   /// Reporting-only classification of history that cannot predate a verified Binance
   /// Futures onboard date. Never changes metric values, cohorts or trigger decisions.
-  /// Missing metadata, stale/incomplete recent candles and unexplained gaps remain warnings.
+  /// Establishes the verified new-market notice membership; summary warning exclusion
+  /// is market-wide for that raid and does not affect calculation validity.
   /// </summary>
   public sealed class NewMarketHistoryClassification
   {
@@ -22,6 +23,9 @@ namespace Core.MarketAnalyzer.MarketData
     private readonly HashSet<string> _deltaUnavailable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     public int MarketCount => _unavailable.Count;
+
+    public bool IsReportedNewMarket(string symbol) =>
+      !String.IsNullOrWhiteSpace(symbol) && _unavailable.ContainsKey(symbol.Trim());
 
     public IReadOnlyDictionary<string, IReadOnlyCollection<string>> Affected =>
       new ReadOnlyDictionary<string, IReadOnlyCollection<string>>(

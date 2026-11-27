@@ -197,7 +197,7 @@ namespace Core.MarketAnalyzer.MarketData
               }
 
               if (IsUsable(feature) || (feature?.IsNoTrades == true && !feature.IsStale) ||
-                newMarkets?.IsExpected(symbol, trend, metric) == true)
+                newMarkets?.IsReportedNewMarket(symbol) == true)
               {
                 continue;
               }
@@ -238,10 +238,10 @@ namespace Core.MarketAnalyzer.MarketData
         }
       }
 
-      // Filter individual verified listing-related SMS requests before grouping
-      // warnings. Do not mutate the original raid evidence: repeated rendering
-      // with or without listing classification must remain deterministic.
-      Issue[] reportable = _issues.Values.Select(issue => FilterExpectedHistory(issue, newMarkets))
+      // The consolidated notice owns all market-specific warning reporting for
+      // its members for this raid, regardless of metric, relation or cause.
+      // Independent global failures remain reportable; original evidence remains intact.
+      Issue[] reportable = _issues.Values.Select(issue => FilterReportedNewMarkets(issue, newMarkets))
         .Where(issue => (issue.FailedRequests > 0 || issue.UnavailableAssets > 0 ||
           issue.GlobalFeature != null || issue.UnknownMetric) &&
           !IsVerifiedFlatPath(issue) && !IsVerifiedHistoricalFlatPath(issue, deltas))
@@ -265,23 +265,11 @@ namespace Core.MarketAnalyzer.MarketData
       return lines;
     }
 
-    private static Issue FilterExpectedHistory(Issue original, NewMarketHistoryClassification newMarkets)
+    private static Issue FilterReportedNewMarkets(Issue original, NewMarketHistoryClassification newMarkets)
     {
       if (newMarkets == null || original.ReportedCauses.Count != original.FailedRequests)
         return original;
-      bool Expected(ReportedCause cause)
-      {
-        var caller = cause.Caller;
-        if (caller == null || String.IsNullOrWhiteSpace(cause.Market) ||
-            !(caller.Source.Equals("SMS activation", StringComparison.OrdinalIgnoreCase) ||
-              caller.Source.Equals("SMS OffTrigger", StringComparison.OrdinalIgnoreCase)) ||
-            !IsExpectedHistoryReport(cause.Reason)) return false;
-        return MarketTrendDeltaSelection.IsDelta(cause.Relation)
-          ? newMarkets.IsExpectedDelta(cause.Market, original.Trend, original.Metric)
-          : newMarkets.IsExpected(cause.Market, original.Trend, original.Metric);
-      }
-
-      var retained = original.ReportedCauses.Where(cause => !Expected(cause)).ToArray();
+      var retained = original.ReportedCauses.Where(cause => !newMarkets.IsReportedNewMarket(cause.Market)).ToArray();
       if (retained.Length == original.FailedRequests) return original;
       var filtered = new Issue
       {
@@ -371,26 +359,6 @@ namespace Core.MarketAnalyzer.MarketData
           " unavailable (flat price paths" +
           (issue.FailedRequests > 0 ? "; " + issue.FailedRequests + " SMS trigger evaluations" : "") + ").")
         .ToArray();
-    }
-
-    // Only an unavailable-source result may be reclassified. Misconfigured
-    // triggers, population/scope errors and other failures stay WARN even
-    // when another metric for the same market lacks pre-listing history.
-    private static bool IsExpectedHistoryReport(string reason)
-    {
-      if (String.IsNullOrWhiteSpace(reason)) return false;
-      if (Contains(reason, "stale") ||
-          Contains(reason, "MaxAnalysisAgeSeconds") ||
-          Contains(reason, "benchmark return vector unavailable") ||
-          Contains(reason, "outside the selected asset population") ||
-          Contains(reason, "does not enable metric") ||
-          Contains(reason, "asset-only metric used globally") ||
-          Contains(reason, "requires a market-specific context") ||
-          Contains(reason, "unknown metric")) return false;
-      return Contains(reason, "unavailable") || Contains(reason, "Insufficient complete") ||
-        Contains(reason, "No exact closed-candle reference") ||
-        Contains(reason, "Missing normalized source candle") ||
-        Contains(reason, "Missing or invalid exact closed source candle");
     }
 
     /// <summary>

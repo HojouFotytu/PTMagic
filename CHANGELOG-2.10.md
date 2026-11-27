@@ -2,6 +2,9 @@
 
 ## Dev 18 — PTM-VOLUME-COVERAGE-01
 
+Raid-wide new-market warning exclusion (user-directed): membership in the consolidated new-market history INFO notice is the sole market-level reporting exclusion for the RAID metric-warning summary. All asset-specific failures for those symbols are omitted, irrespective of metric, horizon, relation, source or reason. Filter both snapshot and trigger paths; preserve unrelated market and independent Global warnings. This supersedes earlier per-metric/per-relation suppression, not listing verification or metric validity. No changes to trigger evaluation, FAILSAFE, acquisition or strategy. Updated regression cases and documentation; native execution pending.
+
+
 Mixed listing-warning correction: filter individual verified listing-related SMS trigger failures before warning grouping, rebuilding counts and examples from remaining requests. Genuine stale, benchmark, configuration and unclassified data failures remain visible. No change to metric validity or trading decisions. Regression covers mixed correlation callers beyond display cap and repeated rendering. Native execution pending.
 
 
