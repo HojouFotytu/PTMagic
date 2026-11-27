@@ -44,6 +44,26 @@ internal static class Program
   }
   private static int tests;
   private static JsonElement Parse(string text) { using var doc = JsonDocument.Parse(text); return doc.RootElement.Clone(); }
+  // Match Kestrel's non-seekable, async-only response body.
+  private sealed class AsyncOnlyDestination : Stream
+  {
+    public readonly MemoryStream Bytes = new();
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() => throw new InvalidOperationException("Synchronous flush");
+    public override Task FlushAsync(CancellationToken ct) => Bytes.FlushAsync(ct);
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new InvalidOperationException("Synchronous write");
+    public override void Write(ReadOnlySpan<byte> buffer) => throw new InvalidOperationException("Synchronous write");
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct) => Bytes.WriteAsync(buffer, offset, count, ct);
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default) => Bytes.WriteAsync(buffer, ct);
+  }
+
   private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
   private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
     new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
@@ -246,6 +266,76 @@ internal static class Program
       }
       finally { Directory.Delete(folder, true); }
       return Task.CompletedTask;
+    });
+    await Test("data ZIP period filters history but preserves current state and caches", async () =>
+    {
+      var end = new DateTime(2026, 11, 27, 6, 0, 0, DateTimeKind.Utc);
+      var start = end.AddDays(-1);
+      string folder = Path.Combine(Path.GetTempPath(), "ptm-data-archive-" + Guid.NewGuid().ToString("N"));
+      try
+      {
+        void Put(string relative, string text)
+        {
+          string path = Path.Combine(folder, relative);
+          Directory.CreateDirectory(Path.GetDirectoryName(path));
+          File.WriteAllText(path, text, new UTF8Encoding(false));
+        }
+        Put("DecisionHistory/2026-11-25-000001.jsonl", "{}\n");
+        Put("DecisionHistory/2026-11-26-000001.jsonl", "{\"id\":1}\n{\"incomplete\":");
+        Put("Exchange/MarketData_2026-11-26_05.59.json", "{}");
+        Put("Exchange/MarketData_2026-11-26_06.00.json", "{}");
+        Put("Exchange/Metadata.json", "{}");
+        Put("NormalizedOhlcvCache/BINANCEFUTURES/test.gz", "gzip bytes");
+        Put("MarketTrendAnalytics.json", "{}");
+        var members = StreamingDownloadArchive.CaptureData(folder, start, end, default);
+        Check(members.Count == 5 && members.All(x => !x.Entry.Contains("11-25") && !x.Entry.Contains("05.59")), "bounded history selection");
+        Check(StreamingDownloadArchive.CaptureData(folder, null, end, default).Count == 7, "all history");
+        File.AppendAllText(Path.Combine(folder, "DecisionHistory/2026-11-26-000001.jsonl"), "true}\n{\"id\":2}\n");
+        Put("MarketTrendAnalytics.json", "{\"newSnapshot\":true}");
+        var output = new AsyncOnlyDestination();
+        Check(await StreamingDownloadArchive.WriteAsync(output, members, default) == 5, "async nonseekable ZIP");
+        output.Bytes.Position = 0;
+        using var zip = new ZipArchive(output.Bytes, ZipArchiveMode.Read);
+        string Read(string name)
+        {
+          using var reader = new StreamReader(zip.GetEntry("_data/" + name).Open());
+          return reader.ReadToEnd();
+        }
+        Check(Read("DecisionHistory/2026-11-26-000001.jsonl") == "{\"id\":1}\n", "no appended or interrupted records");
+        Check(Read("MarketTrendAnalytics.json") == "{\"newSnapshot\":true}", "replacement snapshot not truncated");
+        Check(Read("NormalizedOhlcvCache/BINANCEFUTURES/test.gz") == "gzip bytes", "compressed cache intact");
+        Check(zip.Entries.Count == 5, "correct archive membership");
+      }
+      finally { Directory.Delete(folder, true); }
+    });
+    await Test("log ZIP streams bounded source prefixes with existing date filtering", async () =>
+    {
+      var end = new DateTime(2026, 11, 27, 6, 0, 0, DateTimeKind.Utc);
+      string folder = Path.Combine(Path.GetTempPath(), "ptm-log-archive-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(folder);
+      try
+      {
+        string current = Path.Combine(folder, end.ToLocalTime().ToString("yyyy-MM-dd") + ".txt");
+        string older = Path.Combine(folder, end.AddDays(-3).ToLocalTime().ToString("yyyy-MM-dd") + ".txt");
+        File.WriteAllText(current, "first\n");
+        File.WriteAllText(older, "older\n");
+        var members = StreamingDownloadArchive.CaptureLogs(new[] { (folder, "PTMagic/") }, end.AddDays(-1), end, default);
+        Check(members.Count == 1, "old log excluded");
+        File.AppendAllText(current, "later\n");
+        var output = new AsyncOnlyDestination();
+        Check(await StreamingDownloadArchive.WriteAsync(output, members, default) == 1, "async ZIP");
+        output.Bytes.Position = 0;
+        using var zip = new ZipArchive(output.Bytes, ZipArchiveMode.Read);
+        using var reader = new StreamReader(zip.Entries.Single().Open());
+        Check(reader.ReadToEnd() == "first\n", "bounded active log");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        bool cancelled = false;
+        try { await StreamingDownloadArchive.WriteAsync(new AsyncOnlyDestination(), members, cts.Token); }
+        catch (OperationCanceledException) { cancelled = true; }
+        Check(cancelled, "cancellation propagates");
+      }
+      finally { Directory.Delete(folder, true); }
     });
     await Test("UTC windows accept seconds, milliseconds, strings and ISO timestamps", async () =>
     {

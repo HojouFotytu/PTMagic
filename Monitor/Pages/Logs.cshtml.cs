@@ -1,13 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Monitor.Pages
@@ -25,194 +27,87 @@ namespace Monitor.Pages
       return Page();
     }
 
-    // Download complete source files, independently of the filtered/bounded log
-    // viewer. Keep the ZIP on a temporary disk stream to avoid buffering all
-    // log history in memory; ASP.NET disposes the stream after the download.
+    // Both endpoints use the same bounded, async streaming writer.
     public async Task<IActionResult> OnGetDownloadAsync(int historyCount, string historyUnit,
       CancellationToken cancellationToken)
     {
       base.Init();
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
-      // Missing query parameters (old download links) retain all-history behavior.
-      bool noRange = String.IsNullOrEmpty(historyUnit) && historyCount == 0;
-      if (!_Internal.ExportHistoryPeriod.TryFromInput(historyCount,
-        noRange ? "all" : historyUnit, DateTime.UtcNow, out _, out DateTime? cutoffUtc))
+      DateTime endUtc = DateTime.UtcNow;
+      if (!TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
         return BadRequest("Choose a positive whole number of days, weeks, or months.");
 
       string analyzerFolder = Path.Combine(PTMagicBasePath, "_logs");
       string monitorFolder = Path.Combine(PTMagicMonitorBasePath, "_logs");
       if (!Directory.Exists(monitorFolder))
         monitorFolder = Path.Combine(AppContext.BaseDirectory, "_logs");
-
-      var folders = new[]
-      {
-        (Path: analyzerFolder, Prefix: "PTMagic/"),
-        (Path: monitorFolder, Prefix: "Monitor/")
-      };
-      var files = folders
-        .Where(folder => Directory.Exists(folder.Path))
-        .SelectMany(folder => Directory.EnumerateFiles(folder.Path, "*", SearchOption.TopDirectoryOnly)
-          // Logs stored as links must not expose files outside the log folder.
-          .Where(path => (System.IO.File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
-          .Where(path => _Internal.LogArchiveDateFilter.Includes(path, cutoffUtc, DateTime.UtcNow))
-          .Select(path => (Path: path, Entry: folder.Prefix + Path.GetFileName(path))))
-        .ToArray();
-
-      if (files.Length == 0)
-        return NotFound("No log files are available to download.");
-
-      string temporaryPath = Path.Combine(Path.GetTempPath(),
-        "ptmagic-logs-" + Guid.NewGuid().ToString("N") + ".zip");
-      FileStream archiveStream = new FileStream(temporaryPath, new FileStreamOptions
-      {
-        Mode = FileMode.CreateNew,
-        Access = FileAccess.ReadWrite,
-        Share = FileShare.None,
-        BufferSize = 81920,
-        Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
-      });
-
-      try
-      {
-        int archivedFiles = 0;
-        using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
-        {
-          foreach (var file in files)
-          {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-              // Allow active NLog writers and daily rotation to continue.
-              using var logStream = new FileStream(file.Path, FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete, 81920,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-              ZipArchiveEntry entry = archive.CreateEntry(file.Entry, CompressionLevel.Fastest);
-              using Stream entryStream = entry.Open();
-              await logStream.CopyToAsync(entryStream, 81920, cancellationToken);
-              archivedFiles++;
-            }
-            catch (FileNotFoundException)
-            {
-              // A dated log can rotate between discovery and opening.
-            }
-          }
-        }
-
-        if (archivedFiles == 0)
-        {
-          await archiveStream.DisposeAsync();
-          return NotFound("No log files are available to download.");
-        }
-
-        archiveStream.Position = 0;
-        // Use the Analyzer's configured instance name, matching PT Data ZIP naming.
-        string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
-        string safeInstanceName = System.Text.RegularExpressions.Regex
-          .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-")
-          .Trim('-', '_');
-        if (safeInstanceName.Length > 64) safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
-        if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
-        string fileName = "PTMagic-Logs-" + safeInstanceName + "-" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
-        return File(archiveStream, "application/zip", fileName);
-      }
-      catch
-      {
-        await archiveStream.DisposeAsync();
-        throw;
-      }
+      var files = _Internal.StreamingDownloadArchive.CaptureLogs(
+        new[] { (analyzerFolder, "PTMagic/"), (monitorFolder, "Monitor/") },
+        cutoffUtc, endUtc, cancellationToken);
+      if (files.Count == 0) return NotFound("No log files are available to download.");
+      return await StreamDownloadAsync(files, "PTMagic-Logs-", endUtc, cancellationToken);
     }
 
-
-    // Download the complete on-disk _data tree for this PTMagic instance.
-    // Keep the archive disk-backed, preserve subfolders, and never follow links.
-    public async Task<IActionResult> OnGetDownloadDataAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetDownloadDataAsync(int historyCount, string historyUnit,
+      CancellationToken cancellationToken)
     {
       base.Init();
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
+      DateTime endUtc = DateTime.UtcNow;
+      if (!TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
+        return BadRequest("Choose a positive whole number of days, weeks, or months.");
 
       string dataFolder = Path.Combine(PTMagicBasePath, Core.Main.Constants.PTMagicPathData);
-      if (!Directory.Exists(dataFolder)
-        || (System.IO.File.GetAttributes(dataFolder) & FileAttributes.ReparsePoint) != 0)
-        return NotFound("The PTMagic _data folder is unavailable.");
+      var files = _Internal.StreamingDownloadArchive.CaptureData(dataFolder, cutoffUtc, endUtc, cancellationToken);
+      if (files.Count == 0) return NotFound("No PTMagic _data files are available to download.");
+      return await StreamDownloadAsync(files, "PTMagic-_data-", endUtc, cancellationToken);
+    }
 
-      string temporaryPath = Path.Combine(Path.GetTempPath(),
-        "ptmagic-data-" + Guid.NewGuid().ToString("N") + ".zip");
-      FileStream archiveStream = new FileStream(temporaryPath, new FileStreamOptions
-      {
-        Mode = FileMode.CreateNew,
-        Access = FileAccess.ReadWrite,
-        Share = FileShare.None,
-        BufferSize = 81920,
-        Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
-      });
+    private static bool TryDownloadPeriod(int count, string unit, DateTime endUtc, out DateTime? cutoffUtc)
+    {
+      // Legacy links with no period still request all available history.
+      bool noRange = String.IsNullOrEmpty(unit) && count == 0;
+      return _Internal.ExportHistoryPeriod.TryFromInput(count, noRange ? "all" : unit,
+        endUtc, out _, out cutoffUtc);
+    }
 
+    private async Task<IActionResult> StreamDownloadAsync(
+      IReadOnlyList<_Internal.StreamingDownloadArchive.Member> files, string prefix,
+      DateTime endUtc, CancellationToken cancellationToken)
+    {
+      string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
+      string safeInstanceName = System.Text.RegularExpressions.Regex
+        .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-").Trim('-', '_');
+      if (safeInstanceName.Length > 64) safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
+      if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
+      string fileName = prefix + safeInstanceName + "-" + endUtc.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
+
+      Response.ContentType = "application/zip";
+      Response.Headers["Content-Disposition"] = "attachment; filename=\"" + fileName + "\"";
+      Response.Headers["Cache-Control"] = "no-store, no-transform";
+      Response.Headers["X-Accel-Buffering"] = "no";
+      HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
       try
       {
-        using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
-        {
-          archive.CreateEntry("_data/");
-          var pendingFolders = new Stack<string>();
-          pendingFolders.Push(dataFolder);
-          while (pendingFolders.Count > 0)
-          {
-            cancellationToken.ThrowIfCancellationRequested();
-            string folder = pendingFolders.Pop();
-            foreach (string path in Directory.EnumerateFileSystemEntries(folder))
-            {
-              cancellationToken.ThrowIfCancellationRequested();
-              FileAttributes attributes;
-              try
-              {
-                attributes = System.IO.File.GetAttributes(path);
-              }
-              catch (FileNotFoundException) { continue; }
-              catch (DirectoryNotFoundException) { continue; }
-
-              // Exclude symbolic links and junctions, including linked directories.
-              if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
-              string entryName = "_data/" + Path.GetRelativePath(dataFolder, path).Replace('\\', '/');
-              if ((attributes & FileAttributes.Directory) != 0)
-              {
-                archive.CreateEntry(entryName.TrimEnd('/') + "/");
-                pendingFolders.Push(path);
-                continue;
-              }
-
-              try
-              {
-                // Opening before CreateEntry avoids an empty member if a file vanishes.
-                using var dataStream = new FileStream(path, FileMode.Open, FileAccess.Read,
-                  FileShare.ReadWrite | FileShare.Delete, 81920,
-                  FileOptions.Asynchronous | FileOptions.SequentialScan);
-                ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
-                using Stream entryStream = entry.Open();
-                await dataStream.CopyToAsync(entryStream, 81920, cancellationToken);
-              }
-              catch (FileNotFoundException) { /* Data file removed during enumeration. */ }
-              catch (DirectoryNotFoundException) { /* Parent removed during enumeration. */ }
-            }
-          }
-        }
-
-        archiveStream.Position = 0;
-        string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
-        string safeInstanceName = System.Text.RegularExpressions.Regex
-          .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-")
-          .Trim('-', '_');
-        if (safeInstanceName.Length > 64)
-          safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
-        if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
-        string fileName = "PTMagic-_data-" + safeInstanceName + "-"
-          + DateTime.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
-        return File(archiveStream, "application/zip", fileName);
+        await Response.StartAsync(cancellationToken);
+        int written = await _Internal.StreamingDownloadArchive.WriteAsync(Response.Body, files, cancellationToken);
+        if (written == 0) throw new IOException("All archive members disappeared before opening.");
       }
-      catch
+      catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
       {
-        await archiveStream.DisposeAsync();
-        throw;
+        HttpContext.Abort();
       }
+      catch (Exception ex) when (Response.HasStarted)
+      {
+        // An HTTP error page cannot replace an already started ZIP. Abort
+        // instead of serving an apparently successful truncated archive.
+        HttpContext.RequestServices.GetService<ILogger<LogsModel>>()?
+          .LogWarning(ex, "PTMagic ZIP download failed after response start.");
+        HttpContext.Abort();
+      }
+      return new EmptyResult();
     }
 
     // A single authenticated SSE connection follows one log file. The filesystem watcher

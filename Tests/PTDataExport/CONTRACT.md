@@ -1,5 +1,10 @@
 # PT history exporter: verified contract and rebuild
 
+## November 27 — Streaming PTMagic Logs/Data exports
+
+Both ZIP buttons submit the shared history period. Logs retain the existing date filter; `_data` filters DecisionHistory by UTC segment date (whole boundary day) and Exchange MarketData snapshots by UTC filename timestamp. Current snapshots, metadata and complete OHLCV/funding caches remain included. All available and legacy links without a range retain all files. Shared .NET 10 asynchronous non-seekable ZIP writer starts the HTTP response before compression, does not create a temporary archive, stores already compressed files without recompression, bounds active logs and JSONL by captured length, and trims incomplete JSONL suffixes. Other files use their opened length so atomic snapshot replacements are not truncated to an old length. Preserve authentication, instance filenames and link exclusion. A post-header failure aborts the response and is logged; native and browser testing pending. No retention or trading changes.
+
+
 ## November 25–26 export range update and operator acceptance
 
 The PT Data page now uses an integer field plus Days/Weeks/Months/All available dropdown rather than the earlier fixed 7d/1m/3m/6m selection. The shared `ExportHistoryPeriod` parser retains legacy range codes; months are calendar-month `AddMonths` computations. Buy/sell source pages, raw source records, original one-based API pagination and schema 1.3 exporter manifest are unchanged. The PTMagic Logs page uses the same range pattern but ZIPs whole retained daily log files, including the boundary date; undated files use modification time. The separately downloadable PTMagic `_data` ZIP is always complete, without a range filter. These are Monitor export interfaces, not changes to native ProfitTrailer's trade-history retention.

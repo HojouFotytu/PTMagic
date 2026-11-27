@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 27 — Stream Logs and _data ZIP downloads
+
+Both Monitor download buttons now use the selected history period, including `_data` DecisionHistory and Exchange MarketData filtering, while retaining current snapshots/metadata/caches. Shared async direct ZIP writer removes temporary ZIP creation and bounds live append-only reads, preserves complete JSONL records, skips recompression of gzip/cache archives and uses existing authentication and filenames. Added nonseekable async-only ZIP and range regressions to PTDataExport. Native execution and actual large-download browser/proxy acceptance pending. No retention changes.
+
 ## Dev 18 — PTM-VOLUME-COVERAGE-01
 
 Raid-wide new-market warning exclusion (user-directed): membership in the consolidated new-market history INFO notice is the sole market-level reporting exclusion for the RAID metric-warning summary. All asset-specific failures for those symbols are omitted, irrespective of metric, horizon, relation, source or reason. Filter both snapshot and trigger paths; preserve unrelated market and independent Global warnings. This supersedes earlier per-metric/per-relation suppression, not listing verification or metric validity. No changes to trigger evaluation, FAILSAFE, acquisition or strategy. Updated regression cases and documentation; native execution pending.

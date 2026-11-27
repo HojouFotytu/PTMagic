@@ -11,10 +11,9 @@
       @if (Model.LogsEnabled)
       {
         <form class="mb-3" method="get" action="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs">
-          <input type="hidden" name="handler" value="Download" />
           <div class="form-row align-items-end">
             <div class="form-group col-md-2">
-              <label for="log-history-count">Log history period</label>
+              <label for="log-history-count">History period</label>
               <input id="log-history-count" class="form-control" type="number" name="historyCount" min="1" step="1" value="7" required />
             </div>
             <div class="form-group col-md-3">
@@ -27,15 +26,15 @@
               </select>
             </div>
             <div class="form-group col-md-7">
-              <button id="log-download" class="btn btn-secondary mr-2 mb-1" type="submit" title="Download PTMagic and Monitor source log files for the selected history period">
+              <button id="log-download" class="btn btn-secondary mr-2 mb-1" type="submit" name="handler" value="Download" title="Download PTMagic and Monitor source log files for the selected history period">
                 <i class="fa fa-download"></i> Download Logs ZIP
               </button>
-              <a id="data-download" class="btn btn-secondary mb-1" href="@Html.Raw(Model.PTMagicConfiguration.GeneralSettings.Monitor.RootUrl)Logs?handler=DownloadData" title="Download the complete PTMagic _data folder, including subfolders">
+              <button id="data-download" class="btn btn-secondary mb-1" type="submit" name="handler" value="DownloadData" title="Download retained data for the selected history period plus current snapshots and caches">
                 <i class="fa fa-download"></i> Download _data ZIP
-              </a>
+              </button>
             </div>
           </div>
-          <small class="form-text text-muted">Only retained log files are available. The full log file is included for each matching date, including the boundary day.</small>
+          <small class="form-text text-muted">Both downloads use the selected history period. Whole matching daily log and DecisionHistory files are included (including the boundary day); _data also includes current snapshots, metadata and complete caches.</small>
         </form>
       }
       @if (!Model.LogsEnabled)
