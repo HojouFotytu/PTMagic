@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -103,60 +104,79 @@ namespace Core.Helper
     public int? ConfirmedHeldMarketDefense { get; set; }
     public DecisionTrendUniverse[] Universes { get; set; } = Array.Empty<DecisionTrendUniverse>();
     public DecisionMetricInput[] MetricInputs { get; set; } = Array.Empty<DecisionMetricInput>();
+
+    internal DecisionHistoryRecord CompactHeader()
+    {
+      var header = (DecisionHistoryRecord)MemberwiseClone();
+      header.SchemaVersion = DecisionHistoryCodec.CurrentSchemaVersion;
+      header.MetricInputs = null;
+      return header;
+    }
   }
 
   public sealed class DecisionHistoryWriter
   {
-    // Rotation target, not a record-size or history-retention limit.
-    // One raid must remain one complete JSONL record, even when larger.
-    private const long SegmentBytes = 16L * 1024 * 1024;
     private readonly object _sync = new object();
     private readonly string _directory;
+    private DateTimeOffset? _lastPruneUtc;
+    private int _lastRetentionDays;
     public DecisionHistoryWriter(string directory) => _directory = Path.GetFullPath(directory);
 
     public string Append(DecisionHistoryRecord record, int retentionDays)
     {
       if (record == null) throw new ArgumentNullException(nameof(record));
       if (retentionDays < 1 || retentionDays > 3650) throw new ArgumentOutOfRangeException(nameof(retentionDays));
-      byte[] bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(record, Formatting.None) + "\n");
 
       lock (_sync)
       {
         Directory.CreateDirectory(_directory);
         DateTimeOffset now = record.RecordedAtUtc.ToUniversalTime();
-        foreach (FileInfo old in Files().Where(file => file.LastWriteTimeUtc < now.UtcDateTime.AddDays(-retentionDays))) old.Delete();
-
-        string day = now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        FileInfo last = Files().Where(file => file.Name.StartsWith(day + "-", StringComparison.Ordinal)).LastOrDefault();
-        string path = last?.FullName;
-        bool completeTail = last == null || EndsWithNewLine(last.FullName);
-        if (last == null || last.Length + bytes.LongLength > SegmentBytes || !completeTail)
+        if (!_lastPruneUtc.HasValue || now < _lastPruneUtc.Value ||
+          now - _lastPruneUtc.Value >= TimeSpan.FromHours(1) || _lastRetentionDays != retentionDays)
         {
-          int sequence = last == null ? 1 : Int32.Parse(Path.GetFileNameWithoutExtension(last.Name).Substring(11), CultureInfo.InvariantCulture) + 1;
-          path = Path.Combine(_directory, day + "-" + sequence.ToString("D6", CultureInfo.InvariantCulture) + ".jsonl");
+          Prune(now.UtcDateTime.AddDays(-retentionDays));
+          _lastPruneUtc = now;
+          _lastRetentionDays = retentionDays;
         }
 
-        // No cumulative size cap: only the age limit removes old segments.
-        // Oversized individual raids occupy a dedicated segment. The next
-        // record rotates again; never truncate, split or discard raid evidence.
-        using (FileStream stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
+        // One immutable compressed record per raid. No record-size or quota
+        // limit; atomic same-directory publication prevents interrupted files
+        // from masquerading as complete history. Legacy segments stay intact.
+        string path = Path.Combine(_directory, DecisionHistoryFileNames.CompactName(now, Guid.NewGuid()));
+        string temporary = path + ".tmp";
+        try
         {
-          stream.Write(bytes, 0, bytes.Length);
-          stream.Flush(true);
+          using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+          {
+            using (var gzip = new GZipStream(file, CompressionLevel.Fastest, leaveOpen: true))
+            using (var text = new StreamWriter(gzip, new UTF8Encoding(false), 65536, leaveOpen: true))
+              DecisionHistoryCodec.WriteLine(text, record);
+            file.Flush(flushToDisk: true);
+          }
+          File.Move(temporary, path);
+          return path;
         }
-        return path;
+        finally
+        {
+          if (File.Exists(temporary)) File.Delete(temporary);
+        }
       }
     }
 
-    private FileInfo[] Files() => new DirectoryInfo(_directory).GetFiles("????-??-??-??????.jsonl")
-      .OrderBy(file => file.Name, StringComparer.Ordinal).ToArray();
-
-    private static bool EndsWithNewLine(string path)
+    private void Prune(DateTime cutoffUtc)
     {
-      using FileStream file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-      if (file.Length == 0) return true;
-      file.Seek(-1, SeekOrigin.End);
-      return file.ReadByte() == (byte)'\n';
+      foreach (string path in Directory.EnumerateFiles(_directory, "*", SearchOption.TopDirectoryOnly))
+      {
+        var info = new FileInfo(path);
+        if ((info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+        if (DecisionHistoryFileNames.TryCompactTimestamp(path, out DateTime recorded))
+        {
+          if (recorded < cutoffUtc) info.Delete();
+        }
+        else if (DecisionHistoryFileNames.TryLegacyDate(path, out _) &&
+          info.LastWriteTimeUtc < cutoffUtc)
+          info.Delete();
+      }
     }
   }
 }

@@ -44,6 +44,7 @@ namespace Core.Helper
           {
             var file = new FileInfo(path);
             if ((file.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            if (pattern == "*.jsonl.gz" && !DecisionHistoryFileNames.TryCompactTimestamp(path, out _)) continue;
             long length = file.Length;
             DateTime modified = file.LastWriteTimeUtc;
             if (length < 0 || modified > now.AddMinutes(5)) continue;
@@ -63,6 +64,7 @@ namespace Core.Helper
 
       Count(Path.Combine(root, "_data", "Exchange"), "MarketData_*.json");
       Count(Path.Combine(root, "_data", "DecisionHistory"), "????-??-??-??????.jsonl");
+      Count(Path.Combine(root, "_data", "DecisionHistory"), "*.jsonl.gz");
       double hours = recentFiles == 0 ? 0 :
         Math.Clamp((now - (earliest < start ? start : earliest)).TotalHours, 0, SampleHours);
       long available = -1;

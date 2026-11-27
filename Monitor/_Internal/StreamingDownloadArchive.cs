@@ -5,6 +5,8 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text.Json;
+using Core.Helper;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -17,7 +19,8 @@ namespace Monitor._Internal
   public static class StreamingDownloadArchive
   {
     private const int BufferSize = 81920;
-    public sealed record Member(string Path, string Entry, long? AppendBoundary, bool CompleteJsonLines = false);
+    public sealed record Member(string Path, string Entry, long? AppendBoundary, bool CompleteJsonLines = false,
+      DateTime? RecordedFromUtc = null, DateTime? RecordedThroughUtc = null);
 
     private static bool IsDirectoryWithoutLink(string path)
     {
@@ -30,14 +33,15 @@ namespace Monitor._Internal
       catch (DirectoryNotFoundException) { return false; }
     }
 
-    private static Member Capture(string path, string entry, bool appendOnly, bool jsonLines = false)
+    private static Member Capture(string path, string entry, bool appendOnly, bool jsonLines = false,
+      DateTime? recordedFromUtc = null, DateTime? recordedThroughUtc = null)
     {
       try
       {
         var info = new FileInfo(path);
         if (!info.Exists || (info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
           return null;
-        return new Member(path, entry, appendOnly ? info.Length : null, jsonLines);
+        return new Member(path, entry, appendOnly ? info.Length : null, jsonLines, recordedFromUtc, recordedThroughUtc);
       }
       catch (FileNotFoundException) { return null; }
       catch (DirectoryNotFoundException) { return null; }
@@ -68,10 +72,11 @@ namespace Monitor._Internal
       string name = Path.GetFileName(normalized);
       if (normalized.StartsWith("DecisionHistory/", StringComparison.OrdinalIgnoreCase))
       {
-        // UTC daily JSONL segments are retained whole, including boundary day.
-        if (name.Length > 11 && name[10] == '-' &&
-          DateTime.TryParseExact(name.Substring(0, 10), "yyyy-MM-dd", CultureInfo.InvariantCulture,
-            DateTimeStyles.None, out DateTime day))
+        // New immutable files encode the exact RecordedAtUtc. Legacy
+        // day segments are coarse-selected here, then filtered by record time.
+        if (DecisionHistoryFileNames.TryCompactTimestamp(name, out DateTime recorded))
+          return recorded >= cutoffUtc.Value && recorded <= endUtc;
+        if (DecisionHistoryFileNames.TryLegacyDate(name, out DateTime day))
           return day.Date >= cutoffUtc.Value.Date && day.Date <= endUtc.Date;
         return lastWriteUtc >= cutoffUtc.Value && lastWriteUtc <= endUtc;
       }
@@ -112,10 +117,14 @@ namespace Monitor._Internal
           if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
           if ((attributes & FileAttributes.Directory) != 0) { pending.Push(path); continue; }
           string relative = Path.GetRelativePath(dataFolder, path).Replace('\\', '/');
+          bool history = relative.StartsWith("DecisionHistory/", StringComparison.OrdinalIgnoreCase);
+          // In-progress atomic gzip files are not published raid evidence.
+          if (history && relative.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
           if (!IncludesData(relative, cutoffUtc, endUtc, File.GetLastWriteTimeUtc(path))) continue;
-          bool jsonLines = relative.StartsWith("DecisionHistory/", StringComparison.OrdinalIgnoreCase) &&
-            relative.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase);
-          var member = Capture(path, "_data/" + relative, jsonLines, jsonLines);
+          bool jsonLines = history && relative.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase);
+          bool legacy = history && DecisionHistoryFileNames.TryLegacyDate(path, out _);
+          var member = Capture(path, "_data/" + relative, jsonLines, jsonLines,
+            legacy ? cutoffUtc : null, legacy && cutoffUtc.HasValue ? endUtc : null);
           if (member != null) result.Add(member);
         }
       }
@@ -147,6 +156,77 @@ namespace Monitor._Internal
         end = start;
       }
       return 0;
+    }
+
+    // Legacy records can be tens of MiB. Scan fixed-size blocks and keep
+    // only the small header prefix and selected byte ranges. Never load a
+    // full legacy raid into Monitor memory to apply the date filter.
+    private static DateTime RecordedAt(ReadOnlySpan<byte> prefix)
+    {
+      var reader = new Utf8JsonReader(prefix, isFinalBlock: false, state: default);
+      while (reader.Read())
+      {
+        if (reader.TokenType == JsonTokenType.PropertyName && reader.CurrentDepth == 1 &&
+            reader.ValueTextEquals("RecordedAtUtc"))
+        {
+          if (reader.Read() && reader.TokenType == JsonTokenType.String && reader.TryGetDateTimeOffset(out var time))
+            return time.UtcDateTime;
+          break;
+        }
+      }
+      throw new InvalidDataException("Legacy DecisionHistory record has no readable RecordedAtUtc in its header.");
+    }
+
+    private static List<(long Start, long Length)> LegacyRanges(FileStream source, long limit,
+      DateTime fromUtc, DateTime throughUtc, byte[] buffer, CancellationToken cancellationToken)
+    {
+      // RecordedAtUtc is emitted near the start of every native schema 1
+      // record. A malformed/unknown header fails explicitly, not by guessing.
+      byte[] prefix = new byte[65536];
+      var ranges = new List<(long Start, long Length)>();
+      int prefixLength = 0;
+      long position = 0, lineStart = 0;
+      source.Position = 0;
+      while (position < limit)
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        int count = source.Read(buffer, 0, (int)Math.Min(buffer.Length, limit - position));
+        if (count == 0) throw new EndOfStreamException("Legacy history shortened during download.");
+        int index = 0;
+        while (index < count)
+        {
+          int newline = Array.IndexOf(buffer, (byte)'\n', index, count - index);
+          int end = newline < 0 ? count : newline;
+          int copy = Math.Min(end - index, prefix.Length - prefixLength);
+          if (copy > 0)
+          {
+            Buffer.BlockCopy(buffer, index, prefix, prefixLength, copy);
+            prefixLength += copy;
+          }
+          if (newline < 0) break;
+          long lineEnd = position + newline + 1;
+          if (prefixLength > 0)
+          {
+            DateTime timestamp = RecordedAt(prefix.AsSpan(0, prefixLength));
+            if (timestamp >= fromUtc && timestamp <= throughUtc)
+            {
+              if (ranges.Count > 0 && ranges[^1].Start + ranges[^1].Length == lineStart)
+              {
+                var previous = ranges[^1];
+                ranges[^1] = (previous.Start, lineEnd - previous.Start);
+              }
+              else ranges.Add((lineStart, lineEnd - lineStart));
+            }
+          }
+          lineStart = lineEnd;
+          prefixLength = 0;
+          index = newline + 1;
+        }
+        position += count;
+      }
+      // No LF means an interrupted append. Preserve it on disk, never
+      // claim it is a complete exported record.
+      return ranges;
     }
 
     private const int ChunkSize = 64 * 1024;
@@ -243,20 +323,34 @@ namespace Monitor._Internal
             long limit = source.Length;
             if (member.AppendBoundary.HasValue)
               limit = Math.Min(limit, member.AppendBoundary.Value);
-            if (member.CompleteJsonLines)
-              limit = CompleteLineBoundary(source, limit, buffer, cancellationToken);
-            source.Position = 0;
+            List<(long Start, long Length)> ranges;
+            if (member.RecordedFromUtc.HasValue && member.RecordedThroughUtc.HasValue)
+            {
+              ranges = LegacyRanges(source, limit, member.RecordedFromUtc.Value,
+                member.RecordedThroughUtc.Value, buffer, cancellationToken);
+              if (ranges.Count == 0) continue;
+            }
+            else
+            {
+              if (member.CompleteJsonLines)
+                limit = CompleteLineBoundary(source, limit, buffer, cancellationToken);
+              ranges = new List<(long, long)> { (0, limit) };
+            }
             var entry = archive.CreateEntry(member.Entry, CompressionFor(member.Path));
             using (var output = entry.Open())
             {
-              long remaining = limit;
-              while (remaining > 0)
+              foreach (var range in ranges)
               {
-                cancellationToken.ThrowIfCancellationRequested();
-                int read = source.Read(buffer, 0, (int)Math.Min(remaining, buffer.Length));
-                if (read == 0) throw new EndOfStreamException("Archive source shortened during download.");
-                output.Write(buffer, 0, read);
-                remaining -= read;
+                source.Position = range.Start;
+                long remaining = range.Length;
+                while (remaining > 0)
+                {
+                  cancellationToken.ThrowIfCancellationRequested();
+                  int read = source.Read(buffer, 0, (int)Math.Min(remaining, buffer.Length));
+                  if (read == 0) throw new EndOfStreamException("Archive source shortened during download.");
+                  output.Write(buffer, 0, read);
+                  remaining -= read;
+                }
               }
             }
             written++;

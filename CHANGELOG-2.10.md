@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 27 — Compact DecisionHistory and exact export windows
+
+Schema 2 stores one immutable gzip file per raid, with full observation and coverage deduplication, trigger definitions and ordered reference pairs. Stream JSON directly to gzip, atomically publish, retain no quota/record limit, prune by age hourly or when retention changes. Legacy schema 1 files remain readable and are not automatically rewritten. HistoryStorageEstimator includes new files. Monitor selects new files by precise UTC timestamp and filters complete legacy records by actual RecordedAtUtc with fixed-buffer scanning; current metadata and caches remain whole. Added decoder and schema contract, updated DecisionHistory and PTDataExport tests. Native validation, CPU/disk/download measurement and browser acceptance pending. Existing legacy files can continue to contribute substantial export size until retention expiry. No strategy, metric or retention-setting changes.
+
+
 ## November 27 — ZIP finalization transport fix
 
 Native validation of `b940b369` built the complete solution in 16.5s, passed the first 17 PTDataExport checks, then failed the new streaming test: DeflateStream disposal issued a synchronous write to the async-only destination. Replaced direct ZIP-to-response writes with a bounded producer/consumer transport (four 64 KiB queued chunks, pooled buffers, dedicated ZIP worker, async HTTP consumer). Cancellation/failure joins the producer and frees outstanding chunks. No synchronous HTTP I/O enabled, no temporary archive restored, no changes to filtering or source files. Added backpressure, cancellation and write-failure regression; native rerun and real browser acceptance pending.

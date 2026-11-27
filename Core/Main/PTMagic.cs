@@ -105,6 +105,7 @@ namespace Core.Main
     private bool _raidAnalysisBuilt;
     private bool _normalDecisionCommittedThisRaid;
     private bool _historyWritten;
+    private DecisionHistoryWriter _decisionHistoryWriter;
     private string _deliveryDestinationHash = "";
     private bool? _deliveryTestMode;
     private string _raidId = "";
@@ -3264,8 +3265,9 @@ namespace Core.Main
             }).ToArray()
         };
         historyStage = "serializing or writing the raid record";
-        new DecisionHistoryWriter(Path.Combine(Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "DecisionHistory"))
-          .Append(record, app.HistoryRetentionDays);
+        _decisionHistoryWriter ??= new DecisionHistoryWriter(Path.Combine(
+          Directory.GetCurrentDirectory(), Constants.PTMagicPathData, "DecisionHistory"));
+        _decisionHistoryWriter.Append(record, app.HistoryRetentionDays);
         _historyWritten = true;
       }
       catch (Exception exception)

@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Core.Main;
+using Core.Helper;
 using Monitor._Internal;
 
 internal static class Program
@@ -286,8 +287,10 @@ internal static class Program
           Directory.CreateDirectory(Path.GetDirectoryName(path));
           File.WriteAllText(path, text, new UTF8Encoding(false));
         }
-        Put("DecisionHistory/2026-11-25-000001.jsonl", "{}\n");
-        Put("DecisionHistory/2026-11-26-000001.jsonl", "{\"id\":1}\n{\"incomplete\":");
+        Put("DecisionHistory/2026-11-25-000001.jsonl", "{\"RecordedAtUtc\":\"2026-11-25T12:00:00Z\",\"id\":0}\n");
+        const string beforeCutoff = "{\"RecordedAtUtc\":\"2026-11-26T05:59:59Z\",\"id\":0}\n";
+        const string included = "{\"RecordedAtUtc\":\"2026-11-26T06:00:00Z\",\"id\":1}\n";
+        Put("DecisionHistory/2026-11-26-000001.jsonl", beforeCutoff + included + "{\"incomplete\":");
         Put("Exchange/MarketData_2026-11-26_05.59.json", "{}");
         Put("Exchange/MarketData_2026-11-26_06.00.json", "{}");
         Put("Exchange/Metadata.json", "{}");
@@ -307,10 +310,74 @@ internal static class Program
           using var reader = new StreamReader(zip.GetEntry("_data/" + name).Open());
           return reader.ReadToEnd();
         }
-        Check(Read("DecisionHistory/2026-11-26-000001.jsonl") == "{\"id\":1}\n", "no appended or interrupted records");
+        Check(Read("DecisionHistory/2026-11-26-000001.jsonl") == included, "exact cutoff and no appended/interrupted records");
         Check(Read("MarketTrendAnalytics.json") == "{\"newSnapshot\":true}", "replacement snapshot not truncated");
         Check(Read("NormalizedOhlcvCache/BINANCEFUTURES/test.gz") == "gzip bytes", "compressed cache intact");
         Check(zip.Entries.Count == 5, "correct archive membership");
+      }
+      finally { Directory.Delete(folder, true); }
+    });
+    await Test("compressed raid names select exact UTC time without decompressing and exclude unfinished writes", async () =>
+    {
+      var end = new DateTimeOffset(2026, 11, 27, 6, 0, 0, TimeSpan.Zero);
+      var from = end.AddDays(-1);
+      string folder = Path.Combine(Path.GetTempPath(), "ptm-compact-history-" + Guid.NewGuid().ToString("N"));
+      string history = Path.Combine(folder, "DecisionHistory");
+      Directory.CreateDirectory(history);
+      try
+      {
+        string Add(DateTimeOffset stamp)
+        {
+          string name = DecisionHistoryFileNames.CompactName(stamp, Guid.NewGuid());
+          using var file = File.Create(Path.Combine(history, name));
+          using var gzip = new GZipStream(file, CompressionLevel.Fastest);
+          using var writer = new StreamWriter(gzip);
+          writer.WriteLine("{\"SchemaVersion\":2,\"RecordedAtUtc\":\"" + stamp.ToString("O") + "\"}");
+          return name;
+        }
+        Add(from.AddTicks(-1));
+        string lower = Add(from);
+        string upper = Add(end);
+        Add(end.AddTicks(1));
+        File.WriteAllText(Path.Combine(history, upper + ".tmp"), "unfinished");
+        var members = StreamingDownloadArchive.CaptureData(folder, from.UtcDateTime, end.UtcDateTime, default);
+        Check(members.Count == 2 && members.All(m => m.Entry.EndsWith(lower) || m.Entry.EndsWith(upper)), "exact inclusive timestamp boundaries");
+        Check(StreamingDownloadArchive.CaptureData(folder, null, end.UtcDateTime, default).Count == 4, "all retains published files only");
+        var output = new AsyncOnlyDestination();
+        Check(await StreamingDownloadArchive.WriteAsync(output, members, default) == 2, "stream compact files");
+        output.Bytes.Position = 0;
+        using var zip = new ZipArchive(output.Bytes, ZipArchiveMode.Read);
+        foreach (var member in members)
+        {
+          using var bytes = new MemoryStream();
+          using (var input = zip.GetEntry(member.Entry).Open()) await input.CopyToAsync(bytes);
+          Check(bytes.ToArray().SequenceEqual(File.ReadAllBytes(member.Path)), "gzip member stored intact");
+        }
+      }
+      finally { Directory.Delete(folder, true); }
+    });
+    await Test("legacy finite export scans large records without including out-of-range or incomplete records", async () =>
+    {
+      var end = new DateTime(2026, 11, 27, 6, 0, 0, DateTimeKind.Utc);
+      var from = end.AddDays(-1);
+      string folder = Path.Combine(Path.GetTempPath(), "ptm-legacy-history-" + Guid.NewGuid().ToString("N"));
+      string history = Path.Combine(folder, "DecisionHistory");
+      Directory.CreateDirectory(history);
+      try
+      {
+        string name = "2026-11-26-000001.jsonl";
+        string before = "{\"RecordedAtUtc\":\"2026-11-26T05:59:59Z\",\"Data\":\"" + new string('x', 200000) + "\"}\n";
+        string included = "{\"RecordedAtUtc\":\"2026-11-26T06:00:00Z\",\"Data\":\"" + new string('y', 200000) + "\"}\n";
+        string after = "{\"RecordedAtUtc\":\"2026-11-27T06:00:01Z\"}\n";
+        string path = Path.Combine(history, name);
+        File.WriteAllText(path, before + included + after + "{\"RecordedAtUtc\":\"2026-11-26T07:00:00Z\"");
+        var members = StreamingDownloadArchive.CaptureData(folder, from, end, default);
+        var output = new AsyncOnlyDestination();
+        await StreamingDownloadArchive.WriteAsync(output, members, default);
+        output.Bytes.Position = 0;
+        using var zip = new ZipArchive(output.Bytes, ZipArchiveMode.Read);
+        using var reader = new StreamReader(zip.Entries.Single().Open());
+        Check(reader.ReadToEnd() == included, "only complete in-range record preserved");
       }
       finally { Directory.Delete(folder, true); }
     });

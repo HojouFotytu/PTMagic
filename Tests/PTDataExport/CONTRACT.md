@@ -1,5 +1,10 @@
 # PT history exporter: verified contract and rebuild
 
+## November 27 — exact DecisionHistory export window
+
+Schema 2 compressed single-raid files are selected by their exact UTC RecordedAtUtc filename and copied intact. Legacy daily segments are scanned with bounded buffers and only complete records within the inclusive UTC time window are exported; no entire record is loaded into Monitor memory. All available retains complete legacy lines; in-progress .tmp files are excluded. Existing cache, log and Exchange snapshot policies unchanged. Regression covers exact tick boundaries, old and new formats, huge legacy records and interrupted appends. Native/browser validation pending.
+
+
 ## November 27 — ZIP finalization synchronous-write correction
 
 Owner native validation of `b940b369` succeeded for the full solution build (16.5s) and first 17 PTDataExport test groups, then the async-only destination rejected `DeflateStream.Dispose` synchronous writes during ZIP entry disposal. This is a real incompatibility with async-only HTTP response streams, not a size limit. The replacement isolates all synchronous ZIP/file operations on a dedicated producer thread and transfers pooled 64 KiB chunks through a four-slot bounded channel to an exclusively asynchronous HTTP consumer. Cancellation and downstream failure cancel and join the producer, returning any queued buffers. No temporary ZIP, synchronous HTTP I/O, whole-archive buffering or change to range/retention rules. Existing async-only ZIP regression stays unchanged in its prohibition of synchronous writes; added large stored entry, slow output, cancellation and downstream-failure cases. Native execution and browser acceptance pending.

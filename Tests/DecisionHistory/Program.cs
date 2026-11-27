@@ -1,4 +1,7 @@
 using System.Reflection;
+using System.IO.Compression;
+using Newtonsoft.Json.Linq;
+using Core.MarketAnalyzer.MarketData;
 using System.Text;
 using Core.Helper;
 using Core.Main;
@@ -31,16 +34,18 @@ internal static class Program
         Require(BuildIdentity.CommitBuildNumber == BuildIdentity.FormatCommitBuildNumber(embeddedSeconds));
         Require(System.Text.RegularExpressions.Regex.IsMatch(BuildIdentity.CommitBuildNumber, @"^[0-9]{12}$"));
       });
-      Run("append preserves independently parseable complete records", directory =>
+      Run("atomic compressed raids are independently readable with exact UTC filenames", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
-        string path = writer.Append(Record("one"), 30);
-        Require(writer.Append(Record("two"), 30) == path);
-        var records = Read(path);
-        Require(records.Length == 2 && records[0].RaidId == "one" && records[1].RaidId == "two");
-        Require(File.ReadAllBytes(path)[^1] == (byte)'\n');
+        var first = Record("one");
+        string one = writer.Append(first, 30);
+        string two = writer.Append(Record("two"), 30);
+        Require(one != two && Read(one).Single().RaidId == "one" && Read(two).Single().RaidId == "two");
+        Require(DecisionHistoryFileNames.TryCompactTimestamp(one, out var recorded) && recorded == first.RecordedAtUtc.UtcDateTime);
+        Require(ReadRaw(one).EndsWith("\n") && !Directory.EnumerateFiles(directory, "*.tmp").Any());
+        Require(Read(one).Single().SchemaVersion == 2);
       });
-      Run("UTC date selects a new segment", directory =>
+      Run("UTC date remains encoded in distinct compressed raid files", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var first = Record("first"); first.RecordedAtUtc = new DateTimeOffset(Now.UtcDateTime.Date, TimeSpan.Zero).AddHours(1);
@@ -48,37 +53,43 @@ internal static class Program
         string a = writer.Append(first, 30);
         string b = writer.Append(next, 30);
         Require(a != b && Read(a)[0].RaidId == "first" && Read(b)[0].RaidId == "next");
+        Require(Path.GetFileName(a).StartsWith(first.RecordedAtUtc.ToString("yyyy-MM-dd")));
+        Require(Path.GetFileName(b).StartsWith(next.RecordedAtUtc.ToString("yyyy-MM-dd")));
       });
-      Run("expired whole segments are removed and unrelated files survive", directory =>
+      Run("expired compact and legacy history removed; unrelated files survive", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var old = Record("expired"); old.RecordedAtUtc = Now.AddDays(-31);
         string oldPath = writer.Append(old, 30);
-        File.SetLastWriteTimeUtc(oldPath, Now.UtcDateTime.AddDays(-31));
+        string legacy = Path.Combine(directory, old.RecordedAtUtc.ToString("yyyy-MM-dd") + "-000001.jsonl");
+        File.WriteAllText(legacy, JsonConvert.SerializeObject(old) + "\n");
+        File.SetLastWriteTimeUtc(legacy, Now.UtcDateTime.AddDays(-31));
         string unrelated = Path.Combine(directory, "operator-notes.txt"); File.WriteAllText(unrelated, "keep");
         string current = writer.Append(Record("current"), 30);
-        Require(!File.Exists(oldPath) && File.Exists(current) && File.ReadAllText(unrelated) == "keep");
+        Require(!File.Exists(oldPath) && !File.Exists(legacy) && File.Exists(current) && File.ReadAllText(unrelated) == "keep");
       });
-      Run("an interrupted tail is preserved and the next record rotates", directory =>
+      Run("interrupted legacy evidence is not altered by new compressed capture", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
-        string old = writer.Append(Record("complete"), 30);
-        File.AppendAllText(old, "{\"RaidId\":\"interrupted");
+        string old = Path.Combine(directory, Now.ToString("yyyy-MM-dd") + "-000001.jsonl");
+        File.WriteAllText(old, JsonConvert.SerializeObject(Record("complete")) + "\n{\"RaidId\":\"interrupted");
         string before = File.ReadAllText(old);
         string next = writer.Append(Record("after"), 30);
         Require(next != old && File.ReadAllText(old) == before && Read(next).Single().RaidId == "after");
+        Require(DecisionHistoryCodec.ReadLine(before.Split('\n')[0]).RaidId == "complete");
       });
-      Run("16 MiB segment rotation retains complete records", directory =>
+      Run("large raids are independently compressed with no segment-size cap", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var a = Record("large-a"); a.MetricInputs = LargeInputs(9 * 1024 * 1024);
         var b = Record("large-b"); b.MetricInputs = LargeInputs(9 * 1024 * 1024);
         string first = writer.Append(a, 30);
         string second = writer.Append(b, 30);
-        Require(first != second && Read(first).Single().RaidId == "large-a" && Read(second).Single().RaidId == "large-b");
-        Require(new FileInfo(first).Length <= 16L * 1024 * 1024 && new FileInfo(second).Length <= 16L * 1024 * 1024);
+        Require(first != second && Read(first).Single().MetricInputs.Single().Reason == a.MetricInputs.Single().Reason &&
+          Read(second).Single().MetricInputs.Single().Reason == b.MetricInputs.Single().Reason);
+        Require(new FileInfo(first).Length < 9 * 1024 * 1024 && new FileInfo(second).Length < 9 * 1024 * 1024);
       });
-      Run("older segments survive growth past the former quota", directory =>
+      Run("older raids survive storage growth with no cumulative quota", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var a = Record("old"); a.MetricInputs = LargeInputs(9 * 1024 * 1024);
@@ -87,28 +98,25 @@ internal static class Program
         string newest = writer.Append(b, 30);
         Require(File.Exists(old) && File.Exists(newest) && old != newest);
         Require(Read(old).Single().RaidId == "old" && Read(newest).Single().RaidId == "new");
-        Require(Directory.GetFiles(directory, "*.jsonl").Sum(path => new FileInfo(path).Length) > 16L * 1024 * 1024);
+        Require(ReadRaw(old).Length + ReadRaw(newest).Length > 16L * 1024 * 1024);
       });
-      Run("oversized raid occupies its own complete segment without losing existing or subsequent history", directory =>
+      Run("oversized raid preserves complete input and surrounding history", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         string path = writer.Append(Record("preserved"), 30);
         byte[] before = File.ReadAllBytes(path);
         var large = Record("large-raid"); large.MetricInputs = LargeInputs(16 * 1024 * 1024);
         string largePath = writer.Append(large, 30);
-        var subsequent = Record("after-large");
-        string next = writer.Append(subsequent, 30);
+        string next = writer.Append(Record("after-large"), 30);
         Require(path != largePath && largePath != next && path != next);
         Require(File.ReadAllBytes(path).SequenceEqual(before));
-        Require(new FileInfo(largePath).Length > 16L * 1024 * 1024);
+        Require(ReadRaw(largePath).Length > 16L * 1024 * 1024);
         var restored = Read(largePath).Single();
-        Require(restored.RaidId == large.RaidId &&
-          restored.MetricInputs.Length == large.MetricInputs.Length &&
-          restored.MetricInputs.Single().Reason == large.MetricInputs.Single().Reason);
-        Require(Read(next).Single().RaidId == subsequent.RaidId);
-        Require(Directory.GetFiles(directory, "*.jsonl").Length == 3);
+        Require(restored.RaidId == large.RaidId && restored.MetricInputs.Single().Reason == large.MetricInputs.Single().Reason);
+        Require(Read(next).Single().RaidId == "after-large");
+        Require(Directory.GetFiles(directory, "*.jsonl.gz").Length == 3);
       });
-      Run("full-size multi-market raid preserves every captured metric input", directory =>
+      Run("wide raid deduplicates observations but preserves every trigger reference", directory =>
       {
         var writer = new DecisionHistoryWriter(directory);
         var raid = Record("wide-analyzer-raid");
@@ -122,7 +130,11 @@ internal static class Program
             PreviousSourceDataTimestampUtc = Now.AddHours(-72), CoveragePercent = 100
           })).ToArray();
         string path = writer.Append(raid, 30);
-        Require(new FileInfo(path).Length > 16L * 1024 * 1024);
+        string raw = ReadRaw(path);
+        var compact = JObject.Parse(raw);
+        Require(compact["MetricInputs"] == null && compact["Observations"]!.Count() == 729 &&
+          compact["TriggerDefinitions"]!.Count() == 100 && compact["TriggerInputs"]!.Count() == 72900);
+        Require(raw.Length < JsonConvert.SerializeObject(raid).Length);
         var restored = Read(path).Single();
         Require(restored.RaidId == raid.RaidId && restored.MetricInputs.Length == 72900);
         Require(restored.MetricInputs.First().Market == "FIXTURE0USDT" &&
@@ -130,6 +142,45 @@ internal static class Program
           restored.MetricInputs.Last().TriggerId == "C99" &&
           restored.MetricInputs.Last().Value == 1.25 &&
           restored.MetricInputs.Last().PreviousSourceDataTimestampUtc == Now.AddHours(-72));
+        Require(JsonConvert.SerializeObject(restored.MetricInputs) == JsonConvert.SerializeObject(raid.MetricInputs));
+      });
+      Run("different values, unavailable evidence, timestamps and coverage remain losslessly distinct", directory =>
+      {
+        VolumeCoverageDiagnostics Cover() => new()
+        {
+          EligibleAssets = new[] { "BTCUSDT", "ETHUSDT" }, ValidAssets = new[] { "BTCUSDT" },
+          ExcludedAssets = new[] { "ETHUSDT" }, EstimatedVolumeWeightedCoveragePercent = 95,
+          ActualQuoteVolumeDenominator = 120, EstimateAgeMinutes = 60
+        };
+        DecisionMetricInput Input(string trigger, double? value, string? reason, VolumeCoverageDiagnostics? coverage) => new()
+        {
+          Scope = "SMS activation", SettingName = "SMS1", TriggerId = trigger, MarketTrend = "T1",
+          Metric = "VolumeConcentration", Market = null, Relation = "Delta", Value = value,
+          Available = value.HasValue, Reason = reason, SourceDataTimestampUtc = Now.ToOffset(TimeSpan.FromHours(9)),
+          PreviousSourceDataTimestampUtc = Now.AddHours(-1), CoveragePercent = 95,
+          VolumeCoverage = coverage, PreviousVolumeCoverage = coverage, CurrentMatchedValue = 20, PreviousMatchedValue = 10
+        };
+        var raid = Record("distinct");
+        raid.MetricInputs = new[] { Input("C1", 10, "", Cover()), Input("C2", 10, "", Cover()),
+          Input("C3", 11, "", Cover()), Input("C4", null, "unavailable", null), Input("C5", null, null, null) };
+        var path = new DecisionHistoryWriter(directory).Append(raid, 30);
+        var raw = JObject.Parse(ReadRaw(path));
+        Require(raw["Observations"]!.Count() == 4 && raw["CoverageDiagnostics"]!.Count() == 1 &&
+          raw["TriggerInputs"]!.Count() == 5);
+        var restored = Read(path).Single();
+        Require(JsonConvert.SerializeObject(restored.MetricInputs) == JsonConvert.SerializeObject(raid.MetricInputs));
+        Require(restored.MetricInputs[0].SourceDataTimestampUtc!.Value.Offset == TimeSpan.FromHours(9));
+        var bad = JObject.Parse(ReadRaw(path)); bad["TriggerInputs"]![0]![1] = 99999;
+        Throws<InvalidDataException>(() => DecisionHistoryCodec.ReadLine(bad.ToString(Formatting.None)));
+      });
+      Run("schema 1 retained records remain readable", directory =>
+      {
+        var raid = Record("legacy");
+        raid.MetricInputs = new[] { new DecisionMetricInput { Metric = "Breadth", Value = 42, Available = true } };
+        string path = Path.Combine(directory, Now.ToString("yyyy-MM-dd") + "-000001.jsonl");
+        File.WriteAllText(path, JsonConvert.SerializeObject(raid) + "\n");
+        var restored = Read(path).Single();
+        Require(restored.SchemaVersion == 1 && restored.RaidId == "legacy" && restored.MetricInputs.Single().Value == 42);
       });
       Run("invalid day retention fails before writing files", directory =>
       {
@@ -191,13 +242,16 @@ internal static class Program
         string oldFile = Path.Combine(market, "MarketData_old.json");
         File.WriteAllText(marketFile, new string('m', 2048));
         File.WriteAllText(historyFile, new string('d', 6144));
+        string compactFile = Path.Combine(history, DecisionHistoryFileNames.CompactName(DateTimeOffset.UtcNow.AddHours(-2), Guid.NewGuid()));
+        File.WriteAllText(compactFile, new string('c', 1024));
         File.WriteAllText(oldFile, new string('o', 512));
         DateTime clock = DateTime.UtcNow;
         File.SetLastWriteTimeUtc(marketFile, clock.AddHours(-24));
         File.SetLastWriteTimeUtc(historyFile, clock.AddHours(-12));
+        File.SetLastWriteTimeUtc(compactFile, clock.AddHours(-2));
         File.SetLastWriteTimeUtc(oldFile, clock.AddDays(-5));
         var estimate = HistoryStorageEstimator.Measure(directory, clock);
-        Require(estimate.ExistingBytes == 8704 && estimate.SampleFileCount == 2);
+        Require(estimate.ExistingBytes == 9728 && estimate.SampleFileCount == 3);
         Require(estimate.ObservedHours >= 23.9 && estimate.ObservedHours <= 48);
         Require(estimate.ObservedDailyBytes > 0 && estimate.AvailableBytes >= 0);
       });
@@ -233,7 +287,7 @@ internal static class Program
           Invoke(magic, "CaptureDecisionMetric", trend, "PriceTrend", "BTCUSDT", "RelativeTrigger", 1.5, "", "SMS OffTrigger", "First", "#1");
           Invoke(magic, "CaptureDecisionMetric", trend, "PriceTrend", "BTCUSDT", "RelativeTrigger", -2.5, "", "SMS OffTrigger", "Second", "#1");
           Invoke(magic, "RecordDecisionHistory", "");
-          var record = Read(Directory.GetFiles(Path.Combine(directory, "_data", "DecisionHistory"), "*.jsonl").Single()).Single();
+          var record = Read(Directory.GetFiles(Path.Combine(directory, "_data", "DecisionHistory"), "*.jsonl.gz").Single()).Single();
           Require(record.MetricInputs.Length == 2);
           Require(record.MetricInputs.Single(input => input.SettingName == "First").Value == 1.5);
           Require(record.MetricInputs.Single(input => input.SettingName == "Second").Value == -2.5);
@@ -249,8 +303,8 @@ internal static class Program
           Invoke(magic, "CaptureDecisionObservation", "Volume24h", "BTCUSDT", null, "Recent market volume is unavailable.", "SMS activation", "VolumeGate", "#1");
           Invoke(magic, "RecordDecisionHistory", "InvalidOperationException");
           Invoke(magic, "RecordDecisionHistory", "");
-          string path = Directory.GetFiles(Path.Combine(directory, "_data", "DecisionHistory"), "*.jsonl").Single();
-          string json = File.ReadAllText(path); var record = Read(path).Single();
+          string path = Directory.GetFiles(Path.Combine(directory, "_data", "DecisionHistory"), "*.jsonl.gz").Single();
+          string json = ReadRaw(path); var record = Read(path).Single();
           Require(!json.Contains("SENTINEL-LICENSE-SECRET") && !json.Contains("SENTINEL-TOKEN-SECRET"));
           Require(record.ErrorCategory == "InvalidOperationException" && record.DesiredGlobalSetting == "CANDIDATE");
           Require(record.ConfirmedGlobalSetting == "" && !record.DecisionFresh && record.AnalysisAsOfUtc == null);
@@ -287,9 +341,14 @@ internal static class Program
     { new DecisionMetricInput { Metric = "Fixture", Reason = new string('x', length) } };
   private static ConfigurationPayload Payload(string name) => new(name, new[] { "DEFAULT_sell_only_mode_enabled = true" },
     Array.Empty<string>(), Array.Empty<string>(), "test-destination");
-  private static DecisionHistoryRecord[] Read(string path) => File.ReadAllLines(path)
-    .Where(line => !String.IsNullOrWhiteSpace(line))
-    .Select(line => JsonConvert.DeserializeObject<DecisionHistoryRecord>(line)!).ToArray();
+  private static DecisionHistoryRecord[] Read(string path) => DecisionHistoryCodec.ReadFile(path).ToArray();
+  private static string ReadRaw(string path)
+  {
+    using var file = File.OpenRead(path);
+    using var gzip = new GZipStream(file, CompressionMode.Decompress);
+    using var reader = new StreamReader(gzip, Encoding.UTF8);
+    return reader.ReadToEnd();
+  }
   private static void Run(string name, Action<string> test)
   {
     string directory = Path.Combine(Path.GetTempPath(), "ptm210-history-" + Guid.NewGuid().ToString("N"));

@@ -1,5 +1,10 @@
 # Decision history regression harness
 
+## November 27 — schema 2 compressed raid history (current)
+
+See [schema contract](SCHEMA.md). New immutable gzip-per-raid files deduplicate full observations and coverage, preserve original trigger-input order and separate values, omit null optional fields, use atomic publication and age-only pruning. Legacy JSONL stays readable and untouched. Storage estimator counts both formats. Tests replace obsolete append/16 MiB rotation assertions with atomic compressed files, preserve large-record/retention/credential checks, and add exact deduplication and v1 decoding cases. Native validation pending.
+
+
 ## November 26 — Dev 17: no maximum raid-record size (native validation pending)
 
 Both live instances reported `Decision history could not be appended: InvalidOperationException` after raid completion. The source contains an explicit 16 MiB per-record rejection, which can reject a full modern Analyzer raid; exact failed live record size was not logged and remains unverified. Remove that rejection. The 16 MiB value remains a segment rotation target only. A larger raid writes a complete independent JSONL line into its own segment; the next raid rotates normally. Preserve all metric inputs, prior and subsequent records, UTC date rotation, time-only pruning and interrupted-tail handling. No cumulative quota or per-record truncation. The revised tests cover an oversized record surrounded by ordinary records and 72,900 distinct synthetic metric inputs in one raid. Failure logs include a non-sensitive stage and metric-input count without dumping exception messages. Native regression and deployed capture verification pending.
