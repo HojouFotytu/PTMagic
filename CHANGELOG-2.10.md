@@ -1,5 +1,9 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 27 — ZIP finalization transport fix
+
+Native validation of `b940b369` built the complete solution in 16.5s, passed the first 17 PTDataExport checks, then failed the new streaming test: DeflateStream disposal issued a synchronous write to the async-only destination. Replaced direct ZIP-to-response writes with a bounded producer/consumer transport (four 64 KiB queued chunks, pooled buffers, dedicated ZIP worker, async HTTP consumer). Cancellation/failure joins the producer and frees outstanding chunks. No synchronous HTTP I/O enabled, no temporary archive restored, no changes to filtering or source files. Added backpressure, cancellation and write-failure regression; native rerun and real browser acceptance pending.
+
 ## November 27 — Stream Logs and _data ZIP downloads
 
 Both Monitor download buttons now use the selected history period, including `_data` DecisionHistory and Exchange MarketData filtering, while retaining current snapshots/metadata/caches. Shared async direct ZIP writer removes temporary ZIP creation and bounds live append-only reads, preserves complete JSONL records, skips recompression of gzip/cache archives and uses existing authentication and filenames. Added nonseekable async-only ZIP and range regressions to PTDataExport. Native execution and actual large-download browser/proxy acceptance pending. No retention changes.

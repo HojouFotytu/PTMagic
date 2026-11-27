@@ -48,6 +48,7 @@ internal static class Program
   private sealed class AsyncOnlyDestination : Stream
   {
     public readonly MemoryStream Bytes = new();
+    public Func<CancellationToken, Task> BeforeWrite;
     public override bool CanRead => false;
     public override bool CanSeek => false;
     public override bool CanWrite => true;
@@ -60,8 +61,13 @@ internal static class Program
     public override void SetLength(long value) => throw new NotSupportedException();
     public override void Write(byte[] buffer, int offset, int count) => throw new InvalidOperationException("Synchronous write");
     public override void Write(ReadOnlySpan<byte> buffer) => throw new InvalidOperationException("Synchronous write");
-    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct) => Bytes.WriteAsync(buffer, offset, count, ct);
-    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default) => Bytes.WriteAsync(buffer, ct);
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+      WriteAsync(buffer.AsMemory(offset, count), ct).AsTask();
+    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
+    {
+      if (BeforeWrite != null) await BeforeWrite(ct);
+      await Bytes.WriteAsync(buffer, ct);
+    }
   }
 
   private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
@@ -334,6 +340,74 @@ internal static class Program
         try { await StreamingDownloadArchive.WriteAsync(new AsyncOnlyDestination(), members, cts.Token); }
         catch (OperationCanceledException) { cancelled = true; }
         Check(cancelled, "cancellation propagates");
+      }
+      finally { Directory.Delete(folder, true); }
+    });
+    await Test("ZIP streaming survives backpressure and stops on cancellation or downstream failure", async () =>
+    {
+      string folder = Path.Combine(Path.GetTempPath(), "ptm-zip-backpressure-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(folder);
+      try
+      {
+        // A stored member much larger than the bounded queue forces backpressure.
+        byte[] payload = new byte[2 * 1024 * 1024];
+        new Random(27).NextBytes(payload);
+        string path = Path.Combine(folder, "cache.gz");
+        File.WriteAllBytes(path, payload);
+        var members = new[] { new StreamingDownloadArchive.Member(path, "_data/cache.gz", null) };
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slow = new AsyncOnlyDestination
+        {
+          BeforeWrite = async ct =>
+          {
+            entered.TrySetResult(true);
+            await release.Task.WaitAsync(ct);
+          }
+        };
+        var transfer = StreamingDownloadArchive.WriteAsync(slow, members, default);
+        try
+        {
+          await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+          Check(!transfer.IsCompleted, "first bytes are available before the entire ZIP is produced");
+        }
+        finally { release.TrySetResult(true); }
+        Check(await transfer.WaitAsync(TimeSpan.FromSeconds(10)) == 1, "slow async output completes");
+        slow.Bytes.Position = 0;
+        using (var zip = new ZipArchive(slow.Bytes, ZipArchiveMode.Read))
+        using (var input = zip.Entries.Single().Open())
+        using (var extracted = new MemoryStream())
+        {
+          await input.CopyToAsync(extracted);
+          Check(extracted.ToArray().SequenceEqual(payload), "large streamed entry and ZIP directory preserved");
+        }
+
+        using var cts = new CancellationTokenSource();
+        var blocked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelledOutput = new AsyncOnlyDestination
+        {
+          BeforeWrite = async ct =>
+          {
+            blocked.TrySetResult(true);
+            await Task.Delay(Timeout.Infinite, ct);
+          }
+        };
+        var cancelledTransfer = StreamingDownloadArchive.WriteAsync(cancelledOutput, members, cts.Token);
+        try { await blocked.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+        finally { cts.Cancel(); }
+        bool cancelled = false;
+        try { await cancelledTransfer.WaitAsync(TimeSpan.FromSeconds(10)); }
+        catch (OperationCanceledException) { cancelled = true; }
+        Check(cancelled, "cancelled consumer unblocks and joins the producer");
+
+        var failedOutput = new AsyncOnlyDestination
+        {
+          BeforeWrite = _ => Task.FromException(new IOException("downstream failed"))
+        };
+        bool failed = false;
+        try { await StreamingDownloadArchive.WriteAsync(failedOutput, members, default).WaitAsync(TimeSpan.FromSeconds(10)); }
+        catch (IOException ex) when (ex.Message == "downstream failed") { failed = true; }
+        Check(failed, "downstream failure propagates without hanging the producer");
       }
       finally { Directory.Delete(folder, true); }
     });

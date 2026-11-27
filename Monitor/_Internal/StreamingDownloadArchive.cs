@@ -1,10 +1,12 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace Monitor._Internal
@@ -129,7 +131,7 @@ namespace Monitor._Internal
 
     // Scan only the suffix necessary to find a complete JSONL record boundary.
     // A writer may be appending a large raid when the download begins.
-    private static async Task<long> CompleteLineBoundaryAsync(FileStream stream, long limit,
+    private static long CompleteLineBoundary(FileStream stream, long limit,
       byte[] buffer, CancellationToken cancellationToken)
     {
       long end = limit;
@@ -139,7 +141,7 @@ namespace Monitor._Internal
         int size = (int)Math.Min(end, buffer.Length);
         long start = end - size;
         stream.Position = start;
-        await stream.ReadExactlyAsync(buffer.AsMemory(0, size), cancellationToken);
+        stream.ReadExactly(buffer.AsSpan(0, size));
         int last = Array.LastIndexOf(buffer, (byte)'\n', size - 1, size);
         if (last >= 0) return start + last + 1;
         end = start;
@@ -147,15 +149,81 @@ namespace Monitor._Internal
       return 0;
     }
 
-    public static async Task<int> WriteAsync(Stream destination, IReadOnlyList<Member> members,
+    private const int ChunkSize = 64 * 1024;
+    private const int QueuedChunks = 4;
+    private readonly record struct Chunk(byte[] Buffer, int Count);
+
+    // ZipArchive/DeflateStream may issue synchronous writes even when an
+    // entry is disposed asynchronously. Isolate ALL ZIP operations from the
+    // HTTP stream. Only a dedicated producer may block on this bounded queue;
+    // the HTTP consumer uses WriteAsync exclusively.
+    private sealed class ZipProducerStream : Stream
+    {
+      private readonly ChannelWriter<Chunk> _writer;
+      private readonly CancellationToken _cancellation;
+      private byte[] _buffer;
+      private int _used;
+
+      public ZipProducerStream(ChannelWriter<Chunk> writer, CancellationToken cancellation)
+      {
+        _writer = writer;
+        _cancellation = cancellation;
+      }
+
+      public override bool CanRead => false;
+      public override bool CanSeek => false;
+      public override bool CanWrite => true;
+      public override long Length => throw new NotSupportedException();
+      public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+      public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+      public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+      public override void SetLength(long value) => throw new NotSupportedException();
+
+      public override void Write(byte[] buffer, int offset, int count) =>
+        Write(buffer.AsSpan(offset, count));
+
+      public override void Write(ReadOnlySpan<byte> bytes)
+      {
+        while (!bytes.IsEmpty)
+        {
+          _cancellation.ThrowIfCancellationRequested();
+          _buffer ??= ArrayPool<byte>.Shared.Rent(ChunkSize);
+          int count = Math.Min(bytes.Length, ChunkSize - _used);
+          bytes.Slice(0, count).CopyTo(_buffer.AsSpan(_used, count));
+          _used += count;
+          bytes = bytes.Slice(count);
+          if (_used == ChunkSize) Flush();
+        }
+      }
+
+      public override void Flush()
+      {
+        _cancellation.ThrowIfCancellationRequested();
+        if (_used == 0) return;
+        // Ownership transfers only after the queue accepts the chunk.
+        _writer.WriteAsync(new Chunk(_buffer, _used), _cancellation).AsTask().GetAwaiter().GetResult();
+        _buffer = null;
+        _used = 0;
+      }
+
+      protected override void Dispose(bool disposing)
+      {
+        if (disposing && _buffer != null)
+        {
+          ArrayPool<byte>.Shared.Return(_buffer);
+          _buffer = null;
+          _used = 0;
+        }
+        base.Dispose(disposing);
+      }
+    }
+
+    private static int WriteZip(Stream destination, IReadOnlyList<Member> members,
       CancellationToken cancellationToken)
     {
-      // .NET 10 asynchronous ZIP APIs support non-seekable HTTP response streams.
-      // Do not require Kestrel AllowSynchronousIO or a temporary archive file.
       int written = 0;
       byte[] buffer = new byte[BufferSize];
-      await using (var archive = await ZipArchive.CreateAsync(destination, ZipArchiveMode.Create,
-        leaveOpen: true, entryNameEncoding: null, cancellationToken: cancellationToken))
+      using (var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true))
       {
         foreach (var member in members)
         {
@@ -166,27 +234,28 @@ namespace Monitor._Internal
             if ((File.GetAttributes(member.Path) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
               continue;
             source = new FileStream(member.Path, FileMode.Open, FileAccess.Read,
-              FileShare.ReadWrite | FileShare.Delete, BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+              FileShare.ReadWrite | FileShare.Delete, BufferSize, FileOptions.SequentialScan);
           }
           catch (FileNotFoundException) { continue; }
           catch (DirectoryNotFoundException) { continue; }
-          await using (source)
+          using (source)
           {
             long limit = source.Length;
             if (member.AppendBoundary.HasValue)
               limit = Math.Min(limit, member.AppendBoundary.Value);
             if (member.CompleteJsonLines)
-              limit = await CompleteLineBoundaryAsync(source, limit, buffer, cancellationToken);
+              limit = CompleteLineBoundary(source, limit, buffer, cancellationToken);
             source.Position = 0;
             var entry = archive.CreateEntry(member.Entry, CompressionFor(member.Path));
-            await using (var output = await entry.OpenAsync(cancellationToken))
+            using (var output = entry.Open())
             {
               long remaining = limit;
               while (remaining > 0)
               {
-                int read = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(remaining, buffer.Length)), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                int read = source.Read(buffer, 0, (int)Math.Min(remaining, buffer.Length));
                 if (read == 0) throw new EndOfStreamException("Archive source shortened during download.");
-                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                output.Write(buffer, 0, read);
                 remaining -= read;
               }
             }
@@ -194,8 +263,69 @@ namespace Monitor._Internal
           }
         }
       }
-      await destination.FlushAsync(cancellationToken);
+      // The ZIP central directory is now complete; publish any remaining bytes.
+      destination.Flush();
       return written;
+    }
+
+    public static async Task<int> WriteAsync(Stream destination, IReadOnlyList<Member> members,
+      CancellationToken cancellationToken)
+    {
+      cancellationToken.ThrowIfCancellationRequested();
+      using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+      var channel = Channel.CreateBounded<Chunk>(new BoundedChannelOptions(QueuedChunks)
+      {
+        FullMode = BoundedChannelFullMode.Wait,
+        SingleReader = true,
+        SingleWriter = true,
+        AllowSynchronousContinuations = false
+      });
+
+      // A dedicated thread performs synchronous ZIP compression/finalization
+      // and waits for backpressure without blocking an ASP.NET request thread.
+      Task<int> producer = Task.Factory.StartNew(() =>
+      {
+        try
+        {
+          using var output = new ZipProducerStream(channel.Writer, stop.Token);
+          int written = WriteZip(output, members, stop.Token);
+          channel.Writer.TryComplete();
+          return written;
+        }
+        catch (Exception ex)
+        {
+          channel.Writer.TryComplete(ex);
+          throw;
+        }
+      }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+      try
+      {
+        await foreach (Chunk chunk in channel.Reader.ReadAllAsync(stop.Token).ConfigureAwait(false))
+        {
+          try
+          {
+            await destination.WriteAsync(chunk.Buffer.AsMemory(0, chunk.Count), stop.Token).ConfigureAwait(false);
+          }
+          finally
+          {
+            ArrayPool<byte>.Shared.Return(chunk.Buffer);
+          }
+        }
+        int written = await producer.ConfigureAwait(false);
+        await destination.FlushAsync(stop.Token).ConfigureAwait(false);
+        return written;
+      }
+      finally
+      {
+        // Disconnects, write failures and cancellation must unblock a producer
+        // waiting on the full queue. Join it and reclaim any unconsumed buffers.
+        stop.Cancel();
+        try { await producer.ConfigureAwait(false); }
+        catch { /* Preserve the original producer/consumer exception. */ }
+        while (channel.Reader.TryRead(out Chunk chunk))
+          ArrayPool<byte>.Shared.Return(chunk.Buffer);
+      }
     }
   }
 }
