@@ -697,6 +697,97 @@ internal static class Program
         Directory.Delete(root, true);
       }
     });
+    await Test("multipart transfer receipts distinguish unrequested, in-progress, completed and failed parts", async () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-multipart-receipt-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(root);
+      using var service = new MultipartDownloadService(root, NullLogger<MultipartDownloadService>.Instance);
+      try
+      {
+        string a = Path.Combine(root, "a.gz");
+        string b = Path.Combine(root, "b.gz");
+        File.WriteAllBytes(a, new byte[800000]);
+        File.WriteAllBytes(b, new byte[800000]);
+        var members = new[] { new StreamingDownloadArchive.Member(a, "_data/a.gz", null),
+          new StreamingDownloadArchive.Member(b, "_data/b.gz", null) };
+        var state = await service.StartAsync("owner", "PTMagic-data", members, 1048576, default);
+        state = await service.PrepareAsync("owner", state.ExportId, default);
+        var pending = await service.TransferStatusAsync("owner", state.ExportId, 1, default);
+        Check(pending.Status == "waiting" && pending.BytesSent == 0 &&
+          pending.TotalBytes == state.Parts[0].Bytes, "no false receipt before actual attachment request");
+        var opened = await service.OpenTrackedAsync("owner", state.ExportId, 1, default);
+        using (opened.Stream)
+        {
+          var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+          var finish = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+          var destination = new AsyncOnlyDestination();
+          var transfer = opened.Receipt.SendAsync(opened.Stream, destination, async () =>
+          {
+            entered.TrySetResult(true);
+            await finish.Task;
+          }, default);
+          try
+          {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var inProgress = await service.TransferStatusAsync("owner", state.ExportId, 1, default);
+            Check(inProgress.Status == "sending" && inProgress.BytesSent == inProgress.TotalBytes &&
+              !transfer.IsCompleted, "no success until response completion");
+            bool denied = false;
+            try { await service.TransferStatusAsync("other", state.ExportId, 1, default); }
+            catch (KeyNotFoundException) { denied = true; }
+            Check(denied, "receipt is owner bound");
+            bool duplicate = false;
+            try
+            {
+              var unexpected = await service.OpenTrackedAsync("owner", state.ExportId, 1, default);
+              unexpected.Stream.Dispose();
+            }
+            catch (InvalidOperationException) { duplicate = true; }
+            Check(duplicate, "duplicate GET cannot replace live receipt");
+          }
+          finally { finish.TrySetResult(true); }
+          await transfer.WaitAsync(TimeSpan.FromSeconds(10));
+          var sent = await service.TransferStatusAsync("owner", state.ExportId, 1, default);
+          Check(sent.Status == "sent" && sent.BytesSent == sent.TotalBytes &&
+            sent.TotalBytes == destination.Bytes.Length, "full completed server transfer");
+          destination.Bytes.Position = 0;
+          using var archive = new ZipArchive(destination.Bytes, ZipArchiveMode.Read);
+          Check(archive.Entries.Single().FullName == "_data/a.gz", "native ZIP bytes preserved");
+        }
+        state = await service.PrepareAsync("owner", state.ExportId, default);
+        Check(state.Complete && state.Parts.Length == 2, "next independent part can be prepared");
+        var second = await service.OpenTrackedAsync("owner", state.ExportId, 2, default);
+        using (second.Stream)
+        {
+          bool failed = false;
+          try
+          {
+            await second.Receipt.SendAsync(second.Stream,
+              new AsyncOnlyDestination { BeforeWrite = _ => Task.FromException(new IOException("transfer failure")) },
+              () => Task.CompletedTask, default);
+          }
+          catch (IOException) { failed = true; }
+          Check(failed && (await service.TransferStatusAsync("owner", state.ExportId, 2, default)).Status == "failed",
+            "failed stream cannot appear complete");
+        }
+        var retry = await service.OpenTrackedAsync("owner", state.ExportId, 2, default);
+        using (retry.Stream)
+        using (var cts = new CancellationTokenSource())
+        {
+          cts.Cancel();
+          bool cancelled = false;
+          try { await retry.Receipt.SendAsync(retry.Stream, new AsyncOnlyDestination(), () => Task.CompletedTask, cts.Token); }
+          catch (OperationCanceledException) { cancelled = true; }
+          Check(cancelled && (await service.TransferStatusAsync("owner", state.ExportId, 2, default)).Status == "failed",
+            "cancelled transfer cannot appear complete");
+        }
+      }
+      finally
+      {
+        await service.StopAsync(default);
+        Directory.Delete(root, true);
+      }
+    });
     await Test("UTC windows accept seconds, milliseconds, strings and ISO timestamps", async () =>
     {
       DateTimeOffset recent = DateTimeOffset.UtcNow.AddHours(-1);

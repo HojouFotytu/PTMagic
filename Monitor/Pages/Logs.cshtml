@@ -116,9 +116,9 @@
   logHistoryUnit.addEventListener('change', updateLogHistoryCount);
   updateLogHistoryCount();
 
-  // A single explicit click starts the entire export. Each finished ZIP
-  // is handed to the browser's native download manager (no archive blobs).
-  // Browsers may require the user to allow multiple automatic downloads.
+  // A single explicit click starts the entire export. Attachments are
+  // navigated in an isolated frame, never the page running the sequence.
+  // Wait for each full server transfer before preparing the next part.
   var archiveForm = document.getElementById('archive-download-form');
   var maxZip = document.getElementById('max-zip-mib');
   var multipartStatus = document.getElementById('multipart-status');
@@ -136,6 +136,9 @@
       headers: { 'XSRF-TOKEN': antiForgery.value },
       body: new URLSearchParams(values)
     });
+    return await multipartJson(response);
+  }
+  async function multipartJson(response) {
     if (!response.ok) {
       var contentType = response.headers.get('content-type') || '';
       var detail = contentType.indexOf('text/plain') >= 0 ? await response.text() : '';
@@ -151,16 +154,43 @@
     multipartStatus.classList.toggle('text-muted', !warning);
     multipartStatus.textContent = message || '';
   }
-  function requestPartDownload(state, part) {
-    var link = document.createElement('a');
-    link.href = multipartUrl('MultipartPart', { exportId: state.exportId, number: part.number });
-    link.download = part.fileName;
-    link.hidden = true;
-    document.body.appendChild(link);
-    try { link.click(); }
-    finally { link.remove(); }
-    // Dispatch is not a receipt: only the browser knows whether it saved
-    // the attachment or blocked automatic multiple downloads.
+  var downloadFrame = null;
+  function attachmentFrame() {
+    if (!downloadFrame) {
+      downloadFrame = document.createElement('iframe');
+      downloadFrame.hidden = true;
+      downloadFrame.title = 'ZIP downloads';
+      document.body.appendChild(downloadFrame);
+    }
+    return downloadFrame;
+  }
+  async function transferPart(state, part, oversized) {
+    // Do not navigate the current document, immediately remove a clicked
+    // anchor, or replace this frame while its attachment is transmitting.
+    attachmentFrame().src = multipartUrl('MultipartPart', {
+      exportId: state.exportId, number: part.number, tracked: 'true'
+    });
+    var startedAt = Date.now();
+    while (true) {
+      var response = await fetch(multipartUrl('MultipartTransferStatus', {
+        exportId: state.exportId, number: part.number
+      }), { credentials: 'same-origin', cache: 'no-store' });
+      var receipt = await multipartJson(response);
+      if (receipt.status === 'sent') return;
+      if (receipt.status === 'failed')
+        throw new Error('ZIP part ' + part.number + ' transmission failed.');
+      if (receipt.status === 'waiting' && Date.now() - startedAt >= 60000)
+        throw new Error('ZIP part ' + part.number + ' was not requested by the browser. Check download permissions and try again.');
+      if (receipt.status !== 'waiting' && receipt.status !== 'sending')
+        throw new Error('Unknown ZIP transfer status.');
+      var progress = receipt.status === 'waiting'
+        ? 'Starting ZIP part ' + part.number + '…'
+        : 'Downloading ZIP part ' + part.number + '… ' +
+          (receipt.bytesSent / 1048576).toFixed(1) + ' / ' +
+          (receipt.totalBytes / 1048576).toFixed(1) + ' MiB.';
+      showMultipartStatus(progress, oversized > 0);
+      await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+    }
   }
   archiveForm.addEventListener('submit', async function (event) {
     if (multipartBusy) { event.preventDefault(); return; }
@@ -175,33 +205,32 @@
     };
     multipartBusy = true;
     downloadButtons.forEach(function (item) { item.disabled = true; });
-    var requested = 0;
+    var transferred = 0;
     var oversized = 0;
     try {
       showMultipartStatus('Preparing ZIP downloads…');
       var state = await multipartRequest('MultipartStart', values);
       while (true) {
-        for (var i = requested; i < state.parts.length; i++) {
+        for (var i = transferred; i < state.parts.length; i++) {
           var part = state.parts[i];
-          requestPartDownload(state, part);
-          requested++;
           if (part.exceedsLimit) oversized++;
+          await transferPart(state, part, oversized);
+          transferred++;
         }
         if (state.complete) break;
-        showMultipartStatus('Preparing ZIP part ' + (requested + 1) + '… ' +
+        showMultipartStatus('Preparing ZIP part ' + (transferred + 1) + '… ' +
           state.processedSources + ' / ' + state.totalSources + ' files processed.', oversized > 0);
         state = await multipartRequest('MultipartNext', { exportId: state.exportId });
       }
-      if (!requested) {
+      if (!transferred) {
         showMultipartStatus('No complete files matched the selected period.');
       } else {
-        var summary = requested + ' ZIP download' + (requested === 1 ? '' : 's') + ' requested.';
+        var summary = transferred + ' ZIP part' + (transferred === 1 ? '' : 's') + ' transferred by the server.';
         if (oversized) summary += ' ' + oversized + ' part(s) exceed the limit because a source file cannot be split.';
-        if (requested > 1) summary += ' If prompted by your browser, allow multiple automatic downloads.';
         showMultipartStatus(summary, oversized > 0);
       }
     } catch (error) {
-      showMultipartStatus(error.message + (requested ? ' ' + requested + ' earlier ZIP download(s) requested.' : ''), true);
+      showMultipartStatus(error.message + (transferred ? ' ' + transferred + ' earlier ZIP part(s) transferred.' : ''), true);
     } finally {
       multipartBusy = false;
       downloadButtons.forEach(function (item) { item.disabled = false; });

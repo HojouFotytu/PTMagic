@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -17,7 +18,10 @@ namespace Monitor._Internal
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
     private readonly string _root;
     private readonly ILogger<MultipartDownloadService> _log;
-    private sealed record RetainedExport(string Owner, MultipartZipBatch Batch, FileStream Lease);
+    private sealed record RetainedExport(string Owner, MultipartZipBatch Batch, FileStream Lease)
+    {
+      public Dictionary<int, MultipartTransferReceipt> Transfers { get; } = new Dictionary<int, MultipartTransferReceipt>();
+    }
     private readonly Dictionary<string, RetainedExport> _exports = new Dictionary<string, RetainedExport>(StringComparer.Ordinal);
     private RetainedExport _active;
 
@@ -57,7 +61,8 @@ namespace Monitor._Internal
     private void Expire()
     {
       foreach (var export in new List<RetainedExport>(_exports.Values))
-        if (DateTime.UtcNow - export.Batch.LastActivityUtc >= TimeSpan.FromMinutes(IdleMinutes))
+        if (DateTime.UtcNow - export.Batch.LastActivityUtc >= TimeSpan.FromMinutes(IdleMinutes) &&
+            !export.Transfers.Values.Any(transfer => transfer.IsSending))
           Release(export);
     }
 
@@ -144,6 +149,51 @@ namespace Monitor._Internal
       {
         Expire();
         return RequireOwner(owner, exportId).Batch.OpenPart(number);
+      }
+      finally { _gate.Release(); }
+    }
+
+    public async Task<(FileStream Stream, MultipartZipBatch.Part Part, MultipartTransferReceipt Receipt)> OpenTrackedAsync(
+      string owner, string exportId, int number, CancellationToken token)
+    {
+      await _gate.WaitAsync(token);
+      try
+      {
+        Expire();
+        var export = RequireOwner(owner, exportId);
+        var opened = export.Batch.OpenPart(number);
+        try
+        {
+          // A new full request has its own receipt. Concurrent browser retry
+          // requests are never allowed to replace an in-flight tracked receipt.
+          if (export.Transfers.TryGetValue(number, out var previous) && previous.IsSending)
+            throw new InvalidOperationException("This ZIP part is already being sent.");
+          var receipt = new MultipartTransferReceipt(opened.Part.Bytes);
+          export.Transfers[number] = receipt;
+          return (opened.Stream, opened.Part, receipt);
+        }
+        catch
+        {
+          opened.Stream.Dispose();
+          throw;
+        }
+      }
+      finally { _gate.Release(); }
+    }
+
+    public async Task<MultipartTransferReceipt.State> TransferStatusAsync(string owner, string exportId,
+      int number, CancellationToken token)
+    {
+      await _gate.WaitAsync(token);
+      try
+      {
+        Expire();
+        var export = RequireOwner(owner, exportId);
+        var state = export.Batch.Snapshot();
+        if (number < 1 || number > state.Parts.Length) throw new KeyNotFoundException("Part not prepared.");
+        return export.Transfers.TryGetValue(number, out var receipt)
+          ? receipt.Snapshot()
+          : new MultipartTransferReceipt.State("waiting", 0, state.Parts[number - 1].Bytes);
       }
       finally { _gate.Release(); }
     }

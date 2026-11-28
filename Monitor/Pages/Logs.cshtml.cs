@@ -138,19 +138,69 @@ namespace Monitor.Pages
       }
     }
 
-    public async Task<IActionResult> OnGetMultipartPartAsync(string exportId, int number, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetMultipartTransferStatusAsync(string exportId, int number,
+      CancellationToken cancellationToken)
     {
       if (!MultipartAuthorized()) return StatusCode(403);
       try
       {
-        var part = await Multipart.OpenAsync(MultipartOwner, exportId, number, cancellationToken);
-        return new FileStreamResult(part.Stream, "application/zip")
-        {
-          FileDownloadName = part.Part.FileName,
-          EnableRangeProcessing = true
-        };
+        return MultipartJson(await Multipart.TransferStatusAsync(MultipartOwner, exportId, number, cancellationToken));
       }
       catch (KeyNotFoundException) { return NotFound("Part unavailable or expired."); }
+    }
+
+    public async Task<IActionResult> OnGetMultipartPartAsync(string exportId, int number,
+      CancellationToken cancellationToken, bool tracked = false)
+    {
+      if (!MultipartAuthorized()) return StatusCode(403);
+      try
+      {
+        // Browser range retries and existing manual links retain the standard
+        // range-enabled file result. Only the initial full automatic request
+        // is used to advance the single-click download sequence.
+        if (!tracked || Request.Headers.ContainsKey("Range"))
+        {
+          var part = await Multipart.OpenAsync(MultipartOwner, exportId, number, cancellationToken);
+          return new FileStreamResult(part.Stream, "application/zip")
+          {
+            FileDownloadName = part.Part.FileName,
+            EnableRangeProcessing = true
+          };
+        }
+
+        var opened = await Multipart.OpenTrackedAsync(MultipartOwner, exportId, number, cancellationToken);
+        try
+        {
+          await using (opened.Stream)
+          {
+            Response.ContentType = "application/zip";
+            Response.ContentLength = opened.Part.Bytes;
+            Response.Headers["Content-Disposition"] = "attachment; filename=\"" + opened.Part.FileName + "\"";
+            Response.Headers["Accept-Ranges"] = "bytes";
+            Response.Headers["X-Accel-Buffering"] = "no";
+            HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            await Response.StartAsync(cancellationToken);
+            await opened.Receipt.SendAsync(opened.Stream, Response.Body,
+              () => Response.CompleteAsync(), cancellationToken);
+          }
+          return new EmptyResult();
+        }
+        catch (Exception ex)
+        {
+          opened.Receipt.Fail();
+          if (ex is not OperationCanceledException)
+            HttpContext.RequestServices.GetService<ILogger<LogsModel>>()?
+              .LogWarning(ex, "Multipart ZIP transmission failed for part {PartNumber}.", number);
+          if (Response.HasStarted || HttpContext.RequestAborted.IsCancellationRequested)
+          {
+            HttpContext.Abort();
+            return new EmptyResult();
+          }
+          return StatusCode(500, "ZIP transmission failed.");
+        }
+      }
+      catch (KeyNotFoundException) { return NotFound("Part unavailable or expired."); }
+      catch (InvalidOperationException) { return StatusCode(409, "Part is already being sent."); }
       catch (IOException) { return NotFound("Prepared part is unavailable. Start a new export if necessary."); }
     }
 

@@ -11,6 +11,7 @@
     <Compile Include="../../Monitor/_Internal/StreamingDownloadArchive.cs" Link="StreamingDownloadArchive.cs" />
     <Compile Include="../../Monitor/_Internal/MultipartZipBatch.cs" Link="MultipartZipBatch.cs" />
     <Compile Include="../../Monitor/_Internal/MultipartDownloadService.cs" Link="MultipartDownloadService.cs" />
+    <Compile Include="../../Monitor/_Internal/MultipartTransferReceipt.cs" Link="MultipartTransferReceipt.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Compile Include="../../Core/Helper/DecisionHistoryFileNames.cs" Link="DecisionHistoryFileNames.cs" />
   </ItemGroup>
