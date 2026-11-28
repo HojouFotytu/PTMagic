@@ -42,14 +42,7 @@
           <small class="form-text text-muted">Both downloads use the selected history period. Logs include whole matching daily files; _data includes decision records and historical snapshots within the selected UTC time window, plus current snapshots, metadata and complete caches.</small>
         </form>
         <div id="multipart-antiforgery" hidden>@Html.AntiForgeryToken()</div>
-        <div id="multipart-panel" class="border rounded p-3 mb-3" hidden>
-          <strong>Multipart export</strong>
-          <p id="multipart-status" class="mb-2" role="status" aria-live="polite"></p>
-          <p class="small text-muted">Download every numbered ZIP and extract them into the same directory. Each part is independent. Prepared ZIPs stay on the server for retries; release them when finished. Inactive exports expire after 30 minutes. Only one export can be active per Monitor.</p>
-          <div id="multipart-parts" class="mb-2"></div>
-          <button id="multipart-next" class="btn btn-secondary btn-sm mr-2" type="button">Prepare next part</button>
-          <button id="multipart-release" class="btn btn-outline-secondary btn-sm" type="button">Release export</button>
-        </div>
+        <p id="multipart-status" class="small text-muted mb-3" role="status" aria-live="polite" hidden></p>
       }
       @if (!Model.LogsEnabled)
       {
@@ -123,18 +116,14 @@
   logHistoryUnit.addEventListener('change', updateLogHistoryCount);
   updateLogHistoryCount();
 
-  // A positive size opts into the staged multipart export. Zero preserves
-  // ordinary browser streaming. Individual attachments use normal links
-  // (no multi-download permission, client-side ZIP creation or blob buffering).
+  // A single explicit click starts the entire export. Each finished ZIP
+  // is handed to the browser's native download manager (no archive blobs).
+  // Browsers may require the user to allow multiple automatic downloads.
   var archiveForm = document.getElementById('archive-download-form');
   var maxZip = document.getElementById('max-zip-mib');
-  var multipartPanel = document.getElementById('multipart-panel');
   var multipartStatus = document.getElementById('multipart-status');
-  var multipartParts = document.getElementById('multipart-parts');
-  var multipartNext = document.getElementById('multipart-next');
-  var multipartRelease = document.getElementById('multipart-release');
   var antiForgery = document.querySelector('#multipart-antiforgery input[name="__RequestVerificationToken"]');
-  var activeExport = null;
+  var downloadButtons = [document.getElementById('log-download'), document.getElementById('data-download')];
   var multipartBusy = false;
   function multipartUrl(handler, values) {
     var params = new URLSearchParams(values || {});
@@ -142,14 +131,11 @@
     return root + 'Logs?' + params.toString();
   }
   async function multipartRequest(handler, values) {
-    var post = values !== undefined;
-    var options = { credentials: 'same-origin', cache: 'no-store' };
-    if (post) {
-      options.method = 'POST';
-      options.headers = { 'XSRF-TOKEN': antiForgery.value };
-      options.body = new URLSearchParams(values);
-    }
-    var response = await fetch(multipartUrl(handler), options);
+    var response = await fetch(multipartUrl(handler), {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'XSRF-TOKEN': antiForgery.value },
+      body: new URLSearchParams(values)
+    });
     if (!response.ok) {
       var contentType = response.headers.get('content-type') || '';
       var detail = contentType.indexOf('text/plain') >= 0 ? await response.text() : '';
@@ -159,88 +145,68 @@
       throw new Error('Export session unavailable. Sign in again.');
     return await response.json();
   }
-  function renderMultipart(message) {
-    multipartPanel.hidden = !activeExport && !message;
-    multipartParts.replaceChildren();
-    multipartNext.hidden = !activeExport || activeExport.complete;
-    multipartRelease.hidden = !activeExport;
-    multipartNext.disabled = multipartBusy;
-    multipartRelease.disabled = multipartBusy;
-    if (!activeExport) {
-      multipartStatus.textContent = message || '';
-      return;
-    }
-    var state = activeExport;
-    multipartStatus.textContent = message || (state.complete ? 'All parts prepared. ' : 'Ready to prepare next part. ') +
-      state.processedSources + ' / ' + state.totalSources + ' source files processed. ' +
-      state.parts.length + ' ZIP part(s), maximum ' + (state.maxBytes / 1048576) + ' MiB.';
-    state.parts.forEach(function (part) {
-      var line = document.createElement('div');
-      line.className = 'mb-1';
-      var link = document.createElement('a');
-      link.href = multipartUrl('MultipartPart', { exportId: state.exportId, number: part.number });
-      link.textContent = 'Download ' + part.fileName;
-      line.appendChild(link);
-      line.appendChild(document.createTextNode(' — ' + (part.bytes / 1048576).toFixed(2) + ' MiB, ' + part.files + ' files'));
-      if (part.exceedsLimit) {
-        var warning = document.createElement('span');
-        warning.className = 'text-warning';
-        warning.textContent = ' — EXCEEDS LIMIT: one indivisible file (' + part.oversizedEntry + ').';
-        line.appendChild(warning);
-      }
-      multipartParts.appendChild(line);
-    });
+  function showMultipartStatus(message, warning) {
+    multipartStatus.hidden = !message;
+    multipartStatus.classList.toggle('text-warning', !!warning);
+    multipartStatus.classList.toggle('text-muted', !warning);
+    multipartStatus.textContent = message || '';
   }
-  async function runMultipart(operation, message) {
-    if (multipartBusy) return;
-    multipartBusy = true;
-    renderMultipart(message);
-    try { await operation(); renderMultipart(); }
-    catch (error) { renderMultipart(error.message); }
-    finally {
-      multipartBusy = false;
-      multipartNext.disabled = false;
-      multipartRelease.disabled = false;
-    }
+  function requestPartDownload(state, part) {
+    var link = document.createElement('a');
+    link.href = multipartUrl('MultipartPart', { exportId: state.exportId, number: part.number });
+    link.download = part.fileName;
+    link.hidden = true;
+    document.body.appendChild(link);
+    try { link.click(); }
+    finally { link.remove(); }
+    // Dispatch is not a receipt: only the browser knows whether it saved
+    // the attachment or blocked automatic multiple downloads.
   }
-  async function prepareNextPart() {
-    if (!activeExport || activeExport.complete) return;
-    activeExport = await multipartRequest('MultipartNext', { exportId: activeExport.exportId });
-  }
-  archiveForm.addEventListener('submit', function (event) {
-    if (Number(maxZip.value) === 0) return;
+  archiveForm.addEventListener('submit', async function (event) {
+    if (multipartBusy) { event.preventDefault(); return; }
+    if (Number(maxZip.value) === 0) { showMultipartStatus(''); return; }
     event.preventDefault();
     if (!archiveForm.reportValidity()) return;
-    if (activeExport) {
-      renderMultipart('Release the current export before starting a new one, or continue preparing its parts.');
-      return;
-    }
     var button = event.submitter;
     var kind = button && button.value === 'DownloadData' ? 'data' : 'logs';
-    runMultipart(async function () {
-      activeExport = await multipartRequest('MultipartStart', {
-        kind: kind, historyCount: logHistoryCount.disabled ? '0' : logHistoryCount.value,
-        historyUnit: logHistoryUnit.value, maxZipMiB: maxZip.value
-      });
-      renderMultipart('Preparing first ZIP part…');
-      await prepareNextPart();
-    }, 'Starting multipart export…');
+    var values = {
+      kind: kind, historyCount: logHistoryCount.disabled ? '0' : logHistoryCount.value,
+      historyUnit: logHistoryUnit.value, maxZipMiB: maxZip.value
+    };
+    multipartBusy = true;
+    downloadButtons.forEach(function (item) { item.disabled = true; });
+    var requested = 0;
+    var oversized = 0;
+    try {
+      showMultipartStatus('Preparing ZIP downloads…');
+      var state = await multipartRequest('MultipartStart', values);
+      while (true) {
+        for (var i = requested; i < state.parts.length; i++) {
+          var part = state.parts[i];
+          requestPartDownload(state, part);
+          requested++;
+          if (part.exceedsLimit) oversized++;
+        }
+        if (state.complete) break;
+        showMultipartStatus('Preparing ZIP part ' + (requested + 1) + '… ' +
+          state.processedSources + ' / ' + state.totalSources + ' files processed.', oversized > 0);
+        state = await multipartRequest('MultipartNext', { exportId: state.exportId });
+      }
+      if (!requested) {
+        showMultipartStatus('No complete files matched the selected period.');
+      } else {
+        var summary = requested + ' ZIP download' + (requested === 1 ? '' : 's') + ' requested.';
+        if (oversized) summary += ' ' + oversized + ' part(s) exceed the limit because a source file cannot be split.';
+        if (requested > 1) summary += ' If prompted by your browser, allow multiple automatic downloads.';
+        showMultipartStatus(summary, oversized > 0);
+      }
+    } catch (error) {
+      showMultipartStatus(error.message + (requested ? ' ' + requested + ' earlier ZIP download(s) requested.' : ''), true);
+    } finally {
+      multipartBusy = false;
+      downloadButtons.forEach(function (item) { item.disabled = false; });
+    }
   });
-  multipartNext.addEventListener('click', function () {
-    runMultipart(prepareNextPart, 'Preparing next ZIP part…');
-  });
-  multipartRelease.addEventListener('click', function () {
-    if (!activeExport || !window.confirm('Release all prepared ZIPs? They will no longer be available for retry.')) return;
-    runMultipart(async function () {
-      await multipartRequest('MultipartRelease', { exportId: activeExport.exportId });
-      activeExport = null;
-    }, 'Releasing export…');
-  });
-  // Reloading the page restores the same prepared links and pending cursor.
-  // No new export is started merely by visiting this page.
-  runMultipart(async function () {
-    activeExport = await multipartRequest('MultipartStatus');
-  }, '');
 
   var source = document.getElementById('log-source');
   var level = document.getElementById('log-level');

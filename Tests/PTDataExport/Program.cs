@@ -5,6 +5,7 @@ using System.Text.Json;
 using Core.Main;
 using Core.Helper;
 using Monitor._Internal;
+using Microsoft.Extensions.Logging.Abstractions;
 
 internal static class Program
 {
@@ -635,6 +636,66 @@ internal static class Program
       }
       finally { Directory.Delete(root, true); }
       return Task.CompletedTask;
+    });
+    await Test("automatic multipart exports allow a new request without releasing previously prepared downloads", async () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-auto-multipart-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(root);
+      using var service = new MultipartDownloadService(root, NullLogger<MultipartDownloadService>.Instance);
+      try
+      {
+        string a = Path.Combine(root, "a.gz");
+        string b = Path.Combine(root, "b.gz");
+        File.WriteAllBytes(a, new byte[800000]);
+        File.WriteAllBytes(b, new byte[800000]);
+        var members = new[] { new StreamingDownloadArchive.Member(a, "_data/a.gz", null),
+          new StreamingDownloadArchive.Member(b, "_data/b.gz", null) };
+        var first = await service.StartAsync("session-a", "PTMagic-data", members, 1048576, default);
+        first = await service.PrepareAsync("session-a", first.ExportId, default);
+        Check(first.Parts.Length == 1 && !first.Complete, "first export still preparing");
+        bool conflict = false;
+        try { await service.StartAsync("session-b", "PTMagic-data", members, 1048576, default); }
+        catch (InvalidOperationException) { conflict = true; }
+        Check(conflict, "another session cannot supersede an active preparation");
+        var second = await service.StartAsync("session-a", "PTMagic-data", members, 1048576, default);
+        Check(second.ExportId != first.ExportId, "same-session new click supersedes old preparation without manual release");
+        bool superseded = false;
+        try { await service.PrepareAsync("session-a", first.ExportId, default); }
+        catch (KeyNotFoundException) { superseded = true; }
+        Check(superseded, "superseded batch cannot prepare further files");
+        var original = await service.OpenAsync("session-a", first.ExportId, 1, default);
+        using (original.Stream)
+          Check(original.Stream.Length == first.Parts[0].Bytes, "earlier browser retry remains available");
+        bool denied = false;
+        try
+        {
+          var forbidden = await service.OpenAsync("session-b", first.ExportId, 1, default);
+          forbidden.Stream.Dispose();
+        }
+        catch (KeyNotFoundException) { denied = true; }
+        Check(denied, "retained parts remain session bound");
+        while (!second.Complete) second = await service.PrepareAsync("session-a", second.ExportId, default);
+        var third = await service.StartAsync("session-b", "PTMagic-logs", members, 1048576, default);
+        Check(third.ExportId != second.ExportId, "completed export no longer blocks another session");
+        var previous = await service.OpenAsync("session-a", second.ExportId, 2, default);
+        using (previous.Stream)
+          Check(previous.Stream.Length == second.Parts[1].Bytes, "completed export is retryable after another session starts");
+        await service.ReleaseAsync("session-a", first.ExportId, default);
+        bool released = false;
+        try
+        {
+          var unavailable = await service.OpenAsync("session-a", first.ExportId, 1, default);
+          unavailable.Stream.Dispose();
+        }
+        catch (KeyNotFoundException) { released = true; }
+        Check(released, "explicit API release remains supported");
+      }
+      finally
+      {
+        await service.StopAsync(default);
+        Check(!Directory.EnumerateDirectories(Path.Combine(root, "_download_exports")).Any(), "shutdown cleans retained spools");
+        Directory.Delete(root, true);
+      }
     });
     await Test("UTC windows accept seconds, milliseconds, strings and ISO timestamps", async () =>
     {

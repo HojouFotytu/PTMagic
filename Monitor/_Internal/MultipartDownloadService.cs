@@ -8,18 +8,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Monitor._Internal
 {
-  // Private per-Monitor spool, not in wwwroot or _data. One active export
-  // avoids simultaneous multi-gigabyte staging on the same instance.
-  // Each finished part remains immutable for exact retry/range requests.
+  // Private per-Monitor spool, not in wwwroot or _data. One active
+  // preparation cursor; finished parts remain available for browser retries
+  // even after a later export starts. Automatic idle cleanup needs no UI.
   public sealed class MultipartDownloadService : BackgroundService
   {
     public const int IdleMinutes = 30; // matches Monitor session idle policy
     private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
     private readonly string _root;
     private readonly ILogger<MultipartDownloadService> _log;
-    private MultipartZipBatch _batch;
-    private string _owner;
-    private FileStream _lease;
+    private sealed record RetainedExport(string Owner, MultipartZipBatch Batch, FileStream Lease);
+    private readonly Dictionary<string, RetainedExport> _exports = new Dictionary<string, RetainedExport>(StringComparer.Ordinal);
+    private RetainedExport _active;
 
     public MultipartDownloadService(string monitorBasePath, ILogger<MultipartDownloadService> log)
     {
@@ -35,35 +35,30 @@ namespace Monitor._Internal
         throw new IOException("Multipart export spool is a link.");
     }
 
-    private bool Owns(string owner, string exportId) =>
-      _batch != null && String.Equals(_owner, owner, StringComparison.Ordinal) &&
-      String.Equals(_batch.ExportId, exportId, StringComparison.Ordinal);
-
-    private void RequireOwner(string owner, string exportId)
+    private RetainedExport RequireOwner(string owner, string exportId)
     {
-      if (!Owns(owner, exportId)) throw new KeyNotFoundException("Export unavailable or expired.");
-      _batch.LastActivityUtc = DateTime.UtcNow;
+      if (String.IsNullOrEmpty(exportId) || !_exports.TryGetValue(exportId, out var export) ||
+          !String.Equals(export.Owner, owner, StringComparison.Ordinal))
+        throw new KeyNotFoundException("Export unavailable or expired.");
+      export.Batch.LastActivityUtc = DateTime.UtcNow;
+      return export;
     }
 
-    private void Release()
+    private void Release(RetainedExport export)
     {
-      MultipartZipBatch batch = _batch;
-      _batch = null;
-      _owner = null;
-      try { _lease?.Dispose(); }
-      finally { _lease = null; }
-      if (batch != null)
-      {
-        try { batch.Delete(); }
-        catch (IOException ex) { _log.LogWarning(ex, "Multipart spool cleanup deferred."); }
-        catch (UnauthorizedAccessException ex) { _log.LogWarning(ex, "Multipart spool cleanup deferred."); }
-      }
+      _exports.Remove(export.Batch.ExportId);
+      if (ReferenceEquals(_active, export)) _active = null;
+      export.Lease.Dispose();
+      try { export.Batch.Delete(); }
+      catch (IOException ex) { _log.LogWarning(ex, "Multipart spool cleanup deferred."); }
+      catch (UnauthorizedAccessException ex) { _log.LogWarning(ex, "Multipart spool cleanup deferred."); }
     }
 
     private void Expire()
     {
-      if (_batch != null && DateTime.UtcNow - _batch.LastActivityUtc >= TimeSpan.FromMinutes(IdleMinutes))
-        Release();
+      foreach (var export in new List<RetainedExport>(_exports.Values))
+        if (DateTime.UtcNow - export.Batch.LastActivityUtc >= TimeSpan.FromMinutes(IdleMinutes))
+          Release(export);
     }
 
     public async Task<MultipartZipBatch.State> StartAsync(string owner, string prefix,
@@ -73,7 +68,9 @@ namespace Monitor._Internal
       try
       {
         Expire();
-        if (_batch != null) throw new InvalidOperationException("Release the active multipart export first.");
+        if (_active != null && !_active.Batch.Snapshot().Complete &&
+            !String.Equals(_active.Owner, owner, StringComparison.Ordinal))
+          throw new InvalidOperationException("Another session has an active multipart export.");
         EnsureRoot();
         string id = Guid.NewGuid().ToString("N");
         string directory = Path.Combine(_root, id);
@@ -87,9 +84,15 @@ namespace Monitor._Internal
           // Filename ID is shared by every ZIP, even if start times collide.
           string fullPrefix = prefix + "-" + id.Substring(0, 12);
           var batch = new MultipartZipBatch(directory, fullPrefix, id, files, maxBytes);
-          _lease = lease;
-          _batch = batch;
-          _owner = owner;
+          var previous = _active;
+          var export = new RetainedExport(owner, batch, lease);
+          _exports.Add(id, export);
+          _active = export;
+          // An explicit new request supersedes the old preparation cursor.
+          // Never remove already published parts merely because another
+          // export starts: the browser may still be requesting them.
+          if (previous != null && previous.Batch.Snapshot().Parts.Length == 0)
+            Release(previous);
           return batch.Snapshot();
         }
         catch
@@ -108,9 +111,9 @@ namespace Monitor._Internal
       try
       {
         Expire();
-        if (_batch == null || !String.Equals(owner, _owner, StringComparison.Ordinal)) return null;
-        _batch.LastActivityUtc = DateTime.UtcNow;
-        return _batch.Snapshot();
+        if (_active == null || !String.Equals(owner, _active.Owner, StringComparison.Ordinal)) return null;
+        _active.Batch.LastActivityUtc = DateTime.UtcNow;
+        return _active.Batch.Snapshot();
       }
       finally { _gate.Release(); }
     }
@@ -121,13 +124,14 @@ namespace Monitor._Internal
       try
       {
         Expire();
-        RequireOwner(owner, exportId);
+        var export = RequireOwner(owner, exportId);
+        if (!ReferenceEquals(_active, export)) throw new KeyNotFoundException("Export superseded by a newer request.");
         try
         {
-          return await Task.Factory.StartNew(() => _batch.PrepareNext(token), CancellationToken.None,
+          return await Task.Factory.StartNew(() => export.Batch.PrepareNext(token), CancellationToken.None,
             TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
-        finally { _batch.LastActivityUtc = DateTime.UtcNow; }
+        finally { export.Batch.LastActivityUtc = DateTime.UtcNow; }
       }
       finally { _gate.Release(); }
     }
@@ -139,8 +143,7 @@ namespace Monitor._Internal
       try
       {
         Expire();
-        RequireOwner(owner, exportId);
-        return _batch.OpenPart(number);
+        return RequireOwner(owner, exportId).Batch.OpenPart(number);
       }
       finally { _gate.Release(); }
     }
@@ -151,8 +154,7 @@ namespace Monitor._Internal
       try
       {
         Expire();
-        RequireOwner(owner, exportId);
-        Release();
+        Release(RequireOwner(owner, exportId));
       }
       finally { _gate.Release(); }
     }
@@ -167,7 +169,7 @@ namespace Monitor._Internal
       {
         if (!Guid.TryParseExact(Path.GetFileName(directory), "N", out _) ||
             (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0 ||
-            (_batch != null && Path.GetFileName(directory) == _batch.ExportId) ||
+            _exports.ContainsKey(Path.GetFileName(directory)) ||
             DateTime.UtcNow - Directory.GetLastWriteTimeUtc(directory) < TimeSpan.FromMinutes(IdleMinutes))
           continue;
         try
@@ -209,7 +211,10 @@ namespace Monitor._Internal
     {
       await base.StopAsync(cancellationToken);
       await _gate.WaitAsync(cancellationToken);
-      try { Release(); }
+      try
+      {
+        foreach (var export in new List<RetainedExport>(_exports.Values)) Release(export);
+      }
       finally { _gate.Release(); }
     }
   }

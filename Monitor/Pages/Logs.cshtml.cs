@@ -35,7 +35,7 @@ namespace Monitor.Pages
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
       if (!ModelState.IsValid || maxZipMiB != 0)
-        return BadRequest("For a size-limited ZIP, use the multipart download controls on this page.");
+        return BadRequest("For a size-limited ZIP, use the download button on the Logs/Data page.");
       DateTime endUtc = DateTime.UtcNow;
       if (!TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
         return BadRequest("Choose a positive whole number of days, weeks, or months.");
@@ -52,7 +52,7 @@ namespace Monitor.Pages
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
       if (!ModelState.IsValid || maxZipMiB != 0)
-        return BadRequest("For a size-limited ZIP, use the multipart download controls on this page.");
+        return BadRequest("For a size-limited ZIP, use the download button on the Logs/Data page.");
       DateTime endUtc = DateTime.UtcNow;
       if (!TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
         return BadRequest("Choose a positive whole number of days, weeks, or months.");
@@ -117,7 +117,7 @@ namespace Monitor.Pages
       }
       catch (InvalidOperationException)
       {
-        return StatusCode(409, "An export is already active. Release it or resume it before starting another.");
+        return StatusCode(409, "Another session has an active multipart export. Try again after it finishes or expires.");
       }
       catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
       {
@@ -134,7 +134,7 @@ namespace Monitor.Pages
       catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
       {
         HttpContext.RequestServices.GetService<ILogger<LogsModel>>()?.LogWarning(ex, "Multipart ZIP preparation failed.");
-        return StatusCode(500, "Part preparation failed. Check server disk space and source files; previously prepared parts are retained. Retry or start a new export.");
+        return StatusCode(500, "ZIP preparation failed. Check server disk space and source files; previously prepared downloads remain available for browser retries. Click the download button to start a new export.");
       }
     }
 

@@ -1,5 +1,12 @@
 # PT history exporter: verified contract and rebuild
 
+## November 28 — Single-click automatic multipart download (current UI)
+
+Operator live acceptance of the manual interface: 24-hour GeorgeLong export, 2,430 / 2,430 files, two finalized ZIPs (449.05 and 169.26 MiB) under a 450 MiB limit. User explicitly rejected the individual file list, next-part button and manual release workflow. Both download buttons now automatically request every numbered attachment as each part is prepared. Browser-native download manager handles the actual file transfer (no JavaScript ZIP blobs, no client-side archive buffering); the page only displays compact progress, errors and indivisible oversize warnings. It reports downloads requested rather than confirmed saved; browser multiple-download permission may be required and cannot be bypassed. The maximum-size and independent ZIP contracts remain unchanged.
+
+Retain prepared parts for browser retry/range requests until existing 30-minute idle expiry or shutdown. New explicit same-session export can supersede an unfinished preparation without deleting published parts; a completed export does not block a later request from another session. Only one active preparation cursor; all retained parts remain owner/instance bound and immutable. Explicit release API remains compatible but no manual release UI. Added lifecycle regression for supersession, cross-session protection, earlier-part retry and cleanup. Automatic browser dispatch and native validation of this follow-up pending.
+
+
 ## November 28 — size-limited multipart Logs/Data ZIP exports
 
 **Operator native validation — November 28, 2026:** Source `034539d8749339be4776b44cf74f5f137808eea1` built Core, PTMagic and Monitor successfully in 10.9 seconds. PTDataExport passed all 37 test groups, including async streaming/backpressure, exact DecisionHistory export ranges, finalized multipart size limits, complete reverse-order dataset reconstruction, explicitly oversized indivisible sources, ZIP overhead and cancellation/source-loss retry. This validates the offline harness and solution build, not deployed authentication, live browser multipart preparation/download/retry, or live server spool resource usage. Those acceptance checks remain pending.

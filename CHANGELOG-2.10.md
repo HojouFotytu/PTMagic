@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 28 — Automatic multipart ZIP dispatch
+
+Live operator report for prior multipart UI: GeorgeLong 2,430/2,430 sources, two finalized ZIPs of 449.05 and 169.26 MiB against 450 MiB cap. Replace manual list/next/release controls with automatic per-part browser downloads from one click, a compact progress/error line, and existing oversize warnings. Preserve independent ZIPs, fixed source membership and exact cap verification. Retain prepared archives for retry until automatic idle cleanup; new explicit request can supersede same-session preparation, completed exports no longer block new requests, and prior parts remain protected and retryable. Browser permission for multiple automatic downloads cannot be overridden; do not claim saved-file success. Added lifecycle regression; native execution and automatic browser acceptance pending.
+
+
 ## November 28 — User-defined multipart ZIP downloads
 
 **Operator native validation — November 28, 2026:** Source `034539d8749339be4776b44cf74f5f137808eea1` built Core, PTMagic and Monitor successfully in 10.9 seconds. PTDataExport passed all 37 test groups, including async streaming/backpressure, exact DecisionHistory export ranges, finalized multipart size limits, complete reverse-order dataset reconstruction, explicitly oversized indivisible sources, ZIP overhead and cancellation/source-loss retry. This validates the offline harness and solution build, not deployed authentication, live browser multipart preparation/download/retry, or live server spool resource usage. Those acceptance checks remain pending.
