@@ -51,6 +51,9 @@ namespace Monitor
       services.AddSingleton<IHostedService>(serviceProvider => serviceProvider.GetRequiredService<LiveTcvService>());
       services.AddSingleton<TempFileCleanupService>(serviceProvider => new TempFileCleanupService(monitorBasePath, serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TempFileCleanupService>>()));
       services.AddSingleton<IHostedService>(serviceProvider => serviceProvider.GetRequiredService<TempFileCleanupService>());
+      services.AddSingleton<MultipartDownloadService>(serviceProvider => new MultipartDownloadService(
+        monitorBasePath, serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MultipartDownloadService>>()));
+      services.AddSingleton<IHostedService>(serviceProvider => serviceProvider.GetRequiredService<MultipartDownloadService>());
       services.AddDistributedMemoryCache();
       services.AddSession(options =>
       {

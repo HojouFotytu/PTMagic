@@ -1,5 +1,10 @@
 # PTMagic 2.10 — Cumulative release changes
 
+## November 28 — User-defined multipart ZIP downloads
+
+Logs/Data now offers maximum ZIP size in MiB (0 = existing unlimited direct stream). Positive size prepares numbered, independent archives progressively; each finalized ZIP is checked against the actual requested byte limit. Source membership/order fixed at start; no split files or duplicate entries; explicitly warn on a single indivisible oversized member. Prepared parts retained in private spool for exact retries and range requests, explicit release or inactivity cleanup; auth/session/instance binding and antiforgery preserved. One active export per Monitor. No DecisionHistory schema or retention changes. Added native tests for size, extraction, retry, oversized file, overhead and cancellation/source loss; build and browser acceptance pending.
+
+
 ## November 27 — Compact DecisionHistory and exact export windows
 
 Schema 2 stores one immutable gzip file per raid, with full observation and coverage deduplication, trigger definitions and ordered reference pairs. Stream JSON directly to gzip, atomically publish, retain no quota/record limit, prune by age hourly or when retention changes. Legacy schema 1 files remain readable and are not automatically rewritten. HistoryStorageEstimator includes new files. Monitor selects new files by precise UTC timestamp and filters complete legacy records by actual RecordedAtUtc with fixed-buffer scanning; current metadata and caches remain whole. Added decoder and schema contract, updated DecisionHistory and PTDataExport tests. Native validation, CPU/disk/download measurement and browser acceptance pending. Existing legacy files can continue to contribute substantial export size until retention expiry. No strategy, metric or retention-setting changes.

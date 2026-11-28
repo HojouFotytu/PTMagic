@@ -298,8 +298,8 @@ namespace Monitor._Internal
       }
     }
 
-    private static int WriteZip(Stream destination, IReadOnlyList<Member> members,
-      CancellationToken cancellationToken)
+    internal static int WriteZip(Stream destination, IReadOnlyList<Member> members,
+      CancellationToken cancellationToken, bool requireSources = false)
     {
       int written = 0;
       byte[] buffer = new byte[BufferSize];
@@ -312,12 +312,15 @@ namespace Monitor._Internal
           try
           {
             if ((File.GetAttributes(member.Path) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+            {
+              if (requireSources) throw new IOException("An export source is no longer a regular file.");
               continue;
+            }
             source = new FileStream(member.Path, FileMode.Open, FileAccess.Read,
               FileShare.ReadWrite | FileShare.Delete, BufferSize, FileOptions.SequentialScan);
           }
-          catch (FileNotFoundException) { continue; }
-          catch (DirectoryNotFoundException) { continue; }
+          catch (FileNotFoundException) when (!requireSources) { continue; }
+          catch (DirectoryNotFoundException) when (!requireSources) { continue; }
           using (source)
           {
             long limit = source.Length;

@@ -29,40 +29,140 @@ namespace Monitor.Pages
 
     // Both endpoints use the same bounded, async streaming writer.
     public async Task<IActionResult> OnGetDownloadAsync(int historyCount, string historyUnit,
-      CancellationToken cancellationToken)
+      CancellationToken cancellationToken, int maxZipMiB = 0)
     {
       base.Init();
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
+      if (!ModelState.IsValid || maxZipMiB != 0)
+        return BadRequest("For a size-limited ZIP, use the multipart download controls on this page.");
       DateTime endUtc = DateTime.UtcNow;
       if (!TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
         return BadRequest("Choose a positive whole number of days, weeks, or months.");
 
-      string analyzerFolder = Path.Combine(PTMagicBasePath, "_logs");
-      string monitorFolder = Path.Combine(PTMagicMonitorBasePath, "_logs");
-      if (!Directory.Exists(monitorFolder))
-        monitorFolder = Path.Combine(AppContext.BaseDirectory, "_logs");
-      var files = _Internal.StreamingDownloadArchive.CaptureLogs(
-        new[] { (analyzerFolder, "PTMagic/"), (monitorFolder, "Monitor/") },
-        cutoffUtc, endUtc, cancellationToken);
+      var files = CaptureExportSources(false, cutoffUtc, endUtc, cancellationToken);
       if (files.Count == 0) return NotFound("No log files are available to download.");
       return await StreamDownloadAsync(files, "PTMagic-Logs-", endUtc, cancellationToken);
     }
 
     public async Task<IActionResult> OnGetDownloadDataAsync(int historyCount, string historyUnit,
-      CancellationToken cancellationToken)
+      CancellationToken cancellationToken, int maxZipMiB = 0)
     {
       base.Init();
       if (!IsLoggedIn(HttpContext) || !LogsEnabled)
         return StatusCode(StatusCodes.Status403Forbidden);
+      if (!ModelState.IsValid || maxZipMiB != 0)
+        return BadRequest("For a size-limited ZIP, use the multipart download controls on this page.");
       DateTime endUtc = DateTime.UtcNow;
       if (!TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
         return BadRequest("Choose a positive whole number of days, weeks, or months.");
 
-      string dataFolder = Path.Combine(PTMagicBasePath, Core.Main.Constants.PTMagicPathData);
-      var files = _Internal.StreamingDownloadArchive.CaptureData(dataFolder, cutoffUtc, endUtc, cancellationToken);
+      var files = CaptureExportSources(true, cutoffUtc, endUtc, cancellationToken);
       if (files.Count == 0) return NotFound("No PTMagic _data files are available to download.");
       return await StreamDownloadAsync(files, "PTMagic-_data-", endUtc, cancellationToken);
+    }
+
+    private List<_Internal.StreamingDownloadArchive.Member> CaptureExportSources(bool data,
+      DateTime? cutoffUtc, DateTime endUtc, CancellationToken cancellationToken)
+    {
+      if (data)
+        return _Internal.StreamingDownloadArchive.CaptureData(
+          Path.Combine(PTMagicBasePath, Core.Main.Constants.PTMagicPathData),
+          cutoffUtc, endUtc, cancellationToken);
+      string analyzerFolder = Path.Combine(PTMagicBasePath, "_logs");
+      string monitorFolder = Path.Combine(PTMagicMonitorBasePath, "_logs");
+      if (!Directory.Exists(monitorFolder)) monitorFolder = Path.Combine(AppContext.BaseDirectory, "_logs");
+      return _Internal.StreamingDownloadArchive.CaptureLogs(
+        new[] { (analyzerFolder, "PTMagic/"), (monitorFolder, "Monitor/") },
+        cutoffUtc, endUtc, cancellationToken);
+    }
+
+    private _Internal.MultipartDownloadService Multipart =>
+      HttpContext.RequestServices.GetRequiredService<_Internal.MultipartDownloadService>();
+
+    private string MultipartOwner => HttpContext.Session.Id + "|" + Path.GetFullPath(PTMagicBasePath);
+
+    private IActionResult MultipartJson(object value) =>
+      new JsonResult(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+    private bool MultipartAuthorized()
+    {
+      base.Init();
+      Response.Headers["Cache-Control"] = "no-store, no-transform";
+      return IsLoggedIn(HttpContext) && LogsEnabled;
+    }
+
+    public async Task<IActionResult> OnGetMultipartStatusAsync(CancellationToken cancellationToken)
+    {
+      if (!MultipartAuthorized()) return StatusCode(403);
+      return MultipartJson(await Multipart.StatusAsync(MultipartOwner, cancellationToken));
+    }
+
+    public async Task<IActionResult> OnPostMultipartStartAsync(string kind, int historyCount, string historyUnit,
+      int maxZipMiB, CancellationToken cancellationToken)
+    {
+      if (!MultipartAuthorized()) return StatusCode(403);
+      DateTime endUtc = DateTime.UtcNow;
+      if (!ModelState.IsValid || (kind != "data" && kind != "logs") ||
+          !_Internal.MultipartZipBatch.TryLimit(maxZipMiB, out long limit) || limit == 0 ||
+          !TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
+        return BadRequest("Choose a valid history period and a positive whole-number maximum ZIP size in MiB.");
+      try
+      {
+        bool data = kind == "data";
+        var files = CaptureExportSources(data, cutoffUtc, endUtc, cancellationToken);
+        if (files.Count == 0) return NotFound("No source files are available for the selected period.");
+        string prefix = ExportFileStem(data ? "PTMagic-_data-" : "PTMagic-Logs-", endUtc);
+        return MultipartJson(await Multipart.StartAsync(MultipartOwner, prefix, files, limit, cancellationToken));
+      }
+      catch (InvalidOperationException)
+      {
+        return StatusCode(409, "An export is already active. Release it or resume it before starting another.");
+      }
+      catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+      {
+        HttpContext.RequestServices.GetService<ILogger<LogsModel>>()?.LogWarning(ex, "Multipart export could not start.");
+        return StatusCode(500, "Could not prepare export storage or read the source directory.");
+      }
+    }
+
+    public async Task<IActionResult> OnPostMultipartNextAsync(string exportId, CancellationToken cancellationToken)
+    {
+      if (!MultipartAuthorized()) return StatusCode(403);
+      try { return MultipartJson(await Multipart.PrepareAsync(MultipartOwner, exportId, cancellationToken)); }
+      catch (KeyNotFoundException) { return NotFound("Export unavailable or expired."); }
+      catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
+      {
+        HttpContext.RequestServices.GetService<ILogger<LogsModel>>()?.LogWarning(ex, "Multipart ZIP preparation failed.");
+        return StatusCode(500, "Part preparation failed. Check server disk space and source files; previously prepared parts are retained. Retry or start a new export.");
+      }
+    }
+
+    public async Task<IActionResult> OnGetMultipartPartAsync(string exportId, int number, CancellationToken cancellationToken)
+    {
+      if (!MultipartAuthorized()) return StatusCode(403);
+      try
+      {
+        var part = await Multipart.OpenAsync(MultipartOwner, exportId, number, cancellationToken);
+        return new FileStreamResult(part.Stream, "application/zip")
+        {
+          FileDownloadName = part.Part.FileName,
+          EnableRangeProcessing = true
+        };
+      }
+      catch (KeyNotFoundException) { return NotFound("Part unavailable or expired."); }
+      catch (IOException) { return NotFound("Prepared part is unavailable. Start a new export if necessary."); }
+    }
+
+    public async Task<IActionResult> OnPostMultipartReleaseAsync(string exportId, CancellationToken cancellationToken)
+    {
+      if (!MultipartAuthorized()) return StatusCode(403);
+      try
+      {
+        await Multipart.ReleaseAsync(MultipartOwner, exportId, cancellationToken);
+        return MultipartJson(new { released = true });
+      }
+      catch (KeyNotFoundException) { return NotFound("Export unavailable or expired."); }
     }
 
     private static bool TryDownloadPeriod(int count, string unit, DateTime endUtc, out DateTime? cutoffUtc)
@@ -73,16 +173,21 @@ namespace Monitor.Pages
         endUtc, out _, out cutoffUtc);
     }
 
-    private async Task<IActionResult> StreamDownloadAsync(
-      IReadOnlyList<_Internal.StreamingDownloadArchive.Member> files, string prefix,
-      DateTime endUtc, CancellationToken cancellationToken)
+    private string ExportFileStem(string prefix, DateTime endUtc)
     {
       string instanceName = PTMagicConfiguration.GeneralSettings.Application.InstanceName ?? "";
       string safeInstanceName = System.Text.RegularExpressions.Regex
         .Replace(instanceName.Trim(), @"[^a-zA-Z0-9_-]+", "-").Trim('-', '_');
       if (safeInstanceName.Length > 64) safeInstanceName = safeInstanceName.Substring(0, 64).TrimEnd('-', '_');
       if (String.IsNullOrEmpty(safeInstanceName)) safeInstanceName = "Instance";
-      string fileName = prefix + safeInstanceName + "-" + endUtc.ToString("yyyy-MM-ddTHH-mm-ssZ") + ".zip";
+      return prefix + safeInstanceName + "-" + endUtc.ToString("yyyy-MM-ddTHH-mm-ssZ");
+    }
+
+    private async Task<IActionResult> StreamDownloadAsync(
+      IReadOnlyList<_Internal.StreamingDownloadArchive.Member> files, string prefix,
+      DateTime endUtc, CancellationToken cancellationToken)
+    {
+      string fileName = ExportFileStem(prefix, endUtc) + ".zip";
 
       Response.ContentType = "application/zip";
       Response.Headers["Content-Disposition"] = "attachment; filename=\"" + fileName + "\"";

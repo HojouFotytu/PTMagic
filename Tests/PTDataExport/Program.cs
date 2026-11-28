@@ -478,6 +478,164 @@ internal static class Program
       }
       finally { Directory.Delete(folder, true); }
     });
+    await Test("multipart ZIPs respect finalized size and reconstruct exactly the complete selected dataset", () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-multipart-" + Guid.NewGuid().ToString("N"));
+      string data = Path.Combine(root, "data");
+      string spool = Path.Combine(root, "spool");
+      Directory.CreateDirectory(data);
+      try
+      {
+        var original = new Dictionary<string, byte[]>();
+        var members = new List<StreamingDownloadArchive.Member>();
+        var random = new Random(42);
+        for (int i = 0; i < 7; i++)
+        {
+          string entry = "_data/DecisionHistory/raid-" + i + ".jsonl.gz";
+          byte[] bytes = new byte[400000 + i * 100];
+          random.NextBytes(bytes);
+          string path = Path.Combine(data, "raid-" + i + ".gz");
+          File.WriteAllBytes(path, bytes);
+          original.Add(entry, bytes);
+          members.Add(new StreamingDownloadArchive.Member(path, entry, null));
+        }
+        Check(MultipartZipBatch.TryLimit(1, out long cap) && cap == 1048576 &&
+          MultipartZipBatch.TryLimit(0, out long unlimited) && unlimited == 0 &&
+          !MultipartZipBatch.TryLimit(-1, out _), "positive integer MiB and unlimited zero");
+        string id = Guid.NewGuid().ToString("N");
+        var batch = new MultipartZipBatch(spool, "PTMagic-data-" + id, id, members, cap);
+        var first = batch.PrepareNext(default);
+        Check(first.Parts.Length == 1 && !first.Complete && first.ProcessedSources > 0,
+          "one part prepared immediately, not the full export");
+        var firstPath = Path.Combine(spool, first.Parts[0].FileName);
+        byte[] firstBytes = File.ReadAllBytes(firstPath);
+        // The prepared part must remain retryable even when source content changes.
+        File.WriteAllText(members[0].Path, "changed after first part was prepared");
+        var current = first;
+        while (!current.Complete) current = batch.PrepareNext(default);
+        Check(current.Parts.Length > 1 && current.ProcessedSources == members.Count &&
+          current.Parts.Sum(p => p.Files) == members.Count, "all sources processed exactly once");
+        var merged = new Dictionary<string, byte[]>();
+        foreach (var part in current.Parts.Reverse())
+        {
+          var opened = batch.OpenPart(part.Number);
+          using var file = opened.Stream;
+          Check(file.Length == part.Bytes && part.Bytes <= cap && !part.ExceedsLimit,
+            "actual finalized ZIP including directory fits cap");
+          using var zip = new ZipArchive(file, ZipArchiveMode.Read);
+          foreach (var entry in zip.Entries)
+          {
+            using var input = entry.Open();
+            using var bytes = new MemoryStream();
+            input.CopyTo(bytes);
+            merged.Add(entry.FullName, bytes.ToArray());
+          }
+        }
+        Check(merged.Count == original.Count && original.All(pair => merged[pair.Key].SequenceEqual(pair.Value)),
+          "extract in reverse order, no duplicates or missing bytes");
+        var retry = batch.OpenPart(1);
+        using (var input = retry.Stream)
+        using (var bytes = new MemoryStream())
+        {
+          input.CopyTo(bytes);
+          Check(firstBytes.SequenceEqual(bytes.ToArray()), "retry serves identical prepared ZIP");
+        }
+        Check(!Directory.GetFiles(spool, "*.tmp").Any(), "no uncommitted archive remains");
+        batch.Delete();
+        Check(!Directory.Exists(spool), "explicit release cleans private spool");
+      }
+      finally { Directory.Delete(root, true); }
+      return Task.CompletedTask;
+    });
+    await Test("multipart permits only an explicitly identified indivisible oversized ZIP", () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-multipart-big-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(root);
+      try
+      {
+        var members = new List<StreamingDownloadArchive.Member>();
+        string large = Path.Combine(root, "large.gz");
+        string small = Path.Combine(root, "small.gz");
+        string compressible = Path.Combine(root, "compressible.txt");
+        File.WriteAllBytes(large, new byte[1300000]); // .gz member is stored, not recompressed
+        File.WriteAllBytes(small, new byte[10]);
+        File.WriteAllBytes(compressible, new byte[1500000]);
+        members.Add(new(large, "_data/large.gz", null));
+        members.Add(new(small, "_data/small.gz", null));
+        members.Add(new(compressible, "Monitor/compressible.txt", null));
+        var batch = new MultipartZipBatch(Path.Combine(root, "spool"), "PTMagic-logs-test",
+          Guid.NewGuid().ToString("N"), members, 1048576);
+        var state = batch.Snapshot();
+        while (!state.Complete) state = batch.PrepareNext(default);
+        Check(state.Parts.Count(p => p.ExceedsLimit) == 1, "only truly oversized finalized part marked");
+        var oversize = state.Parts.Single(p => p.ExceedsLimit);
+        Check(oversize.Files == 1 && oversize.OversizedEntry == "_data/large.gz" && oversize.Bytes > 1048576,
+          "oversized unsplittable file explicitly reported");
+        Check(state.Parts.Where(p => !p.ExceedsLimit).All(p => p.Bytes <= 1048576),
+          "compressible large source can fit compressed");
+        Check(state.Parts.Sum(p => p.Files) == 3, "nothing silently omitted");
+      }
+      finally { Directory.Delete(root, true); }
+      return Task.CompletedTask;
+    });
+    await Test("multipart handles finalized ZIP overhead and changing source lengths without exceeding cap", () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-multipart-overhead-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(root);
+      try
+      {
+        string a = Path.Combine(root, "a.gz");
+        string b = Path.Combine(root, "b.gz");
+        File.WriteAllBytes(a, new byte[500000]);
+        File.WriteAllBytes(b, new byte[500000]);
+        // Artificially low estimate from a captured append boundary on the first
+        // file is still safe: actual finalized ZIP is measured, not guessed.
+        var members = new[] { new StreamingDownloadArchive.Member(a, "_data/a.gz", null),
+          new StreamingDownloadArchive.Member(b, "_data/b.gz", null) };
+        var batch = new MultipartZipBatch(Path.Combine(root, "spool"), "PTMagic-data-test",
+          Guid.NewGuid().ToString("N"), members, 1000000);
+        var state = batch.Snapshot();
+        while (!state.Complete) state = batch.PrepareNext(default);
+        Check(state.Parts.Length == 2 && state.Parts.All(p => p.Bytes <= 1000000 && !p.ExceedsLimit),
+          "ZIP headers count toward the cap");
+      }
+      finally { Directory.Delete(root, true); }
+      return Task.CompletedTask;
+    });
+    await Test("multipart cancellation and source loss leave earlier parts intact and do not advance pending sources", () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-multipart-retry-" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(root);
+      try
+      {
+        string a = Path.Combine(root, "a.gz");
+        string b = Path.Combine(root, "b.gz");
+        byte[] content = new byte[800000];
+        File.WriteAllBytes(a, content); File.WriteAllBytes(b, content);
+        var batch = new MultipartZipBatch(Path.Combine(root, "spool"), "PTMagic-data-test",
+          Guid.NewGuid().ToString("N"),
+          new[] { new StreamingDownloadArchive.Member(a, "_data/a.gz", null),
+            new StreamingDownloadArchive.Member(b, "_data/b.gz", null) }, 1048576);
+        var first = batch.PrepareNext(default);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        bool cancelled = false;
+        try { batch.PrepareNext(cts.Token); }
+        catch (OperationCanceledException) { cancelled = true; }
+        Check(cancelled && batch.Snapshot().ProcessedSources == first.ProcessedSources, "cancelled before next part");
+        File.Delete(b);
+        bool missing = false;
+        try { batch.PrepareNext(default); }
+        catch (IOException) { missing = true; }
+        Check(missing && batch.Snapshot().Parts.Length == 1 &&
+          batch.Snapshot().ProcessedSources == first.ProcessedSources, "missing source not silently skipped");
+        File.WriteAllBytes(b, content);
+        var final = batch.PrepareNext(default);
+        Check(final.Complete && final.Parts.Length == 2, "retry after source restored");
+      }
+      finally { Directory.Delete(root, true); }
+      return Task.CompletedTask;
+    });
     await Test("UTC windows accept seconds, milliseconds, strings and ISO timestamps", async () =>
     {
       DateTimeOffset recent = DateTimeOffset.UtcNow.AddHours(-1);
