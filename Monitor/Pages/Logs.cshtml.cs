@@ -98,22 +98,22 @@ namespace Monitor.Pages
       return MultipartJson(await Multipart.StatusAsync(MultipartOwner, cancellationToken));
     }
 
-    public async Task<IActionResult> OnPostMultipartStartAsync(string kind, int historyCount, string historyUnit,
-      int maxZipMiB, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostMultipartStartAsync([FromForm] string kind,
+      [FromForm] int? historyCount, [FromForm] string historyUnit, [FromForm] int? maxZipMiB,
+      CancellationToken cancellationToken)
     {
       if (!MultipartAuthorized()) return StatusCode(403);
       DateTime endUtc = DateTime.UtcNow;
-      if (!ModelState.IsValid || (kind != "data" && kind != "logs") ||
-          !_Internal.MultipartZipBatch.TryLimit(maxZipMiB, out long limit) || limit == 0 ||
-          !TryDownloadPeriod(historyCount, historyUnit, endUtc, out DateTime? cutoffUtc))
-        return BadRequest("Choose a valid history period and a positive whole-number maximum ZIP size in MiB.");
+      if (!ModelState.IsValid || !_Internal.MultipartExportSelection.TryCreate(kind, historyCount,
+          historyUnit, maxZipMiB, endUtc, out var selection))
+        return BadRequest("An explicit valid history period and positive whole-number maximum ZIP size in MiB are required.");
       try
       {
         bool data = kind == "data";
-        var files = CaptureExportSources(data, cutoffUtc, endUtc, cancellationToken);
+        var files = CaptureExportSources(data, selection.FromUtc, selection.ThroughUtc, cancellationToken);
         if (files.Count == 0) return NotFound("No source files are available for the selected period.");
-        string prefix = ExportFileStem(data ? "PTMagic-_data-" : "PTMagic-Logs-", endUtc);
-        return MultipartJson(await Multipart.StartAsync(MultipartOwner, prefix, files, limit, cancellationToken));
+        string prefix = ExportFileStem(data ? "PTMagic-_data-" : "PTMagic-Logs-", endUtc) + "-" + selection.FileTag;
+        return MultipartJson(await Multipart.StartAsync(MultipartOwner, prefix, files, selection.MaxBytes, cancellationToken, selection));
       }
       catch (InvalidOperationException)
       {

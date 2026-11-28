@@ -10,6 +10,8 @@
     <Compile Include="../../Monitor/_Internal/ExportHistoryPeriod.cs" Link="ExportHistoryPeriod.cs" />
     <Compile Include="../../Monitor/_Internal/StreamingDownloadArchive.cs" Link="StreamingDownloadArchive.cs" />
     <Compile Include="../../Monitor/_Internal/MultipartZipBatch.cs" Link="MultipartZipBatch.cs" />
+    <Compile Include="../../Monitor/_Internal/MultipartExportSelection.cs" Link="MultipartExportSelection.cs" />
+    <Compile Include="../../Monitor/_Internal/LocalDataExport.cs" Link="LocalDataExport.cs" />
     <Compile Include="../../Monitor/_Internal/MultipartDownloadService.cs" Link="MultipartDownloadService.cs" />
     <Compile Include="../../Monitor/_Internal/MultipartTransferReceipt.cs" Link="MultipartTransferReceipt.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

@@ -67,7 +67,8 @@ namespace Monitor._Internal
     }
 
     public async Task<MultipartZipBatch.State> StartAsync(string owner, string prefix,
-      IReadOnlyList<StreamingDownloadArchive.Member> files, long maxBytes, CancellationToken token)
+      IReadOnlyList<StreamingDownloadArchive.Member> files, long maxBytes, CancellationToken token,
+      MultipartExportSelection selection = null)
     {
       await _gate.WaitAsync(token);
       try
@@ -88,7 +89,7 @@ namespace Monitor._Internal
             FileAccess.ReadWrite, FileShare.None);
           // Filename ID is shared by every ZIP, even if start times collide.
           string fullPrefix = prefix + "-" + id.Substring(0, 12);
-          var batch = new MultipartZipBatch(directory, fullPrefix, id, files, maxBytes);
+          var batch = new MultipartZipBatch(directory, fullPrefix, id, files, maxBytes, selection);
           var previous = _active;
           var export = new RetainedExport(owner, batch, lease);
           _exports.Add(id, export);
@@ -98,6 +99,8 @@ namespace Monitor._Internal
           // export starts: the browser may still be requesting them.
           if (previous != null && previous.Batch.Snapshot().Parts.Length == 0)
             Release(previous);
+          _log.LogInformation("Multipart export {ExportId}: {Kind}, range {Range}, from {FromUtc} through {ThroughUtc}, maximum {MaxBytes} bytes, {Sources} sources.",
+            id, selection?.Kind, selection?.HistoryRange, selection?.FromUtc, selection?.ThroughUtc, maxBytes, files.Count);
           return batch.Snapshot();
         }
         catch
@@ -133,8 +136,14 @@ namespace Monitor._Internal
         if (!ReferenceEquals(_active, export)) throw new KeyNotFoundException("Export superseded by a newer request.");
         try
         {
-          return await Task.Factory.StartNew(() => export.Batch.PrepareNext(token), CancellationToken.None,
+          var before = export.Batch.Snapshot();
+          var state = await Task.Factory.StartNew(() => export.Batch.PrepareNext(token), CancellationToken.None,
             TaskCreationOptions.LongRunning, TaskScheduler.Default);
+          if (!before.Complete)
+            _log.LogInformation("Multipart export {ExportId}: {Processed}/{Total} sources, {Parts} ZIPs, {Bytes} bytes prepared, complete={Complete}.",
+              state.ExportId, state.ProcessedSources, state.TotalSources, state.Parts.Length,
+              state.Parts.Sum(part => part.Bytes), state.Complete);
+          return state;
         }
         finally { export.Batch.LastActivityUtc = DateTime.UtcNow; }
       }

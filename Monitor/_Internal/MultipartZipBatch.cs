@@ -19,19 +19,23 @@ namespace Monitor._Internal
     public sealed record Part(int Number, string FileName, long Bytes, int Files,
       bool ExceedsLimit, string OversizedEntry);
     public sealed record State(string ExportId, string Prefix, long MaxBytes,
-      int TotalSources, int ProcessedSources, bool Complete, Part[] Parts);
+      int TotalSources, int ProcessedSources, bool Complete, Part[] Parts)
+    {
+      public MultipartExportSelection Selection { get; init; }
+    }
 
     private readonly StreamingDownloadArchive.Member[] _members;
     private readonly List<Part> _parts = new List<Part>();
     private readonly string _directory;
     private readonly string _prefix;
     private readonly long _maxBytes;
+    private readonly MultipartExportSelection _selection;
     private int _next;
     public string ExportId { get; }
     public DateTime LastActivityUtc { get; set; } = DateTime.UtcNow;
 
     public MultipartZipBatch(string directory, string prefix, string exportId,
-      IReadOnlyList<StreamingDownloadArchive.Member> members, long maxBytes)
+      IReadOnlyList<StreamingDownloadArchive.Member> members, long maxBytes, MultipartExportSelection selection = null)
     {
       if (maxBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));
       if (members == null || members.Count == 0) throw new ArgumentException("No export sources.", nameof(members));
@@ -41,6 +45,8 @@ namespace Monitor._Internal
       _directory = directory;
       _prefix = prefix;
       _maxBytes = maxBytes;
+      if (selection != null && selection.MaxBytes != maxBytes) throw new ArgumentException("Selection byte limit differs from batch limit.");
+      _selection = selection;
       ExportId = exportId;
       _members = members.OrderBy(member => member.Entry, StringComparer.Ordinal).ToArray();
       if (_members.Select(m => m.Entry).Distinct(StringComparer.OrdinalIgnoreCase).Count() != _members.Length)
@@ -57,7 +63,7 @@ namespace Monitor._Internal
     }
 
     public State Snapshot() => new State(ExportId, _prefix, _maxBytes, _members.Length,
-      _next, _next == _members.Length, _parts.ToArray());
+      _next, _next == _members.Length, _parts.ToArray()) { Selection = _selection };
 
     // Start from a conservative source-length packing estimate. ZIP local
     // and central headers, data descriptors and ZIP64 metadata are covered

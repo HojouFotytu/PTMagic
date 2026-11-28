@@ -205,12 +205,33 @@
     };
     multipartBusy = true;
     downloadButtons.forEach(function (item) { item.disabled = true; });
+    logHistoryCount.disabled = true;
+    logHistoryUnit.disabled = true;
+    maxZip.disabled = true;
     var transferred = 0;
     var oversized = 0;
     try {
       showMultipartStatus('Preparing ZIP downloads…');
       var state = await multipartRequest('MultipartStart', values);
+      var expectedRange = values.historyUnit === 'all' ? 'all' :
+        String(Number(values.historyCount)) + { days: 'd', weeks: 'w', months: 'm' }[values.historyUnit];
+      var expectedBytes = Number(values.maxZipMiB) * 1048576;
+      var exportId = state.exportId;
+      var totalSources = state.totalSources;
+      var previousSources = -1;
       while (true) {
+        // Never silently continue an old export or a different period/limit.
+        if (!state.selection || state.selection.historyRange !== expectedRange ||
+            state.selection.kind !== kind || state.maxBytes !== expectedBytes ||
+            state.selection.maxBytes !== expectedBytes || state.exportId !== exportId ||
+            state.totalSources !== totalSources || state.processedSources <= previousSources ||
+            state.processedSources > totalSources || state.complete !== (state.processedSources === totalSources) ||
+            state.parts.length < transferred ||
+            state.parts.some(function (part, index) {
+              return part.number !== index + 1 || (!part.exceedsLimit && part.bytes > expectedBytes);
+            }))
+          throw new Error('Server returned a different export selection or invalid progress.');
+        previousSources = state.processedSources;
         for (var i = transferred; i < state.parts.length; i++) {
           var part = state.parts[i];
           if (part.exceedsLimit) oversized++;
@@ -225,7 +246,9 @@
       if (!transferred) {
         showMultipartStatus('No complete files matched the selected period.');
       } else {
-        var summary = transferred + ' ZIP part' + (transferred === 1 ? '' : 's') + ' transferred by the server.';
+        var summary = transferred + ' ZIP part' + (transferred === 1 ? '' : 's') +
+          ' transferred; ' + state.processedSources + '/' + state.totalSources + ' sources; ' +
+          expectedRange + ', max ' + (expectedBytes / 1048576) + ' MiB.';
         if (oversized) summary += ' ' + oversized + ' part(s) exceed the limit because a source file cannot be split.';
         showMultipartStatus(summary, oversized > 0);
       }
@@ -233,6 +256,9 @@
       showMultipartStatus(error.message + (transferred ? ' ' + transferred + ' earlier ZIP part(s) transferred.' : ''), true);
     } finally {
       multipartBusy = false;
+      logHistoryUnit.disabled = false;
+      maxZip.disabled = false;
+      updateLogHistoryCount();
       downloadButtons.forEach(function (item) { item.disabled = false; });
     }
   });

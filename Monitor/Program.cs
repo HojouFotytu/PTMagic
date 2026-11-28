@@ -12,6 +12,20 @@ namespace Monitor
     // Main entry point
     public static void Main(string[] args)
     {
+      if (args.Length > 0 && args[0] == "--export-data")
+      {
+        using var cancellation = new System.Threading.CancellationTokenSource();
+        ConsoleCancelEventHandler handler = (_, eventArgs) =>
+        {
+          eventArgs.Cancel = true;
+          cancellation.Cancel();
+        };
+        Console.CancelKeyPress += handler;
+        try { Environment.ExitCode = _Internal.LocalDataExport.Run(args, Console.Out, Console.Error, cancellation.Token); }
+        finally { Console.CancelKeyPress -= handler; }
+        return;
+      }
+
       // Register a global exception handler
       AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(GlobalUnhandledExceptionHandler);
 

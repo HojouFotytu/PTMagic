@@ -788,6 +788,90 @@ internal static class Program
         Directory.Delete(root, true);
       }
     });
+    await Test("explicit multipart range and cap produce different complete archive counts, including more than three", async () =>
+    {
+      string root = Path.Combine(Path.GetTempPath(), "ptm-multipart-selection-" + Guid.NewGuid().ToString("N"));
+      string instance = Path.Combine(root, "instance");
+      string data = Path.Combine(instance, "_data");
+      string history = Path.Combine(data, "DecisionHistory");
+      Directory.CreateDirectory(history);
+      using var service = new MultipartDownloadService(root, NullLogger<MultipartDownloadService>.Instance);
+      try
+      {
+        var end = new DateTimeOffset(2026, 11, 28, 12, 0, 0, TimeSpan.Zero);
+        for (int i = 0; i < 8; i++)
+        {
+          string name = DecisionHistoryFileNames.CompactName(end.AddHours(-6 - i * 12), Guid.NewGuid());
+          File.WriteAllBytes(Path.Combine(history, name), new byte[600000]);
+        }
+        string cache = Path.Combine(data, "NormalizedOhlcvCache");
+        Directory.CreateDirectory(cache);
+        File.WriteAllBytes(Path.Combine(cache, "cache.gz"), new byte[600000]);
+        Check(!MultipartExportSelection.TryCreate("data", null, null, 1, end.UtcDateTime, out _),
+          "no implicit all-history selection");
+        Check(!MultipartExportSelection.TryCreate("data", 1, "days", null, end.UtcDateTime, out _),
+          "missing cap rejected");
+        async Task<MultipartZipBatch.State> Export(int count, string unit, int limit)
+        {
+          Check(MultipartExportSelection.TryCreate("data", count, unit, limit, end.UtcDateTime, out var selection),
+            "explicit selection");
+          var files = StreamingDownloadArchive.CaptureData(data, selection.FromUtc, selection.ThroughUtc, default);
+          var state = await service.StartAsync("owner", "PTMagic-data-" + selection.FileTag, files,
+            selection.MaxBytes, default, selection);
+          string exportId = state.ExportId;
+          while (!state.Complete)
+          {
+            int before = state.ProcessedSources;
+            state = await service.PrepareAsync("owner", exportId, default);
+            Check(state.ExportId == exportId && state.Selection == selection &&
+              state.MaxBytes == selection.MaxBytes && state.ProcessedSources > before,
+              "fresh selection and advancing cursor");
+          }
+          Check(state.TotalSources == state.ProcessedSources &&
+            state.Parts.Sum(p => p.Files) == state.TotalSources &&
+            state.Parts.All(p => !p.ExceedsLimit && p.Bytes <= selection.MaxBytes),
+            "complete membership and exact cap");
+          return state;
+        }
+        var oneDaySmall = await Export(1, "days", 1);
+        var weekSmall = await Export(1, "weeks", 1);
+        var weekLarge = await Export(1, "weeks", 4);
+        var oneDayLarge = await Export(1, "days", 4);
+        Check(oneDaySmall.TotalSources == 3 && oneDaySmall.Parts.Length == 3, "24h, 1 MiB");
+        Check(weekSmall.TotalSources == 9 && weekSmall.Parts.Length == 9, "week, 1 MiB");
+        Check(weekLarge.TotalSources == 9 && weekLarge.Parts.Length == 2, "week, 4 MiB");
+        Check(oneDayLarge.TotalSources == 3 && oneDayLarge.Parts.Length == 1, "24h, 4 MiB");
+        Check(new[] { oneDaySmall.ExportId, weekSmall.ExportId, weekLarge.ExportId, oneDayLarge.ExportId }.Distinct().Count() == 4,
+          "each click starts a fresh batch");
+
+        var output = new StringWriter();
+        var error = new StringWriter();
+        string local = Path.Combine(root, "local");
+        int exit = LocalDataExport.Run(new[] { "--export-data", instance, "1w", "1", local },
+          output, error, default, end.UtcDateTime);
+        Check(exit == 0, "offline export: " + error.ToString());
+        string finished = Directory.GetDirectories(local).Single();
+        var zips = Directory.GetFiles(finished, "*.zip");
+        Check(zips.Length == 9 && zips.All(p => new FileInfo(p).Length <= 1048576),
+          "CLI produces all nine capped parts, not a browser-limited count");
+        var entries = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string path in zips)
+        {
+          using var zip = ZipFile.OpenRead(path);
+          foreach (var entry in zip.Entries)
+            Check(entries.Add(entry.FullName) && entry.Length == 600000, "independent intact members");
+        }
+        Check(entries.Count == 9 && File.Exists(Path.Combine(finished, "export-manifest.json")) &&
+          !finished.EndsWith(".incomplete"), "complete direct export and receipt");
+        Check(LocalDataExport.Run(new[] { "--export-data", instance, "1d", "1", data },
+          output, error, default, end.UtcDateTime) != 0, "reject output inside data tree");
+      }
+      finally
+      {
+        await service.StopAsync(default);
+        Directory.Delete(root, true);
+      }
+    });
     await Test("UTC windows accept seconds, milliseconds, strings and ISO timestamps", async () =>
     {
       DateTimeOffset recent = DateTimeOffset.UtcNow.AddHours(-1);
